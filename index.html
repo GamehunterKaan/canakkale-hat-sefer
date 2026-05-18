@@ -218,8 +218,7 @@
       animation: spin .7s linear infinite; vertical-align: middle; margin-right: 4px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #scr-planner { position: relative; }
-    #map { flex: 1; min-height: 0; min-width: 0; }
+    #map { position: relative; flex: 1; min-height: 0; min-width: 0; }
     #gps-fab {
       position: absolute; right: 12px; bottom: 16px; z-index: 500;
       width: 46px; height: 46px; border-radius: 50%;
@@ -250,9 +249,16 @@
     }
     @media (min-width: 640px) {
       #scr-planner { flex-direction: row; }
-      .p-top { width: 300px; max-height: none !important; height: 100%; border-bottom: none; border-right: 1px solid #252d40; }
+      .p-top, .p-top.panel-full {
+        width: 300px; flex: none !important;
+        max-height: none !important; height: 100%;
+        border-bottom: none; border-right: 1px solid #252d40;
+      }
       #panel-handle { display: none !important; }
-      #map { flex: 1 !important; height: auto !important; overflow: visible !important; }
+      #map, #map.panel-full {
+        flex: 1 !important; height: auto !important;
+        max-height: none !important; overflow: hidden !important;
+      }
     }
     /* ── Trip detail ── */
     .trip-back { background: none; border: none; color: #7eb3f7; font-size: .8rem; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 4px; }
@@ -403,8 +409,9 @@
       <span class="ph-label" id="ph-label"></span>
       <button class="ph-btn" id="ph-btn"></button>
     </div>
-    <div id="map"></div>
-    <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
+    <div id="map">
+      <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
+    </div>
   </div>
 
 </div>

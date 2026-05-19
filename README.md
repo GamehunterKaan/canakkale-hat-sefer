@@ -23,7 +23,7 @@ This app solves all of that.
 
 ### 📅 Seferler — Live Schedule
 
-Automatically downloads and parses the municipality's PDF timetables. Shows all routes with departure times split by direction, highlights the next upcoming departure in blue, and greys out times that have already passed. Separate weekday and weekend tabs. Refreshes at midnight automatically.
+Shows all routes with departure times split by direction, highlights the next upcoming departure in blue, and greys out times that have already passed. Separate weekday and weekend tabs.
 
 Each route card has a **🚌 Canlı** button that jumps straight to the live tracker for that line.
 
@@ -31,13 +31,14 @@ Each route card has a **🚌 Canlı** button that jumps straight to the live tra
 
 ---
 
-### 🗺 Rota & Durak — Trip Planner
+### 🗺 Rota & Durak — Trip Planner & Live Map
 
 Tap the map (or use GPS) to set your starting point and destination. The planner finds every direct route that connects them, sorted by **total ETA** — walking time + wait for the next bus + ride time + walking to destination.
 
 - **Plan ahead** — use the time offset buttons (+30 dk, +1 sa, +2 sa) to plan for later
 - **Live bus data** — shows which buses are approaching your boarding stop right now
 - **Scheduled fallback** — when no live data is available, uses the timetable to estimate wait time
+- **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
 
 ![Trip planner showing route options sorted by ETA](screenshots/planner.png)
 
@@ -76,25 +77,42 @@ Powered by a Cloudflare Worker (free tier) that polls the kentkart API every min
 
 ### ⭐ Saved Locations
 
-Save home, work, or any frequent destination. Appears as a dropdown in the planner — tap 📍 or 🏁 to instantly set it as your start or end point without touching the map.
+Save home, work, or any frequent destination. Appears as a dropdown next to the app title — tap 📍 or 🏁 to instantly set it as your start or end point without touching the map.
 
 ---
 
 ## Architecture
 
 ```
-GitHub Pages          Cloudflare Worker (free)      Kentkart API
-──────────────        ─────────────────────────      ────────────
-app.html    ──────►  POST /subscribe                GET /pathInfo
-sw.js                  stores in KV
-                      
-                      cron: every 1 min ──────────► GET /pathInfo
-                        checks bus position
-                        sends Web Push ──────────────────────────────►
-                                                          Google FCM
-                                                               │
-                                                               ▼
-                                                        Your phone 🔔
+GitHub Actions (daily midnight)
+───────────────────────────────
+fetch-schedule.mjs              fetch-stops.mjs
+  ↓ download PDFs                 ↓ kentkart bulk fetch
+  ↓ parse with pdf.js             ↓ strip live bus data
+  ↓                               ↓
+data/schedule.json          data/stops.json
+        │                         │
+        └──────────┬──────────────┘
+                   ↓
+             GitHub Pages
+             index.html + sw.js
+                   │
+        ┌──────────┴───────────┐
+        ↓                      ↓
+  fetch JSON files        Kentkart API
+  on first load           (live bus positions,
+  cache until midnight     fetched on demand)
+        │
+        ↓
+  POST /subscribe
+        │
+  Cloudflare Worker (KV storage)
+        │
+  cron: every 1 min → GET /pathInfo → Web Push
+                                           │
+                                      Google FCM / APNs
+                                           │
+                                      Your phone 🔔
 ```
 
 Everything except the notification worker runs entirely in the browser. No backend, no database, no user accounts.
@@ -103,8 +121,9 @@ Everything except the notification worker runs entirely in the browser. No backe
 
 ## Tech
 
-- **PDF parsing** — [pdf.js](https://mozilla.github.io/pdf.js/) runs in the browser, parses the municipality's timetable PDFs directly
-- **Maps** — [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles
-- **Live data** — [Kentkart](https://kentkart.com) public API (same data used by physical stop displays)
-- **Push** — Web Push (RFC 8030/8291/8292) via Cloudflare Workers
-- **Zero dependencies** at runtime — no frameworks, no build step
+- **Schedule data** — GitHub Actions parses the municipality's PDF timetables daily using [pdf.js](https://mozilla.github.io/pdf.js/) (Node.js, server-side) and commits pre-built JSON to the repo
+- **Stop & route data** — GitHub Actions fetches all kentkart route/stop/path data daily and commits it as static JSON
+- **Maps** — [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles, canvas renderer for performance
+- **Live data** — [Kentkart](https://kentkart.com) public API fetched directly by the browser (same data used by physical stop displays)
+- **Push** — Web Push (RFC 8030/8291/8292) via Cloudflare Workers + KV
+- **Zero runtime dependencies** — no frameworks, no build step

@@ -1633,6 +1633,22 @@ async function testBusNotify() {
   }
 }
 
+async function localTestNotify() {
+  try {
+    const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (perm !== 'granted') { alert('Bildirim izni reddedildi (perm=' + perm + ')'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('🧪 Yerel Test', {
+      body: 'Bu bildirim FCM olmadan, doğrudan tarayıcıdan gönderildi.',
+      tag:  'local-test',
+      icon: '/icons/web-app-manifest-192x192.png',
+    });
+    alert('Yerel bildirim çağrıldı. Telefonda göründü mü?');
+  } catch (e) {
+    alert('Yerel test başarısız: ' + e.message);
+  }
+}
+
 function urlB64ToUint8Array(b64) {
   const pad = '='.repeat((4 - b64.length % 4) % 4);
   const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
@@ -1757,7 +1773,8 @@ function showTripDetail(m, fitMap = true) {
         +     'onclick="toggleBusNotify()">'
         +     (isNotifying ? '🔔 Açık' : '🔕 Bildir')
         +   '</button>'
-        +   (isNotifying ? '<button class="notify-btn" style="background:#6b7280;margin-left:4px" onclick="testBusNotify()" title="Hemen test bildirimi gönder">🧪</button>' : '')
+        +   '<button class="notify-btn" style="background:#6b7280;margin-left:4px" onclick="localTestNotify()" title="Yerel bildirim testi (FCM olmadan)">📱</button>'
+        +   (isNotifying ? '<button class="notify-btn" style="background:#6b7280;margin-left:4px" onclick="testBusNotify()" title="FCM üzerinden test bildirimi">🧪</button>' : '')
         + '</div>';
 
   // ── Journey summary ──────────────────────────────────────────────────────

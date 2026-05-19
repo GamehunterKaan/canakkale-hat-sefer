@@ -333,6 +333,48 @@
     }
     .notify-btn:hover  { color: #f59e0b; border-color: #f59e0b; }
     .notify-btn.active { color: #f59e0b; border-color: #f59e0b; background: #2d1f05; }
+    /* ── Onboarding overlay ── */
+    #onboarding {
+      position: fixed; inset: 0; z-index: 2000;
+      background: rgba(8,12,22,.93); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    #onboarding-card {
+      background: #1a1d2e; border: 1px solid #252d40; border-radius: 18px;
+      padding: 36px 24px 28px; max-width: 320px; width: 100%;
+      text-align: center; box-shadow: 0 24px 64px rgba(0,0,0,.9);
+    }
+    .ob-icon  { font-size: 2.4rem; margin-bottom: 12px; }
+    .ob-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 8px; }
+    .ob-sub   { color: #6b7a99; font-size: .82rem; line-height: 1.6; margin-bottom: 28px; }
+    .ob-btns  { display: flex; gap: 10px; }
+    .ob-btn   { flex: 1; padding: 14px 6px; border-radius: 10px; border: none; font-size: .84rem; font-weight: 700; cursor: pointer; line-height: 1.3; }
+    .ob-btn.sched   { background: #1a3660; color: #a8d4ff; }
+    .ob-btn.planner { background: #14422a; color: #86efac; }
+    /* ── Planner guide card ── */
+    #planner-guide {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 12px; padding: 28px 8px; text-align: center;
+    }
+    .guide-headline { font-size: 1rem; font-weight: 700; color: #c0d0ea; }
+    .guide-sub      { font-size: .78rem; color: #4a5568; line-height: 1.6; }
+    .guide-gps      {
+      width: 100%; padding: 13px; border-radius: 10px;
+      background: #1a3660; border: 1.5px solid #4a90d9;
+      color: #a8d4ff; font-size: .88rem; font-weight: 700; cursor: pointer;
+    }
+    .guide-or { font-size: .7rem; color: #374151; }
+    /* ── Map ripple ── */
+    #map-ripple {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%,-50%); pointer-events: none; display: none;
+    }
+    #map-ripple.active { display: block; }
+    .rr { position: absolute; border-radius: 50%; border: 2px solid #7eb3f7; }
+    .rr:nth-child(1) { width:40px;height:40px;margin:-20px; animation: rr 2s ease-out infinite 0s; }
+    .rr:nth-child(2) { width:40px;height:40px;margin:-20px; animation: rr 2s ease-out infinite .65s; }
+    .rr:nth-child(3) { width:40px;height:40px;margin:-20px; animation: rr 2s ease-out infinite 1.3s; }
+    @keyframes rr { 0%{opacity:.7;transform:scale(.8)} 100%{opacity:0;transform:scale(4)} }
     .leaflet-tile { filter: invert(1) brightness(0.7) hue-rotate(180deg); }
     .leaflet-container { background: #0f1117; }
     .leaflet-control-attribution { background: rgba(15,17,23,.8) !important; color: #4a5568 !important; }
@@ -353,6 +395,19 @@
     <button class="bm-add-btn" onclick="saveLocationBookmark(null)">+ Ekle</button>
   </div>
   <div id="bm-list"></div>
+</div>
+
+<!-- Onboarding overlay — shown once on first visit -->
+<div id="onboarding" style="display:none">
+  <div id="onboarding-card">
+    <div class="ob-icon">🚌</div>
+    <div class="ob-title">Çanakkale Hat & Sefer</div>
+    <div class="ob-sub">Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.</div>
+    <div class="ob-btns">
+      <button class="ob-btn sched"   onclick="dismissOnboarding('schedule')">📅 Saatlere<br>Bak</button>
+      <button class="ob-btn planner" onclick="dismissOnboarding('planner')">🗺 Rota<br>Bul</button>
+    </div>
+  </div>
 </div>
 
 <div id="screenWrap">
@@ -418,6 +473,9 @@
     </div>
     <div id="map">
       <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
+      <div id="map-ripple">
+        <div class="rr"></div><div class="rr"></div><div class="rr"></div>
+      </div>
     </div>
   </div>
 
@@ -1190,8 +1248,9 @@ async function initPlanner() {
   document.getElementById('loadBar').style.width='100%';
   document.getElementById('loadStatus').textContent = allStops.size+' durak'+(fromCache?' (önbellek)':'');
   ['btnOrigin','btnDest','btnStops','btnPlanTime'].forEach(id=>document.getElementById(id).disabled=false);
-  setMode('origin'); setHint('Haritaya tıklayın → başlangıç seçin.');
+  setMode('origin');
   renderBookmarksBar();
+  showOnboarding();
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
       applyPoint(pos.coords.latitude, pos.coords.longitude, 'origin');
@@ -1305,6 +1364,48 @@ function togglePanelExpand() {
   else expandPanel();
 }
 
+// ── Onboarding ───────────────────────────────────────────────────────────────
+function showOnboarding() {
+  if (localStorage.getItem('onboarded')) return;
+  document.getElementById('onboarding').style.display = 'flex';
+}
+
+function dismissOnboarding(goTo) {
+  localStorage.setItem('onboarded', '1');
+  document.getElementById('onboarding').style.display = 'none';
+  showScreen(goTo);
+}
+
+// ── Planner guide card ────────────────────────────────────────────────────────
+function showPlannerGuide(step) {
+  const results = document.getElementById('results');
+  const ripple  = document.getElementById('map-ripple');
+  if (!results) return;
+
+  if (step === 'origin') {
+    results.innerHTML =
+      '<div id="planner-guide">' +
+        '<div class="guide-headline">Başlangıç noktanızı seçin</div>' +
+        '<button class="guide-gps" onclick="useGPS()">🛰&nbsp; GPS Konumumu Kullan</button>' +
+        '<span class="guide-or">veya haritaya dokunun</span>' +
+      '</div>';
+    if (ripple) ripple.classList.add('active');
+  } else if (step === 'dest') {
+    results.innerHTML =
+      '<div id="planner-guide">' +
+        '<div class="guide-headline">Hedef noktanızı seçin</div>' +
+        '<div class="guide-sub">Gitmek istediğiniz yere haritada dokunun<br>ya da ⭐ Yerlerim\'den seçin</div>' +
+      '</div>';
+    if (ripple) ripple.classList.add('active');
+  } else {
+    if (ripple) ripple.classList.remove('active');
+  }
+}
+
+function hidePlannerGuide() {
+  showPlannerGuide(null);
+}
+
 function togglePlanTime() {
   const row = document.getElementById('plan-time-row');
   const open = row.style.display === 'none';
@@ -1356,9 +1457,17 @@ function setMode(m){
   document.getElementById('destCard').style.display='none';
   // GPS FAB: only show when picking origin
   document.getElementById('gps-fab')?.classList.toggle('visible', m==='origin');
-  if(m==='origin')setHint('Haritaya tıklayın → başlangıç seçin.');
-  else if(m==='dest')setHint('Haritaya tıklayın → hedef seçin.');
-  else{setHint('Haritaya tıklayın → yakın durakları görün.');document.getElementById('stopPanel').innerHTML='';}
+  if(m==='origin'){
+    setHint('');
+    if(!currentMatches.length && !tripMatch) showPlannerGuide('origin');
+  } else if(m==='dest'){
+    setHint('');
+    if(!currentMatches.length && !tripMatch) showPlannerGuide('dest');
+  } else {
+    setHint('Haritaya tıklayın → yakın durakları görün.');
+    hidePlannerGuide();
+    document.getElementById('stopPanel').innerHTML='';
+  }
 }
 
 function useGPS(){
@@ -1429,6 +1538,7 @@ function findRoutes(){
   }).sort((a,b)=>a._eta-b._eta);
   if(!matches.length){setHint('Doğrudan hat yok. (konuma:'+nO+' hedefe:'+nD+')',true);document.getElementById('results').innerHTML='<p style="color:#4a5568;font-size:.8rem;padding:6px 0">Bağlantı bulunamadı.</p>';hidePanelHandle();return;}
   currentMatches = matches; tripMatch = null;
+  hidePlannerGuide();
   setHint(matches.length+' hat bulundu. Detay için bir hatta tıklayın.');
   renderPlannerResults(matches);selectPlannerMatch(matches[0]);
   expandPanel(matches.length);

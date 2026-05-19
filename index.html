@@ -1620,6 +1620,30 @@ async function toggleBusNotify() {
   const seqOf  = {};
   stops.forEach(s => { seqOf[s.stopId] = parseInt(s.seq) || 0; });
 
+  // Compute next scheduled departure timestamp (epoch ms) for time-based alert
+  const isWE_     = [0,6].includes(new Date().getDay());
+  const dayData_  = scheduleData?.[isWE_ ? 'weekend' : 'weekday'] || {};
+  const schedE_   = findSchedEntry(dayData_, m.path.displayRouteCode);
+  const schedT_   = schedTimesForPath(schedE_, m.path);
+  let nextDepTs   = null;
+  if (schedT_.length) {
+    const nowMs = Date.now();
+    const curH  = new Date().getHours();
+    for (const t of schedT_) {
+      const [h, mn] = t.split(':').map(Number);
+      const d = new Date();
+      // Times like "00:30" appearing late in the sorted list mean tomorrow morning
+      if (h < 4 && curH >= 4) d.setDate(d.getDate() + 1);
+      d.setHours(h, mn, 0, 0);
+      if (d.getTime() > nowMs) { nextDepTs = d.getTime(); break; }
+    }
+    if (!nextDepTs) {
+      const [h, mn] = schedT_[0].split(':').map(Number);
+      const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(h, mn, 0, 0);
+      nextDepTs = d.getTime();
+    }
+  }
+
   try {
     const res = await fetch(WORKER_URL + '/subscribe', {
       method: 'POST',
@@ -1634,6 +1658,7 @@ async function toggleBusNotify() {
           boardStopName: m.board.stopName,
           headSign:      m.path.headSign,
           pathCode:      m.path.path_code,
+          nextDepTs,
         },
       }),
     });

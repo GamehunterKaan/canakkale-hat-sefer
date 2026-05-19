@@ -22,7 +22,7 @@ self.addEventListener('push', event => {
     self.registration.showNotification(title, {
       body,
       tag,
-      icon:  base + 'icons/apple-touch-icon.png',
+      icon:  base + 'icons/web-app-manifest-192x192.png',
       badge: base + 'icons/favicon-96x96.png',
       data:  { url: base },
     })

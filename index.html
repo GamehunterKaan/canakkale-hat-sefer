@@ -400,7 +400,7 @@
 <!-- Onboarding overlay — shown once on first visit -->
 <div id="onboarding" style="display:none">
   <div id="onboarding-card">
-    <div class="ob-icon">🚌</div>
+    <div class="ob-icon"><img src="icons/web-app-manifest-192x192.png" alt="Çanakkale Hat & Sefer" style="width:72px;height:72px;border-radius:18px"></div>
     <div class="ob-title">Çanakkale Hat & Sefer</div>
     <div class="ob-sub">Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.</div>
     <div class="ob-btns">
@@ -447,7 +447,7 @@
       <div id="custom-time-row" style="display:none;padding:5px 9px 0">
         <input type="time" id="custom-time-input" onchange="applyCustomTime()">
       </div>
-      <div id="hint">Rota &amp; Durak sekmesine geçin.</div>
+      <div id="hint" style="display:none"></div>
       <div id="originCard" style="display:none" class="stop-card">
         <div class="label" style="display:flex;align-items:center;justify-content:space-between">
           <span>Konum — En yakın durak</span>
@@ -504,7 +504,7 @@ function isCacheFresh(cached) {
 // ── Screen switching ──────────────────────────────────────────────────────────
 let plannerReady = false;
 // Planner is the default screen — init immediately
-window.addEventListener('DOMContentLoaded', () => { plannerReady = true; initPlanner(); });
+window.addEventListener('DOMContentLoaded', () => { showOnboarding(); plannerReady = true; initPlanner(); });
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('scr-' + name).classList.add('active');
@@ -899,7 +899,7 @@ function haversine(la1,lo1,la2,lo2) {
 function nearestStop(lat,lng){let b=null,bd=Infinity;for(const s of allStops.values()){const d=haversine(lat,lng,s.lat,s.lng);if(d<bd){bd=d;b=s;}}return{stop:b,meters:Math.round(bd)};}
 function fmtDist(m){return m<1000?m+'m':(m/1000).toFixed(1)+'km';}
 function textOnHex(h){const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return(r*299+g*587+b*114)/1000>145?'#000':'#fff';}
-function setHint(msg,warn){const el=document.getElementById('hint');el.textContent=msg;el.className=warn?'warn':'';}
+function setHint(msg,warn){const el=document.getElementById('hint');el.textContent=msg;el.className=warn?'warn':'';el.style.display=msg?'':'none';}
 
 function getNextDeparture(code) {
   if (!scheduleData) return undefined;
@@ -979,11 +979,10 @@ async function initPlanner() {
   _updateStopVis();
 
   document.getElementById('loadBar').style.width='100%';
-  document.getElementById('loadStatus').textContent = allStops.size+' durak'+(fromCache?' (önbellek)':'');
+  document.getElementById('loadStatus').textContent = allStops.size+' durak';
   ['btnOrigin','btnDest','btnStops','btnPlanTime'].forEach(id=>document.getElementById(id).disabled=false);
   setMode('origin');
   renderBookmarksBar();
-  showOnboarding();
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
       applyPoint(pos.coords.latitude, pos.coords.longitude, 'origin');
@@ -1099,12 +1098,12 @@ function togglePanelExpand() {
 
 // ── Onboarding ───────────────────────────────────────────────────────────────
 function showOnboarding() {
-  if (localStorage.getItem('onboarded')) return;
+  if (localStorage.getItem('onboarded_v2')) return;
   document.getElementById('onboarding').style.display = 'flex';
 }
 
 function dismissOnboarding(goTo) {
-  localStorage.setItem('onboarded', '1');
+  localStorage.setItem('onboarded_v2', '1');
   document.getElementById('onboarding').style.display = 'none';
   showScreen(goTo);
 }
@@ -1617,6 +1616,23 @@ async function stopBusNotify() {
   notifyMatch = null;
 }
 
+async function testBusNotify() {
+  if (!notifySubId) return;
+  try {
+    const res = await fetch(WORKER_URL + '/test-notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: notifySubId }),
+    });
+    const d = await res.json();
+    const r = d.results?.[0];
+    if (r?.ok) alert('Test bildirimi gönderildi! Birkaç saniye içinde telefonunda görünmeli.');
+    else alert('Worker hatası: ' + JSON.stringify(r));
+  } catch (e) {
+    alert('Test başarısız: ' + e.message);
+  }
+}
+
 function urlB64ToUint8Array(b64) {
   const pad = '='.repeat((4 - b64.length % 4) % 4);
   const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
@@ -1738,10 +1754,10 @@ function showTripDetail(m, fitMap = true) {
         +   '<span class="p-route-badge" style="background:#'+hex+';color:'+txt+'">'+m.path.displayRouteCode+'</span>'
         +   '<span style="font-size:.78rem;font-weight:600;flex:1">'+esc(m.path.headSign)+'</span>'
         +   '<button class="notify-btn'+(isNotifying?' active':'')+'" id="notify-btn" '
-        +     'title="Sekme açık kaldığı sürece bildirim gönderilir" '
         +     'onclick="toggleBusNotify()">'
         +     (isNotifying ? '🔔 Açık' : '🔕 Bildir')
         +   '</button>'
+        +   (isNotifying ? '<button class="notify-btn" style="background:#6b7280;margin-left:4px" onclick="testBusNotify()" title="Hemen test bildirimi gönder">🧪</button>' : '')
         + '</div>';
 
   // ── Journey summary ──────────────────────────────────────────────────────

@@ -42,6 +42,7 @@
       background: #1a1d2e; border: 1px solid #252d40; border-radius: 8px;
       box-shadow: 0 8px 24px rgba(0,0,0,.6); z-index: 400;
       min-width: 260px; max-width: 320px; max-height: 60dvh; overflow-y: auto;
+      z-index: 1000;
       padding: 6px 0;
     }
     #bm-dropdown.open { display: block; }
@@ -224,7 +225,7 @@
       animation: spin .7s linear infinite; vertical-align: middle; margin-right: 4px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #map { position: relative; flex: 1; min-height: 0; min-width: 0; }
+    #map { position: relative; z-index: 0; flex: 1; min-height: 0; min-width: 0; }
     #gps-fab {
       position: absolute; right: 12px; bottom: 16px; z-index: 500;
       width: 46px; height: 46px; border-radius: 50%;
@@ -332,6 +333,7 @@
     }
     .notify-btn:hover  { color: #f59e0b; border-color: #f59e0b; }
     .notify-btn.active { color: #f59e0b; border-color: #f59e0b; background: #2d1f05; }
+    .leaflet-tile { filter: invert(1) brightness(0.7) hue-rotate(180deg); }
     .leaflet-container { background: #0f1117; }
     .leaflet-control-attribution { background: rgba(15,17,23,.8) !important; color: #4a5568 !important; }
     .leaflet-control-attribution a { color: #4a5568 !important; }
@@ -578,10 +580,26 @@ async function parsePDF(buffer) {
 
     // Find ALL route-header rows on the page (pages can have multiple tables).
     // Sorted top-to-bottom (descending Y in PDF coords = visually top-first).
+    // De-duplicate by route code: in-chart comments often repeat the route code
+    // mid-table, which the parser would wrongly treat as a second route header.
     const routeHeaders = [];
+    const seenCodes = new Set();
     for (const { y, items } of rows) {
       const text = items.map(i => i.text).join(' ');
-      if (ROUTE_RE.test(text)) routeHeaders.push({ y, firstWord: text.split(/\s+/)[0] });
+      if (ROUTE_RE.test(text)) {
+        const code = text.split(/\s+/)[0];
+        if (seenCodes.has(code)) continue; // duplicate on same page (in-table comment)
+        // Validate: real schedule headers always have a KALKIŞ/HAREKET marker nearby.
+        // Notes like "Ç2 19:20 19:35" have none — skip them.
+        const hasDept = allItems.some(it => DEPART_RE.test(it.text) && Math.abs(it.y - y) <= 150);
+        if (!hasDept) continue;
+        // Validate: dosya labels ("Ç2 1. DOSYA") have a DOSYA text item just below them.
+        // Real route headers never have DOSYA within 20pt below.
+        const hasDosya = allItems.some(it => /DOSYA/i.test(it.text) && it.y < y && it.y > y - 20);
+        if (hasDosya) continue;
+        seenCodes.add(code);
+        routeHeaders.push({ y, firstWord: code });
+      }
     }
     if (!routeHeaders.length) continue;
 
@@ -653,10 +671,14 @@ async function parsePDF(buffer) {
         dir0Lbl = labelFor(deptItems[0]);
       }
 
-      // Assign each HH:MM time in this band to dir0 or dir1 by X position
+      // Assign each HH:MM time in this band to dir0 or dir1 by X position.
+      // When two departure columns are known, skip times that are far from both
+      // (those are intermediate-stop columns, not departure times — e.g. 960's
+      // "PARK 17 arrival" column sits between the two KALKIŞ columns).
       const dir0 = new Set(), dir1 = new Set();
       for (const it of band) {
         if (!TIME_RE.test(it.text)) continue;
+        if (deptItems.length >= 2 && !deptItems.some(d => Math.abs(d.x - it.x) <= 40)) continue;
         (splitX !== null && it.x >= splitX ? dir1 : dir0).add(it.text);
       }
 
@@ -1073,9 +1095,8 @@ function getNextDeparture(code) {
 async function initPlanner() {
   document.getElementById('loadBar').style.width = '5%';
   window._map = L.map('map',{zoomControl:true, preferCanvas:true, tap:false}).setView([40.152,26.41],13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
-    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
-    subdomains:'abcd', maxZoom:19
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap', maxZoom:19
   }).addTo(window._map);
   window._map.on('click',e=>{
     if(!allStops.size)return;
@@ -1142,14 +1163,25 @@ async function initPlanner() {
   // Canvas renderer: all stop dots drawn on one <canvas> instead of hundreds of divs
   const _cr = L.canvas({ padding: 0.5 });
   networkStopLayer = L.layerGroup();
-  for(const s of allStops.values())
-    L.circleMarker([s.lat,s.lng],{renderer:_cr,radius:4,color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1})
+  const _stopCircles = [];
+  const _stopRadius = z => Math.max(3, z - 10); // grows with zoom: z13=3, z14=4, z16=6...
+  for(const s of allStops.values()) {
+    const c = L.circleMarker([s.lat,s.lng],{renderer:_cr,radius:_stopRadius(13),color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1})
       .bindTooltip(s.stopName,{direction:'top',offset:[0,-4]})
-      .on('click',()=>openStopOnMap(s.stopId)).addTo(networkStopLayer);
-  // Show stop dots only when zoomed in enough — avoids rendering hundreds of dots at city scale
+      .on('click',()=>openStopOnMap(s.stopId));
+    c.addTo(networkStopLayer);
+    _stopCircles.push(c);
+  }
   const _updateStopVis = () => {
     if(!networkStopLayer._active) return;
-    window._map.getZoom() >= 13 ? networkStopLayer.addTo(window._map) : networkStopLayer.remove();
+    const z = window._map.getZoom();
+    if(z >= 13) {
+      networkStopLayer.addTo(window._map);
+      const r = _stopRadius(z);
+      _stopCircles.forEach(c => c.setRadius(r));
+    } else {
+      networkStopLayer.remove();
+    }
   };
   networkStopLayer._active = true;
   window._map.on('zoomend', _updateStopVis);
@@ -1673,16 +1705,26 @@ async function toggleBusNotify() {
     alert('Servis çalışanı hazır değil.'); return;
   }
 
-  let pushSub = await reg.pushManager.getSubscription();
-  if (!pushSub) {
-    try {
-      pushSub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
-    } catch (e) {
-      alert('Push aboneliği oluşturulamadı: ' + e.message); return;
-    }
+  // Always unsubscribe first — stale subscriptions from previous VAPID keys
+  // cause "push service error" from FCM. Fresh subscribe is more reliable.
+  try {
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+  } catch {}
+
+  let pushSub;
+  try {
+    pushSub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  } catch (e) {
+    const isBrave = (navigator.brave && await navigator.brave.isBrave().catch(()=>false)) || false;
+    const reason  = isBrave
+      ? 'Brave tarayıcısında masaüstünde Google push servisi varsayılan olarak devre dışıdır.'
+      : 'Tarayıcınız push bildirimlerine izin vermiyor.';
+    alert('Bildirim aboneliği oluşturulamadı.\n\n' + reason);
+    return;
   }
 
   // Register with Worker

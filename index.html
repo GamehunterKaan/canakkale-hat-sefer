@@ -1334,6 +1334,20 @@ function selectPlannerMatch(m, fitMap = true){
   const pts=(m.path.pointList||[]).map(p=>[parseFloat(p.lat),parseFloat(p.lng)]);
   if(pts.length){const l=L.polyline(pts,{color:'#'+ROUTE_COLOR,weight:5,opacity:.9}).addTo(window._map);drawnLayers.push(l);if(fitMap)window._map.fitBounds(l.getBounds(),{padding:[40,40]});}
 
+  // Walking lines: origin → boarding stop, alight stop → destination
+  if (originClick && m.board) {
+    drawnLayers.push(L.polyline(
+      [[originClick.lat, originClick.lng], [parseFloat(m.board.lat), parseFloat(m.board.lng)]],
+      { color: '#2563eb', weight: 4, opacity: .85, dashArray: '6,8' }
+    ).addTo(window._map));
+  }
+  if (destClick && m.alight) {
+    drawnLayers.push(L.polyline(
+      [[parseFloat(m.alight.lat), parseFloat(m.alight.lng)], [destClick.lat, destClick.lng]],
+      { color: '#16a34a', weight: 4, opacity: .85, dashArray: '6,8' }
+    ).addTo(window._map));
+  }
+
   // Only show stops between board and alight (inclusive); skip the rest
   const allStopsOnRoute = m.path.busStopList || [];
   const boardIdx  = allStopsOnRoute.findIndex(s => s.stopId === m.board.stopId);

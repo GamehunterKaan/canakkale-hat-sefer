@@ -1,5 +1,8 @@
 // Service worker — handles incoming Web Push messages and notification clicks
 
+self.addEventListener('install',  () => self.skipWaiting());
+self.addEventListener('activate', e  => e.waitUntil(clients.claim()));
+
 self.addEventListener('push', event => {
   if (!event.data) return;
   const d = event.data.json();

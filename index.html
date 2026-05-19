@@ -1003,15 +1003,45 @@ function findSchedEntry(dayData, routeCode) {
   return key ? dayData[key] : null;
 }
 
+// Pick which PDF direction (dir0/dir1) belongs to the user's kentkart path by
+// matching the PDF's KALKIŞ label against the first stops of the kentkart route.
+// The mapping is not always dir0=kk0/dir1=kk1 — for many routes it's inverted.
+function pickSchedDir(schedEntry, path) {
+  if (!schedEntry || !path) return null;
+  const normStr = s => (s || '').toUpperCase().replace(/[^A-ZÇĞIİÖŞÜ0-9]/g, '');
+  const firstStops = (path.busStopList || []).slice(0, 5).map(s => normStr(s.stopName));
+  for (const dir of ['dir0', 'dir1']) {
+    const label = normStr(schedEntry[dir]?.label);
+    if (label.length < 4) continue;
+    for (const stop of firstStops) {
+      if (stop.length < 4) continue;
+      if (stop.includes(label) || label.includes(stop)) return dir;
+      // Share 5+ char substring
+      for (let i = 0; i + 5 <= label.length; i++) {
+        if (stop.includes(label.slice(i, i + 5))) return dir;
+      }
+    }
+  }
+  return null;
+}
+
+function schedTimesForPath(schedEntry, path) {
+  if (!schedEntry) return [];
+  const dir = pickSchedDir(schedEntry, path);
+  if (dir) return schedEntry[dir]?.times || [];
+  // Fallback: merge both directions if we can't determine the mapping
+  return [...(schedEntry.dir0?.times || []), ...(schedEntry.dir1?.times || [])];
+}
+
 // accounting for planOffset. Used for ETA-based sorting in findRoutes.
-function estimateWaitMins(routeCode, boardSeq) {
+function estimateWaitMins(routeCode, boardSeq, path) {
   const effectiveNow = new Date().getHours() * 60 + new Date().getMinutes() + planOffset;
   const isWE   = [0,6].includes(new Date().getDay());
   const dayData = scheduleData?.[isWE ? 'weekend' : 'weekday'] || {};
   const entry  = findSchedEntry(dayData, routeCode);
   if (!entry) return 999; // no schedule → sort to bottom
   const tm     = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
-  const times  = [...(entry.dir0?.times || []), ...(entry.dir1?.times || [])].sort((a, b) => tm(a) - tm(b));
+  const times  = schedTimesForPath(entry, path).sort((a, b) => tm(a) - tm(b));
   if (!times.length) return 20;
   const toMins = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
   const travel = Math.max(0, boardSeq - 1) * MINS_PER_STOP;
@@ -1264,7 +1294,7 @@ function findRoutes(){
     return (m.buses || []).some(b => b.lat && b.lng);
   }).map(m=>{
     const bSeq = parseInt(m.board.seq) || 0;
-    const wait = estimateWaitMins(m.path.displayRouteCode, bSeq);
+    const wait = estimateWaitMins(m.path.displayRouteCode, bSeq, m.path);
     const eta  = Math.round(m.walkB/72) + wait + Math.round(m.sc*MINS_PER_STOP) + Math.round(m.walkA/72);
     return {...m, _wait: wait, _eta: eta};
   }).sort((a,b)=>a._eta-b._eta);
@@ -1669,10 +1699,7 @@ function showTripDetail(m, fitMap = true) {
   // Sort by actual chronological minute value — NOT alphabetically.
   // Alphabetical puts "00:10" before "07:40", making it look like the next bus
   // is 741 minutes away instead of finding the real next same-day departure.
-  const allSchedTimes = schedEntry
-    ? [...(schedEntry.dir0?.times || []), ...(schedEntry.dir1?.times || [])]
-        .sort((a, b) => toMins(a) - toMins(b))
-    : [];
+  const allSchedTimes = schedTimesForPath(schedEntry, m.path).sort((a, b) => toMins(a) - toMins(b));
 
   // For each terminal departure, calculate when the bus reaches the boarding stop.
   const stopsFromTerminal = Math.max(0, boardSeq - 1);

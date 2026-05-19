@@ -491,7 +491,7 @@
 'use strict';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CACHE_KEY = 'canakkale_bus_v4'; // v4: direction-split format
+const CACHE_KEY = 'canakkale_bus_v6';
 
 function isCacheFresh(cached) {
   const d = new Date(cached.fetchedAt);
@@ -560,7 +560,19 @@ async function loadScheduleData(forceRefresh) {
   if (!forceRefresh) {
     try {
       const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-      if (c && isCacheFresh(c)) { scheduleData = c; return; }
+      if (c && isCacheFresh(c)) {
+        scheduleData = c;
+        if (c.routes?.length) {
+          kentkartRouteMap = new Map();
+          for (const route of c.routes) {
+            const code = route.displayRouteCode.toUpperCase();
+            const stripped = code.replace(/^Ç(?=d)/, '');
+            kentkartRouteMap.set(code, route);
+            if (stripped !== code) kentkartRouteMap.set(stripped, route);
+          }
+        }
+        return;
+      }
     } catch {}
   }
 
@@ -568,6 +580,15 @@ async function loadScheduleData(forceRefresh) {
   const r = await fetch('./data/schedule.json');
   if (!r.ok) throw new Error('schedule.json alınamadı');
   scheduleData = await r.json();
+  if (scheduleData.routes?.length) {
+    kentkartRouteMap = new Map();
+    for (const route of scheduleData.routes) {
+      const code     = route.displayRouteCode.toUpperCase();
+      const stripped = code.replace(/^Ç(?=d)/, '');
+      kentkartRouteMap.set(code, route);
+      if (stripped !== code) kentkartRouteMap.set(stripped, route);
+    }
+  }
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(scheduleData)); } catch {}
   setSchedProgress(100, 'Tamamlandı.');
 }
@@ -1349,10 +1370,11 @@ async function trackRoute(displayRouteCode) {
     }
   }
 
-  const code = displayRouteCode.toUpperCase();
+  // Normalise both sides: kentkart stores '11K' while PDF uses 'Ç11K'
+  const code = schedCodeNorm(displayRouteCode);
   trackedPaths = pathCache.filter(pe =>
-    pe.path.displayRouteCode.toUpperCase() === code ||
-    pe.route.displayRouteCode.toUpperCase() === code
+    schedCodeNorm(pe.path.displayRouteCode)  === code ||
+    schedCodeNorm(pe.route.displayRouteCode) === code
   );
   if (!trackedPaths.length) {
     document.getElementById('results').innerHTML =
@@ -1366,6 +1388,7 @@ async function trackRoute(displayRouteCode) {
   selectedMatch = null; tripMatch = null;
 
   showTrackPanel();
+  if (window._map) window._map.invalidateSize();
   await selectTrackPath(0);
   trackTimer = setInterval(() => selectTrackPath(trackedPathIdx, true), 15000);
 }

@@ -95,7 +95,7 @@ async function parsePDF(buffer) {
       if (seenCodes.has(code)) continue;
       const hasDept  = allItems.some(it => DEPART_RE.test(it.text) && Math.abs(it.y - y) <= 150);
       if (!hasDept) continue;
-      const hasDosya = allItems.some(it => /DOSYA/i.test(it.text) && it.y < y && it.y > y - 20);
+      const hasDosya = allItems.some(it => /DOSYA/i.test(it.text) && it.y < y && it.y > y - 30);
       if (hasDosya) continue;
       seenCodes.add(code);
       routeHeaders.push({ y, firstWord: code });
@@ -161,11 +161,15 @@ async function parsePDF(buffer) {
         dir0Lbl = labelFor(deptItems[0]);
       }
 
-      // Assign times — skip intermediate-stop columns (> 40pt from nearest dept column)
+      // Assign times by column: each deptItem defines a departure column.
+      // Only include times whose X falls within 20pt of a departure-column X.
+      // This is column-based matching, not fuzzy radius — VARIŞ/intermediate
+      // columns are naturally excluded because they have no KALKIŞ marker.
+      const deptColXs = deptItems.map(d => d.x);
       const dir0 = new Set(), dir1 = new Set();
       for (const it of band) {
         if (!TIME_RE.test(it.text)) continue;
-        if (deptItems.length >= 2 && !deptItems.some(d => Math.abs(d.x - it.x) <= 40)) continue;
+        if (deptItems.length >= 2 && !deptColXs.some(cx => Math.abs(cx - it.x) <= 20)) continue;
         (splitX !== null && it.x >= splitX ? dir1 : dir0).add(it.text);
       }
 
@@ -185,7 +189,7 @@ async function parsePDF(buffer) {
   const toM = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
   const result = {};
   for (const [, { name, dir0, dir1 }] of Object.entries(routeMap)) {
-    if (/ÖĞRENCİ|öğrenci|\bOGR\b/i.test(name)) continue;
+    if (/ÖĞRENCİ|öğrenci|\bOGR\b|\bDOSYA\b/i.test(name)) continue; // also drop dosya-label false positives
     result[name.split(/\s+/).slice(0, 3).join(' ')] = {
       name,
       dir0: { label: dir0.label, times: [...dir0.times].sort((a, b) => toM(a) - toM(b)) },
@@ -215,7 +219,17 @@ async function main() {
   const weekend = weBuf ? await parsePDF(weBuf) : {};
   console.log(`  → ${Object.keys(weekend).length} routes`);
 
-  const out = { weekday, weekend, fetchedAt: Date.now(), wdUrl, weUrl };
+  // Fetch kentkart route list for colors (used by Seferler tab badges)
+  console.log('Fetching kentkart route colors…');
+  let routes = [];
+  try {
+    const kr = await fetch('https://service.kentkart.com/rl1/web/nearest/find?region=007&lang=tr&authType=4&resultType=111');
+    const kd = await kr.json();
+    routes = kd.routeList || [];
+    console.log(`  → ${routes.length} routes`);
+  } catch (e) { console.warn('  kentkart fetch failed:', e.message); }
+
+  const out = { weekday, weekend, routes, fetchedAt: Date.now(), wdUrl, weUrl };
   writeFileSync('data/schedule.json', JSON.stringify(out));
   console.log('✅ schedule.json written');
 }

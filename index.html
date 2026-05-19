@@ -8,10 +8,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Çanakkale Hat & Sefer</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="shortcut icon" href="/favicon.ico" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-title" content="Çanakkale Hat & Sefer" />
   <link rel="manifest" href="/site.webmanifest" />
   <style>
@@ -486,17 +486,12 @@
   <button class="nb active" data-s="planner"  onclick="showScreen('planner')"><span>🗺</span>Rota &amp; Durak</button>
 </nav>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 'use strict';
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const MUN_URL   = 'https://ulasim.canakkale.bel.tr/rehber/hatlar-otobus-saatleri/';
-const CACHE_KEY       = 'canakkale_bus_v4'; // v4: direction-split format
-const STOPS_CACHE_KEY = 'canakkale_stops_v1';
+const CACHE_KEY = 'canakkale_bus_v4'; // v4: direction-split format
 
 function isCacheFresh(cached) {
   const d = new Date(cached.fetchedAt);
@@ -557,273 +552,22 @@ function switchSchedTab(name, btn) {
 // PDF FETCHING & PARSING
 // ══════════════════════════════════════════════════════════════
 
-async function proxiedFetch(url, wantBinary) {
-  // codetabs is the most reliable: handles binary PDFs, no auth needed, fast
-  const proxies = [
-    'https://api.codetabs.com/v1/proxy?quest=' + url,
-    'https://corsproxy.io/?url='              + encodeURIComponent(url),
-    'https://api.allorigins.win/raw?url='     + encodeURIComponent(url),
-    url,  // direct last (only works if server has CORS or same origin)
-  ];
-  const TIMEOUT = wantBinary ? 60000 : 15000; // PDFs can be large
-  let lastErr;
-  for (const u of proxies) {
-    try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
-      const r     = await fetch(u, { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!r.ok) continue;
-      if (wantBinary) {
-        const buf = await r.arrayBuffer();
-        // Reject if too small to be a real PDF (error pages are tiny)
-        if (buf.byteLength < 10000) continue;
-        return buf;
-      }
-      return r.text();
-    } catch(e) { lastErr = e; }
-  }
-  throw lastErr || new Error('Proxy bağlantısı başarısız: ' + url);
-}
-
-async function getMunicipalityPDFUrls() {
-  const html = await proxiedFetch(MUN_URL, false);
-  const found = [];
-  for (const m of html.matchAll(/href="([^"]+\.pdf)"/gi)) {
-    const href = m[1];
-    const abs  = href.startsWith('http') ? href : 'https://ulasim.canakkale.bel.tr' + (href.startsWith('/') ? '' : '/') + href;
-    const ctx  = html.slice(Math.max(0, html.indexOf(m[0]) - 300), html.indexOf(m[0])).toUpperCase();
-    found.push({ url: abs, ctx });
-  }
-  if (!found.length) throw new Error('PDF bağlantıları bulunamadı.');
-
-  let wdUrl = null, weUrl = null;
-  for (const { url, ctx } of found) {
-    if (ctx.includes('HAFTA SONU')) weUrl = url;
-    else wdUrl = wdUrl || url;
-  }
-  if (!weUrl && found.length >= 2) weUrl = found[found.length - 1].url;
-  if (!wdUrl) wdUrl = found[0].url;
-  return { wdUrl, weUrl };
-}
-
-async function parsePDF(buffer) {
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-  const routeMap = {};
-  const ROUTE_RE  = /^(Ç\d+[A-ZÇŞĞÜÖİ]*|ÇT\d+|\d+[ÇGK]|960)/; // OGR/ÖĞ removed: student bus hours vary daily
-  const TIME_RE   = /^\d{2}:\d{2}$/;
-  const DEPART_RE = /^(KALKIŞ|.*\sKALKIŞ|HAREKET|.*\sHAREKET)$/i;
-  const KEYWORD_RE= /KALKIŞ|HAREKET|VARIŞ/i;
-
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const tc   = await page.getTextContent();
-
-    const allItems = [];
-    for (const item of tc.items) {
-      const s = item.str.trim();
-      if (s) allItems.push({ x: item.transform[4], y: item.transform[5], text: s });
-    }
-
-    // Group by Y-bucket (5pt) for row detection
-    const yBuckets = new Map();
-    for (const it of allItems) {
-      const y = Math.round(it.y / 5) * 5;
-      if (!yBuckets.has(y)) yBuckets.set(y, []);
-      yBuckets.get(y).push(it);
-    }
-    const rows = [...yBuckets.entries()]
-      .sort((a, b) => b[0] - a[0])
-      .map(([y, items]) => ({ y, items: items.sort((a, b) => a.x - b.x) }));
-
-    // Find ALL route-header rows on the page (pages can have multiple tables).
-    // Sorted top-to-bottom (descending Y in PDF coords = visually top-first).
-    // De-duplicate by route code: in-chart comments often repeat the route code
-    // mid-table, which the parser would wrongly treat as a second route header.
-    const routeHeaders = [];
-    const seenCodes = new Set();
-    for (const { y, items } of rows) {
-      const text = items.map(i => i.text).join(' ');
-      if (ROUTE_RE.test(text)) {
-        const code = text.split(/\s+/)[0];
-        if (seenCodes.has(code)) continue; // duplicate on same page (in-table comment)
-        // Validate: real schedule headers always have a KALKIŞ/HAREKET marker nearby.
-        // Notes like "Ç2 19:20 19:35" have none — skip them.
-        const hasDept = allItems.some(it => DEPART_RE.test(it.text) && Math.abs(it.y - y) <= 150);
-        if (!hasDept) continue;
-        // Validate: dosya labels ("Ç2 1. DOSYA") have a DOSYA text item just below them.
-        // Real route headers never have DOSYA within 20pt below.
-        const hasDosya = allItems.some(it => /DOSYA/i.test(it.text) && it.y < y && it.y > y - 20);
-        if (hasDosya) continue;
-        seenCodes.add(code);
-        routeHeaders.push({ y, firstWord: code });
-      }
-    }
-    if (!routeHeaders.length) continue;
-
-    // Process each route table independently within its Y-band.
-    // Band: from headerY (inclusive) down to the next header's Y (exclusive), or page bottom.
-    for (let ri = 0; ri < routeHeaders.length; ri++) {
-      const headerY    = routeHeaders[ri].y;
-      const routeCode  = routeHeaders[ri].firstWord;
-      const bandBottom = ri + 1 < routeHeaders.length ? routeHeaders[ri + 1].y : 0;
-
-      // Items within this table's vertical band (generous top margin for tall header cells)
-      const band = allItems.filter(it => it.y <= headerY + 15 && it.y > bandBottom);
-
-      // Route name
-      const routeItem = band
-        .filter(i => Math.abs(i.y - headerY) <= 8 && ROUTE_RE.test(i.text))
-        .sort((a, b) => a.x - b.x)[0];
-      const riX = routeItem?.x ?? 80;
-      const line2 = band
-        .filter(i => Math.abs(i.x - riX) < 30 &&
-                     i.y < headerY - 2 && i.y > headerY - 22 &&
-                     !TIME_RE.test(i.text) && !ROUTE_RE.test(i.text) &&
-                     !/KALKIŞ|VARIŞ|HAREKET|DÖNÜŞ|GİDİŞ|DURAK|DURAĞ/i.test(i.text))
-        .sort((a, b) => b.y - a.y).map(i => i.text.trim()).filter(Boolean);
-      const routeName = [(routeItem?.text || routeCode), ...line2].join(' ').trim();
-      const mapKey    = routeName.split(/\s+/).slice(0, 3).join(' ');
-
-      // Find departure-marker items within this band's header zone (±150pt of headerY)
-      let deptItems = band
-        .filter(it => DEPART_RE.test(it.text) && Math.abs(it.y - headerY) <= 150)
-        .sort((a, b) => a.x - b.x);
-      // Deduplicate by X cluster (same column appearing twice from two sub-tables)
-      const deduped = [];
-      for (const d of deptItems) {
-        if (!deduped.some(e => Math.abs(e.x - d.x) < 20)) deduped.push(d);
-      }
-      deptItems = deduped;
-      // Fallback: search the full band if nothing found yet
-      if (deptItems.length < 2) {
-        const fallback = band.filter(it => DEPART_RE.test(it.text)).sort((a, b) => a.x - b.x);
-        const fb2 = [];
-        for (const d of fallback) {
-          if (!fb2.some(e => Math.abs(e.x - d.x) < 20)) fb2.push(d);
-        }
-        if (fb2.length >= 2) deptItems = fb2;
-        else if (fb2.length === 1 && deptItems.length === 0) deptItems = fb2;
-      }
-
-      // Direction label: text in the same X column above the KALKIŞ/HAREKET marker
-      function labelFor(kItem) {
-        const selfPart = kItem.text.replace(/\s*(KALKIŞ|HAREKET)\s*$/i, '').trim();
-        const above = band
-          .filter(i => Math.abs(i.x - kItem.x) < 30 &&
-                       i.y > kItem.y &&
-                       Math.abs(i.y - headerY) <= 120 &&
-                       !KEYWORD_RE.test(i.text) &&
-                       !TIME_RE.test(i.text))
-          .sort((a, b) => b.y - a.y);
-        const sp = TIME_RE.test(selfPart) ? '' : selfPart;
-        return [...above.map(i => i.text.trim()), sp].filter(Boolean).join(' ');
-      }
-
-      let splitX = null, dir0Lbl = '', dir1Lbl = '';
-      if (deptItems.length >= 2) {
-        splitX  = (deptItems[0].x + deptItems[1].x) / 2;
-        dir0Lbl = labelFor(deptItems[0]);
-        dir1Lbl = labelFor(deptItems[1]);
-      } else if (deptItems.length === 1) {
-        dir0Lbl = labelFor(deptItems[0]);
-      }
-
-      // Assign each HH:MM time in this band to dir0 or dir1 by X position.
-      // When two departure columns are known, skip times that are far from both
-      // (those are intermediate-stop columns, not departure times — e.g. 960's
-      // "PARK 17 arrival" column sits between the two KALKIŞ columns).
-      const dir0 = new Set(), dir1 = new Set();
-      for (const it of band) {
-        if (!TIME_RE.test(it.text)) continue;
-        if (deptItems.length >= 2 && !deptItems.some(d => Math.abs(d.x - it.x) <= 40)) continue;
-        (splitX !== null && it.x >= splitX ? dir1 : dir0).add(it.text);
-      }
-
-      if (!routeMap[mapKey])
-        routeMap[mapKey] = { name: routeName,
-          dir0: { label: '', times: new Set() },
-          dir1: { label: '', times: new Set() } };
-      const entry = routeMap[mapKey];
-      if (!entry.dir0.label) entry.dir0.label = dir0Lbl;
-      if (!entry.dir1.label) entry.dir1.label = dir1Lbl;
-      for (const t of dir0) entry.dir0.times.add(t);
-      for (const t of dir1) entry.dir1.times.add(t);
-    }
-  }
-
-  const result = {};
-  for (const [, { name, dir0, dir1 }] of Object.entries(routeMap)) {
-    if (/ÖĞRENCİ|öğrenci|\bOGR\b/i.test(name)) continue; // skip student buses
-    result[name.split(/\s+/).slice(0,3).join(' ')] = {
-      name,
-      dir0: { label: dir0.label, times: [...dir0.times].sort() },
-      dir1: { label: dir1.label, times: [...dir1.times].sort() },
-    };
-  }
-  return result;
-}
-
 // ── Cache & load ──────────────────────────────────────────────────────────────
 let scheduleData    = null;
 let kentkartRouteMap = null; // displayRouteCode → {name, routeColor}
-
-async function fetchKentkartRoutes() {
-  // Restore cached map immediately so callers never wait on a slow/failed API call
-  if (!kentkartRouteMap) {
-    try {
-      const saved = JSON.parse(localStorage.getItem('kentkart_routes') || 'null');
-      if (saved) kentkartRouteMap = new Map(saved);
-    } catch {}
-  }
-  try {
-    const r = await fetch(API + 'web/nearest/find?' + QS);
-    const d = await r.json();
-    kentkartRouteMap = new Map();
-    for (const route of (d.routeList || [])) {
-      const code = route.displayRouteCode.toUpperCase();
-      kentkartRouteMap.set(code, route);
-      const stripped = code.replace(/^Ç(?=\d)/, '');
-      if (stripped !== code) kentkartRouteMap.set(stripped, route);
-    }
-    // Persist so future page loads have instant color data
-    try { localStorage.setItem('kentkart_routes', JSON.stringify([...kentkartRouteMap])); } catch {}
-  } catch { /* non-fatal — cached map above is used if this fails */ }
-}
 
 async function loadScheduleData(forceRefresh) {
   if (!forceRefresh) {
     try {
       const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-      if (c && isCacheFresh(c)) {
-        scheduleData = c;
-        // Restore cached kentkart colors synchronously; refresh in background
-        try {
-          const saved = JSON.parse(localStorage.getItem('kentkart_routes') || 'null');
-          if (saved) kentkartRouteMap = new Map(saved);
-        } catch {}
-        fetchKentkartRoutes(); // background refresh, don't await
-        return;
-      }
+      if (c && isCacheFresh(c)) { scheduleData = c; return; }
     } catch {}
   }
 
-  setSchedProgress(5,  'Sefer bağlantıları alınıyor…');
-  const { wdUrl, weUrl } = await getMunicipalityPDFUrls();
-
-  setSchedProgress(10, 'PDF\'ler indiriliyor…');
-  const [wdBuf, weBuf] = await Promise.all([
-    proxiedFetch(wdUrl, true),
-    weUrl ? proxiedFetch(weUrl, true) : Promise.resolve(null),
-    fetchKentkartRoutes(), // in parallel — non-blocking for schedule
-  ]);
-
-  setSchedProgress(40, 'Hafta içi işleniyor…');
-  const weekday = await parsePDF(wdBuf);
-  setSchedProgress(70, 'Hafta sonu işleniyor…');
-  const weekend = weBuf ? await parsePDF(weBuf) : {};
-
-  scheduleData = { weekday, weekend, fetchedAt: Date.now() };
+  setSchedProgress(10, 'Seferler yükleniyor…');
+  const r = await fetch('./data/schedule.json');
+  if (!r.ok) throw new Error('schedule.json alınamadı');
+  scheduleData = await r.json();
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(scheduleData)); } catch {}
   setSchedProgress(100, 'Tamamlandı.');
 }
@@ -1162,59 +906,27 @@ async function initPlanner() {
     else applyPoint(e.latlng.lat,e.latlng.lng,mode);
   });
 
-  // ── Try cache first ──────────────────────────────────────────────────────────
-  let fromCache = false;
+  // ── Load stops.json (pre-built by GitHub Actions) ────────────────────────────
   try {
-    const c = JSON.parse(localStorage.getItem(STOPS_CACHE_KEY) || 'null');
-    if (c && isCacheFresh(c)) {
-      allRoutes    = c.routes;
-      pathCache    = c.paths;
-      allStops     = new Map(c.stops);
-      stopToRoutes = new Map(c.stopToRoutes);
-      fromCache    = true;
+    const r = await fetch('./data/stops.json');
+    if (!r.ok) throw new Error('stops.json not found');
+    const d  = await r.json();
+    allRoutes    = d.routes;
+    pathCache    = d.paths;
+    allStops     = new Map(d.stops);
+    stopToRoutes = new Map(d.stopToRoutes);
+    // Rebuild kentkartRouteMap from the routes list (for schedule tab colors)
+    kentkartRouteMap = new Map();
+    for (const route of allRoutes) {
+      const code    = route.displayRouteCode.toUpperCase();
+      const stripped = code.replace(/^Ç(?=\d)/, '');
+      kentkartRouteMap.set(code, route);
+      if (stripped !== code) kentkartRouteMap.set(stripped, route);
     }
-  } catch {}
-
-  if (!fromCache) {
-    // ── Full fetch ─────────────────────────────────────────────────────────────
-    setHint('Duraklar yükleniyor…');
-    try{const nr=await fetch(API+'web/nearest/find?'+QS);const nd=await nr.json();allRoutes=nd.routeList||[];}
-    catch{setHint('API bağlantısı kurulamadı.',true);return;}
-
-    const total=allRoutes.length*2; let done=0;
-    const bar=document.getElementById('loadBar'),status=document.getElementById('loadStatus');
-    const fetches=allRoutes.flatMap(route=>
-      ['0','1'].map(dir=>
-        fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(route.displayRouteCode)+'&direction='+dir)
-          .then(r=>r.json()).catch(()=>null)
-          .finally(()=>{done++;bar.style.width=Math.round(done/total*100)+'%';status.textContent=done+'/'+total+' hat';})
-      )
-    );
-    const results=await Promise.all(fetches);
-    for(let i=0;i<results.length;i++){
-      const data=results[i];if(!data?.pathList)continue;
-      const route=allRoutes[Math.floor(i/2)];
-      for(const path of data.pathList){
-        pathCache.push({path,route});
-        for(const s of(path.busStopList||[])){
-          if(!allStops.has(s.stopId)){allStops.set(s.stopId,{stopId:s.stopId,stopName:s.stopName,lat:parseFloat(s.lat),lng:parseFloat(s.lng)});}
-          if(!stopToRoutes.has(s.stopId))stopToRoutes.set(s.stopId,[]);
-          const list=stopToRoutes.get(s.stopId);
-          if(!list.find(e=>e.routeCode===route.displayRouteCode&&e.direction===path.direction))
-            list.push({routeCode:route.displayRouteCode,direction:path.direction,seq:parseInt(s.seq)||0,routeColor:route.routeColor||'aaaaaa',routeName:route.name||path.headSign,headSign:path.headSign});
-        }
-      }
-    }
-    // Strip live bus positions before caching (they change every minute)
-    try {
-      localStorage.setItem(STOPS_CACHE_KEY, JSON.stringify({
-        fetchedAt:   Date.now(),
-        routes:      allRoutes,
-        paths:       pathCache.map(pe => ({ path: {...pe.path, busList:[]}, route: pe.route })),
-        stops:       [...allStops.entries()],
-        stopToRoutes:[...stopToRoutes.entries()],
-      }));
-    } catch {}
+    try { localStorage.setItem('kentkart_routes', JSON.stringify([...kentkartRouteMap])); } catch {}
+  } catch (e) {
+    setHint('Durak verisi yüklenemedi: ' + e.message, true);
+    return;
   }
 
   // ── Add markers and enable UI ────────────────────────────────────────────────
@@ -1777,7 +1489,6 @@ function closeTrackPanel() {
   document.getElementById('results').innerHTML = '';
   setHint('Haritaya tıklayın → başlangıç seçin.');
 }
-
 
 // ── Bus arrival notifications (Cloudflare Worker + Web Push) ─────────────────
 let notifyMatch  = null;

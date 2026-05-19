@@ -332,7 +332,6 @@
     }
     .notify-btn:hover  { color: #f59e0b; border-color: #f59e0b; }
     .notify-btn.active { color: #f59e0b; border-color: #f59e0b; background: #2d1f05; }
-    .leaflet-tile { filter: brightness(.75) saturate(.8) hue-rotate(180deg) invert(1); }
     .leaflet-container { background: #0f1117; }
     .leaflet-control-attribution { background: rgba(15,17,23,.8) !important; color: #4a5568 !important; }
     .leaflet-control-attribution a { color: #4a5568 !important; }
@@ -1073,8 +1072,11 @@ function getNextDeparture(code) {
 
 async function initPlanner() {
   document.getElementById('loadBar').style.width = '5%';
-  window._map = L.map('map',{zoomControl:true}).setView([40.152,26.41],13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(window._map);
+  window._map = L.map('map',{zoomControl:true, preferCanvas:true, tap:false}).setView([40.152,26.41],13);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+    subdomains:'abcd', maxZoom:19
+  }).addTo(window._map);
   window._map.on('click',e=>{
     if(!allStops.size)return;
     if(mode==='stops')showNearbyStops(e.latlng.lat,e.latlng.lng);
@@ -1137,11 +1139,21 @@ async function initPlanner() {
   }
 
   // ── Add markers and enable UI ────────────────────────────────────────────────
-  networkStopLayer = L.layerGroup().addTo(window._map);
+  // Canvas renderer: all stop dots drawn on one <canvas> instead of hundreds of divs
+  const _cr = L.canvas({ padding: 0.5 });
+  networkStopLayer = L.layerGroup();
   for(const s of allStops.values())
-    L.marker([s.lat,s.lng],{icon:mkStopIcon('#4a7dc0',8),zIndexOffset:0})
-      .bindTooltip(s.stopName+' <span style="color:#555">#'+s.stopId+'</span>',{direction:'top',offset:[0,-4]})
+    L.circleMarker([s.lat,s.lng],{renderer:_cr,radius:4,color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1})
+      .bindTooltip(s.stopName,{direction:'top',offset:[0,-4]})
       .on('click',()=>openStopOnMap(s.stopId)).addTo(networkStopLayer);
+  // Show stop dots only when zoomed in enough — avoids rendering hundreds of dots at city scale
+  const _updateStopVis = () => {
+    if(!networkStopLayer._active) return;
+    window._map.getZoom() >= 13 ? networkStopLayer.addTo(window._map) : networkStopLayer.remove();
+  };
+  networkStopLayer._active = true;
+  window._map.on('zoomend', _updateStopVis);
+  _updateStopVis();
 
   document.getElementById('loadBar').style.width='100%';
   document.getElementById('loadStatus').textContent = allStops.size+' durak'+(fromCache?' (önbellek)':'');
@@ -1452,8 +1464,8 @@ async function refreshBuses(){
 }
 function clearDrawn(){drawnLayers.forEach(l=>window._map.removeLayer(l));drawnLayers=[];}
 function clearBuses(){busMarkers.forEach(l=>window._map.removeLayer(l));busMarkers=[];}
-function hideNetworkStops(){if(networkStopLayer)networkStopLayer.remove();}
-function showNetworkStops(){if(networkStopLayer&&window._map)networkStopLayer.addTo(window._map);}
+function hideNetworkStops(){if(networkStopLayer){networkStopLayer._active=false;networkStopLayer.remove();}}
+function showNetworkStops(){if(networkStopLayer&&window._map){networkStopLayer._active=true;if(window._map.getZoom()>=8)networkStopLayer.addTo(window._map);}}
 
 // ── Route tracker (launched from Seferler tab) ────────────────────────────────
 let trackedPaths   = [];   // all pathCache entries for the tracked route code

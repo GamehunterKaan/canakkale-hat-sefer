@@ -4,15 +4,26 @@ self.addEventListener('install',  () => self.skipWaiting());
 self.addEventListener('activate', e  => e.waitUntil(clients.claim()));
 
 self.addEventListener('push', event => {
-  if (!event.data) return;
-  const d = event.data.json();
+  let title = 'Çanakkale Hat & Sefer';
+  let body  = 'Otobüs yaklaşıyor.';
+  let tag   = 'bus-notify';
+
+  if (event.data) {
+    try {
+      const d = event.data.json();
+      title = d.title || title;
+      body  = d.body  || body;
+      tag   = d.tag   || tag;
+    } catch {}
+  }
+
   event.waitUntil(
-    self.registration.showNotification(d.title, {
-      body:  d.body,
-      tag:   d.tag  || 'bus-notify',
-      icon:  d.icon || null,
-      badge: d.icon || null,
-      data:  { url: self.location.origin + self.location.pathname.replace('sw.js','') }
+    self.registration.showNotification(title, {
+      body,
+      tag,
+      icon:  '/icons/web-app-manifest-192x192.png',
+      badge: '/icons/favicon-96x96.png',
+      data:  { url: self.location.origin + self.location.pathname.replace('sw.js', '') },
     })
   );
 });

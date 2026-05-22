@@ -2,7 +2,7 @@ name: Update Transit Data
 
 on:
   schedule:
-    - cron: '0 21 * * *'   # 00:00 Turkey time (UTC+3)
+    - cron: '0 * * * *'    # every hour; scripts fast-skip when nothing changed
   workflow_dispatch:         # manual trigger from GitHub UI
 
 permissions:

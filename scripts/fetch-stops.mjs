@@ -3,7 +3,7 @@
  * Runs in GitHub Actions daily at midnight Turkey time.
  */
 
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync } from 'fs';
 
 const API    = 'https://service.kentkart.com/rl1/';
 const REGION = '007';
@@ -16,6 +16,16 @@ async function main() {
   const nd = await nr.json();
   const routes = nd.routeList || [];
   console.log(`  → ${routes.length} routes`);
+
+  // Fast-skip: if the route list (codes, colors, names) matches the previous
+  // run, the heavy pathInfo calls would just produce identical data.
+  try {
+    const prev = JSON.parse(readFileSync('data/stops.json', 'utf8'));
+    if (JSON.stringify(prev.routes) === JSON.stringify(routes)) {
+      console.log('Route list unchanged since last run — skipping path fetch.');
+      return;
+    }
+  } catch {}
 
   // 2. Fetch all path info (stops + polyline) for every route × direction
   const total   = routes.length * 2;

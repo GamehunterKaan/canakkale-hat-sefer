@@ -6,7 +6,7 @@
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { writeFileSync, existsSync } from 'fs';
+import { writeFileSync, existsSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 
 const __dir  = dirname(fileURLToPath(import.meta.url));
@@ -33,23 +33,32 @@ async function fetchBinary(url) {
 
 async function getPDFUrls() {
   const html = await fetchText(MUN_URL);
+  // Parse each <a ... href="*.pdf" ...>TEXT</a> with its anchor text.
+  // The page also lists holiday/special schedule PDFs (BAYRAM, AREFE, MEZARLIK
+  // etc.) that we must NOT pick as the regular weekly schedule.
   const found = [];
-  for (const m of html.matchAll(/href="([^"]+\.pdf)"/gi)) {
+  for (const m of html.matchAll(/<a[^>]*href="([^"]+\.pdf)"[^>]*>([\s\S]*?)<\/a>/gi)) {
     const href = m[1];
+    const text = m[2].replace(/<[^>]+>/g, '').replace(/&#8217;/g, "'").trim().toUpperCase();
     const abs  = href.startsWith('http') ? href
       : 'https://ulasim.canakkale.bel.tr' + (href.startsWith('/') ? '' : '/') + href;
-    const ctx  = html.slice(Math.max(0, html.indexOf(m[0]) - 300), html.indexOf(m[0])).toUpperCase();
-    found.push({ url: abs, ctx });
+    found.push({ url: abs, text });
   }
   if (!found.length) throw new Error('No PDF links found on municipality page');
 
+  // Match by link text. The regular schedules start with "HAFTA İÇİ" / "HAFTA SONU".
+  // Holiday PDFs have date prefixes or BAYRAM/AREFE/MEZARLIK keywords.
+  const isHoliday = t => /BAYRAM|AREFE|MEZARL|^\s*\d/.test(t);
   let wdUrl = null, weUrl = null;
-  for (const { url, ctx } of found) {
-    if (ctx.includes('HAFTA SONU')) weUrl = url;
-    else wdUrl = wdUrl || url;
+  for (const { url, text } of found) {
+    if (isHoliday(text)) continue;
+    if (/^HAFTA\s*SONU/.test(text))                  weUrl = weUrl || url;
+    else if (/^HAFTA\s*[İI]?[ÇC]?[İI]?/.test(text))  wdUrl = wdUrl || url;
   }
-  if (!weUrl && found.length >= 2) weUrl = found[found.length - 1].url;
-  if (!wdUrl) wdUrl = found[0].url;
+  // Fallbacks if link text didn't match anything sensible
+  if (!wdUrl) wdUrl = found.find(f => !isHoliday(f.text))?.url || found[0].url;
+  if (!weUrl) weUrl = found.filter(f => !isHoliday(f.text)).slice(-1)[0]?.url;
+
   console.log('Weekday PDF:', wdUrl);
   console.log('Weekend PDF:', weUrl);
   return { wdUrl, weUrl };
@@ -204,6 +213,17 @@ async function parsePDF(buffer) {
 async function main() {
   console.log('Fetching PDF URLs…');
   const { wdUrl, weUrl } = await getPDFUrls();
+
+  // Fast-skip: if URLs match the previous run's, the PDFs haven't been
+  // re-uploaded and there's nothing to do. Lets us run the workflow hourly
+  // without re-parsing the same data.
+  try {
+    const prev = JSON.parse(readFileSync('data/schedule.json', 'utf8'));
+    if (prev.wdUrl === wdUrl && prev.weUrl === weUrl) {
+      console.log('PDFs unchanged since last run — skipping parse.');
+      return;
+    }
+  } catch {}
 
   console.log('Downloading PDFs…');
   const [wdBuf, weBuf] = await Promise.all([

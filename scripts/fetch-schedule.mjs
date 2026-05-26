@@ -31,33 +31,183 @@ async function fetchBinary(url) {
 
 // ── PDF URL discovery ─────────────────────────────────────────────────────────
 
-async function getPDFUrls() {
+const TR_MONTHS = {
+  OCAK:'01', ŞUBAT:'02', SUBAT:'02', MART:'03', NİSAN:'04', NISAN:'04',
+  MAYIS:'05', HAZİRAN:'06', HAZIRAN:'06', TEMMUZ:'07', AĞUSTOS:'08', AGUSTOS:'08',
+  EYLÜL:'09', EYLUL:'09', EKİM:'10', EKIM:'10', KASIM:'11', ARALIK:'12',
+};
+const MONTH_ALT = Object.keys(TR_MONTHS).join('|');
+
+// Parse all date markers out of an uppercased blob (link text + normalised
+// URL basename — many municipality URLs encode the date but the visible text
+// doesn't, e.g. "KURBAN BAYRAMI" linking to "27-28-29-30-MAYIS-BAYRAM-1.pdf").
+// Returns Set<'MM-DD'> of every day mentioned. Supports:
+//   "26 MAYIS"                 → {05-26}
+//   "27-28-29 MAYIS"           → {05-27, 05-28, 05-29}
+//   "27 28 29 30 MAYIS"        → {05-27..05-30}  (URL hyphens normalised to spaces)
+//   "27, 28, 29 MAYIS"         → {05-27, 05-28, 05-29}
+//   "27 MAYIS - 29 MAYIS"      → {05-27, 05-28, 05-29}
+function parseDateSet(text) {
+  const out = new Set();
+  // Form: "DD MONTH - DD MONTH" (range with the month repeated on both sides).
+  for (const m of text.matchAll(new RegExp(`(\\d{1,2})\\s+(${MONTH_ALT})\\s*[-–]\\s*(\\d{1,2})\\s+(${MONTH_ALT})`, 'g'))) {
+    const m1 = TR_MONTHS[m[2]], m2 = TR_MONTHS[m[4]];
+    if (m1 !== m2) continue; // cross-month ranges are rare; skip
+    const a = parseInt(m[1], 10), b = parseInt(m[3], 10);
+    for (let d = Math.min(a,b); d <= Math.max(a,b); d++) out.add(`${m1}-${String(d).padStart(2,'0')}`);
+  }
+  // Form: "DD[-DD[-DD…]] MONTH" — list/range of days + trailing month.
+  // Separator can be hyphen, en-dash, comma, or whitespace (URLs use hyphens,
+  // text uses commas or hyphens, normalised URLs use spaces).
+  for (const m of text.matchAll(new RegExp(`((?:\\d{1,2}[\\s\\-–,]+)+\\d{1,2})\\s+(${MONTH_ALT})`, 'g'))) {
+    const mm = TR_MONTHS[m[2]];
+    const days = m[1].split(/[\s\-–,]+/).map(s => parseInt(s, 10)).filter(Number.isFinite);
+    if (days.length >= 2) {
+      // No comma → treat as a contiguous range; comma present → discrete days.
+      if (!/,/.test(m[1])) {
+        for (let d = Math.min(...days); d <= Math.max(...days); d++) out.add(`${mm}-${String(d).padStart(2,'0')}`);
+      } else {
+        for (const d of days) out.add(`${mm}-${String(d).padStart(2,'0')}`);
+      }
+    }
+  }
+  // Form: single "DD MONTH" (anything not already consumed by the iterators above).
+  for (const m of text.matchAll(new RegExp(`(\\d{1,2})\\s+(${MONTH_ALT})`, 'g'))) {
+    const mm = TR_MONTHS[m[2]];
+    out.add(`${mm}-${String(parseInt(m[1],10)).padStart(2,'0')}`);
+  }
+  return out;
+}
+
+function classifyLink(text) {
+  // Mezarlık (graveyard) services are a parallel network, never a substitute
+  // for the daily schedule — ignore entirely.
+  if (/MEZARL/.test(text)) return 'ignore';
+  // "X İTİBARİYLE HAFTA …" / "X ITIBARIYLE HAFTA …" — schedule effective from
+  // a given date onwards. Resolved later against today's date.
+  if (/[İI]T[İI]BAR[İI]YLE/.test(text)) {
+    if (/HAFTA\s*SONU/.test(text)) return 'effective-weekend';
+    if (/HAFTA\s*[İI]?[ÇC]?[İI]?/.test(text)) return 'effective-weekday';
+    return 'ignore';
+  }
+  if (/^HAFTA\s*SONU/.test(text)) return 'weekend';
+  if (/^HAFTA\s*[İI]?[ÇC]?[İI]?/.test(text)) return 'weekday';
+  if (/BAYRAM|AREFE/.test(text) || /^\s*\d/.test(text)) return 'special';
+  return 'unknown';
+}
+
+function specialPriority(text) {
+  if (/AREFE/.test(text))  return 0;
+  if (/BAYRAM/.test(text)) return 1;
+  return 2;
+}
+
+function minDate(set) {
+  let min = null;
+  for (const d of set) if (min === null || d < min) min = d;
+  return min;
+}
+
+// today: {ymd: 'YYYY-MM-DD', mmdd: 'MM-DD', year: 2026, isWeekend: boolean}
+function todayInTurkey(overrideYmd) {
+  let y, m, d;
+  if (overrideYmd) {
+    [y, m, d] = overrideYmd.split('-').map(Number);
+  } else {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    const get = k => parts.find(p => p.type === k).value;
+    y = +get('year'); m = +get('month'); d = +get('day');
+  }
+  // Day-of-week independent of host TZ: use UTC noon of that date.
+  const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay(); // 0=Sun..6=Sat
+  return {
+    ymd:  `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+    mmdd: `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+    year: y,
+    isWeekend: dow === 0 || dow === 6,
+  };
+}
+
+async function getPDFUrls(today) {
   const html = await fetchText(MUN_URL);
-  // Parse each <a ... href="*.pdf" ...>TEXT</a> with its anchor text.
-  // The page also lists holiday/special schedule PDFs (BAYRAM, AREFE, MEZARLIK
-  // etc.) that we must NOT pick as the regular weekly schedule.
-  const found = [];
+  const links = [];
   for (const m of html.matchAll(/<a[^>]*href="([^"]+\.pdf)"[^>]*>([\s\S]*?)<\/a>/gi)) {
     const href = m[1];
     const text = m[2].replace(/<[^>]+>/g, '').replace(/&#8217;/g, "'").trim().toUpperCase();
-    const abs  = href.startsWith('http') ? href
+    const url  = href.startsWith('http') ? href
       : 'https://ulasim.canakkale.bel.tr' + (href.startsWith('/') ? '' : '/') + href;
-    found.push({ url: abs, text });
+    // URL basename (without extension), hyphens turned into spaces, uppercased.
+    // Many links carry the date only in the filename, e.g. KURBAN BAYRAMI →
+    // 27-28-29-30-MAYIS-BAYRAM-1.pdf. Feed both to the date parser.
+    const base = decodeURIComponent(url.split('/').pop() || '')
+      .replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').toUpperCase();
+    const yearMatch = (text + ' ' + base).match(/\b(20\d{2})\b/);
+    links.push({
+      url, text, base,
+      kind:  classifyLink(text),
+      dates: parseDateSet(text + ' ' + base),
+      year:  yearMatch ? parseInt(yearMatch[1], 10) : null,
+    });
   }
-  if (!found.length) throw new Error('No PDF links found on municipality page');
+  if (!links.length) throw new Error('No PDF links found on municipality page');
 
-  // Match by link text. The regular schedules start with "HAFTA İÇİ" / "HAFTA SONU".
-  // Holiday PDFs have date prefixes or BAYRAM/AREFE/MEZARLIK keywords.
-  const isHoliday = t => /BAYRAM|AREFE|MEZARL|^\s*\d/.test(t);
-  let wdUrl = null, weUrl = null;
-  for (const { url, text } of found) {
-    if (isHoliday(text)) continue;
-    if (/^HAFTA\s*SONU/.test(text))                  weUrl = weUrl || url;
-    else if (/^HAFTA\s*[İI]?[ÇC]?[İI]?/.test(text))  wdUrl = wdUrl || url;
+  // Regular slots (first match wins)
+  let wdUrl = links.find(l => l.kind === 'weekday')?.url || null;
+  let weUrl = links.find(l => l.kind === 'weekend')?.url || null;
+
+  // Effective-from overrides: "31 MAYIS İTİBARİYLE HAFTA SONU" replaces the
+  // regular weekend slot on/after May 31. Pick the most recent effective date
+  // that is still <= today, in case the page lists several future cutovers.
+  const applyEffective = (kind, slotSetter) => {
+    const candidates = links
+      .filter(l => l.kind === kind)
+      .filter(l => l.year === null || l.year === today.year)
+      .map(l => ({ link: l, start: minDate(l.dates) }))
+      .filter(c => c.start && c.start <= today.mmdd)
+      .sort((a, b) => b.start.localeCompare(a.start));
+    if (candidates.length) {
+      const w = candidates[0];
+      console.log(`Effective-from override: "${w.link.text}" (start=${w.start}) replaces ${kind === 'effective-weekend' ? 'weekend' : 'weekday'}.`);
+      slotSetter(w.link.url);
+    }
+  };
+  applyEffective('effective-weekend', u => { weUrl = u; });
+  applyEffective('effective-weekday', u => { wdUrl = u; });
+
+  // Today-matching specials (Arefe / Bayram / dated one-offs)
+  const matchingSpecials = links
+    .filter(l => l.kind === 'special')
+    .filter(l => l.year === null || l.year === today.year)
+    .filter(l => l.dates.has(today.mmdd))
+    .sort((a, b) => {
+      const pa = specialPriority(a.text), pb = specialPriority(b.text);
+      if (pa !== pb) return pa - pb;
+      // Single-date match beats a range that contains today.
+      return a.dates.size - b.dates.size;
+    });
+
+  console.log(`Today (Europe/Istanbul): ${today.ymd} (${today.isWeekend ? 'weekend' : 'weekday'})`);
+  console.log(`Found ${links.length} PDF links — ${matchingSpecials.length} special(s) match today`);
+  for (const s of matchingSpecials) {
+    console.log(`  match: "${s.text}" (dates=${[...s.dates].join(',')}, year=${s.year ?? 'n/a'})`);
   }
-  // Fallbacks if link text didn't match anything sensible
-  if (!wdUrl) wdUrl = found.find(f => !isHoliday(f.text))?.url || found[0].url;
-  if (!weUrl) weUrl = found.filter(f => !isHoliday(f.text)).slice(-1)[0]?.url;
+
+  if (matchingSpecials.length) {
+    const winner = matchingSpecials[0];
+    if (today.isWeekend) {
+      console.log(`Substituting "${winner.text}" for weekend schedule.`);
+      weUrl = winner.url;
+    } else {
+      console.log(`Substituting "${winner.text}" for weekday schedule.`);
+      wdUrl = winner.url;
+    }
+  }
+
+  // Final fallback if the page somehow had no regular weekly PDF
+  if (!wdUrl) wdUrl = links.find(l => l.kind !== 'special' && l.kind !== 'ignore')?.url || links[0].url;
+  if (!weUrl) weUrl = links.filter(l => l.kind !== 'special' && l.kind !== 'ignore').slice(-1)[0]?.url || null;
 
   console.log('Weekday PDF:', wdUrl);
   console.log('Weekend PDF:', weUrl);
@@ -216,8 +366,13 @@ async function parsePDF(buffer) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // CLI override: --date=YYYY-MM-DD lets you reproduce any day's pick locally
+  // without waiting for the calendar. Omit to use real Istanbul-local today.
+  const dateArg = process.argv.find(a => a.startsWith('--date='));
+  const today   = todayInTurkey(dateArg ? dateArg.slice('--date='.length) : null);
+
   console.log('Fetching PDF URLs…');
-  const { wdUrl, weUrl } = await getPDFUrls();
+  const { wdUrl, weUrl } = await getPDFUrls(today);
 
   // Fast-skip: if URLs match the previous run's, the PDFs haven't been
   // re-uploaded and there's nothing to do. Lets us run the workflow hourly

@@ -23,7 +23,9 @@ This app solves all of that.
 
 ### 📅 Seferler — Live Schedule
 
-Shows all routes with departure times split by direction, highlights the next upcoming departure in blue, and greys out times that have already passed. Separate weekday and weekend tabs.
+A dynamic tab row shows every schedule the municipality publishes. Regular weekday and weekend timetables sit alongside any special-day PDFs the city posts — Kurban Bayramı, Arefe, dated one-offs. The tab that matches today's date is preselected.
+
+Each tab lists all routes with departure times split by direction. On today's tab the next upcoming departure is highlighted in blue and past times are greyed out; other tabs show their times plain so they're usable for previewing future or past days.
 
 Each route card has a **🚌 Canlı** button that jumps straight to the live tracker for that line.
 
@@ -37,7 +39,7 @@ Tap the map (or use GPS) to set your starting point and destination. The planner
 
 - **Plan ahead** — use the time offset buttons (+30 dk, +1 sa, +2 sa) to plan for later
 - **Live bus data** — shows which buses are approaching your boarding stop right now
-- **Scheduled fallback** — when no live data is available, uses the timetable to estimate wait time
+- **Scheduled fallback** — when no live data is available, the ETA falls back to today's active timetable. On Bayram, Arefe, or any dated special day, the planner automatically consults the matching schedule instead of the regular weekday one
 - **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
 
 ![Trip planner showing route options sorted by ETA](screenshots/planner.png)

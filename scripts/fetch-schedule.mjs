@@ -73,6 +73,10 @@ async function parsePDF(buffer) {
   const TIME_RE   = /^\d{2}:\d{2}$/;
   const DEPART_RE = /^(KALKIŞ|.*\sKALKIŞ|HAREKET|.*\sHAREKET)$/i;
   const KEYWORD_RE= /KALKIŞ|HAREKET|VARIŞ/i;
+  // Footnote / annotation words that never appear in real route names. Lines
+  // like "Ç1 OLARAK BAŞLAYACAKTIR" (will start as Ç1) match ROUTE_RE but are
+  // notes, not routes; if we accept them they steal times from the route above.
+  const NOT_A_ROUTE = /\b(OLARAK|BAŞLAYACAK|DEVAM\s*EDECEK|EDECEKTIR|YAPILACAK|GEÇERL[İI]|İPTAL|YOK|TATİL|GÜZERGAH)\b/i;
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
@@ -100,6 +104,7 @@ async function parsePDF(buffer) {
     for (const { y, items } of rows) {
       const text = items.map(i => i.text).join(' ');
       if (!ROUTE_RE.test(text)) continue;
+      if (NOT_A_ROUTE.test(text)) continue;
       const code = text.split(/\s+/)[0];
       if (seenCodes.has(code)) continue;
       const hasDept  = allItems.some(it => DEPART_RE.test(it.text) && Math.abs(it.y - y) <= 150);

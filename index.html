@@ -37,6 +37,23 @@
       white-space: nowrap;
     }
     #bm-toggle-btn:hover, #bm-toggle-btn.open { color: #f59e0b; border-color: #f59e0b; }
+    #gear-btn {
+      background: none; border: 1px solid #252d40; border-radius: 6px;
+      color: #9ca3af; font-size: 1rem; padding: 3px 8px; cursor: pointer;
+      transition: color .12s, border-color .12s;
+    }
+    #gear-btn:hover { color: #f59e0b; border-color: #f59e0b; }
+    #offline-badge {
+      display: none; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 10px;
+      background: #2d1f05; color: #fbbf24;
+      border: 1px solid #5b3f0a;
+      font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+    }
+    #offline-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; }
+    body.is-offline #offline-badge { display: inline-flex; }
+    html[data-theme="light"] #offline-badge { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    html[data-theme="light"] #offline-badge::before { background: #92400e; }
     #bm-dropdown {
       display: none; position: fixed; top: 44px; right: 12px;
       background: #1a1d2e; border: 1px solid #252d40; border-radius: 8px;
@@ -192,6 +209,14 @@
       cursor: pointer; padding: 2px 6px; transition: color .12s, border-color .12s; line-height: 1;
     }
     .bm-save-btn:hover { color: #f59e0b; border-color: #f59e0b; }
+    .chip-row { display: flex; gap: 6px; overflow-x: auto; padding: 6px 9px 0; flex-shrink: 0; }
+    .chip-row .chip-label { font-size: .62rem; color: #4a5568; font-weight: 700; text-transform: uppercase; align-self: center; flex-shrink: 0; padding-right: 2px; }
+    .chip { padding: 5px 10px; border-radius: 14px; background: #1a1d2e; color: #7eb3f7;
+            font-size: .72rem; border: 1px solid #252d40; white-space: nowrap; cursor: pointer;
+            display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .chip:hover { border-color: #4a90d9; }
+    .chip .chip-x { color: #4a5568; font-size: .7rem; padding: 0 0 0 2px; }
+    .chip .chip-x:hover { color: #ef4444; }
     .result-header { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #4a5568; margin: 8px 0 5px; }
     .p-route-card { padding: 9px 11px; border-radius: 7px; background: #1a1d2e; border: 1.5px solid #252d40; margin-bottom: 7px; cursor: pointer; transition: border-color .15s; }
     .p-route-card:hover  { border-color: #4a90d9; }
@@ -257,7 +282,7 @@
     @media (min-width: 640px) {
       #scr-planner { flex-direction: row; }
       .p-top, .p-top.panel-full {
-        width: 300px; flex: none !important;
+        width: 360px; flex: none !important;
         max-height: none !important; height: 100%;
         border-bottom: none; border-right: 1px solid #252d40;
       }
@@ -278,6 +303,7 @@
     .journey-stop-name { font-weight: 700; }
     .journey-stop-id { color: #374151; font-size: .66rem; font-weight: 400; }
     .journey-detail { color: #6b7a99; font-size: .72rem; }
+    .journey-main   { color: #c0d0ea; font-weight: 600; }
     .journey-connector { padding: 0 0 0 20px; font-size: .72rem; color: #4a5568; }
     .total-box { background: #1a2744; border-radius: 7px; padding: 9px 12px; display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
     .total-box-label { font-size: .72rem; color: #6b7a99; }
@@ -364,6 +390,147 @@
       color: #a8d4ff; font-size: .88rem; font-weight: 700; cursor: pointer;
     }
     .guide-or { font-size: .7rem; color: #374151; }
+    /* ── Settings ── */
+    .settings-wrap { padding: 16px; max-width: 480px; margin: 0 auto; width: 100%; overflow-y: auto; }
+    .settings-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .settings-header h2 { margin: 0; font-size: 1rem; font-weight: 700; color: #c0d0ea; }
+    .settings-back { background: none; border: 1px solid #252d40; border-radius: 6px;
+                     color: #7eb3f7; font-size: .78rem; padding: 5px 10px; cursor: pointer; }
+    .settings-back:hover { border-color: #4a90d9; }
+    .settings-group { background: #141621; border: 1px solid #1f2333; border-radius: 8px;
+                      padding: 12px 14px; margin-bottom: 12px; }
+    .settings-label { font-size: .78rem; font-weight: 700; color: #c0d0ea; margin-bottom: 8px; }
+    .settings-val   { color: #7eb3f7; font-variant-numeric: tabular-nums; }
+    .settings-hint  { font-size: .68rem; color: #4a5568; margin-top: 4px; line-height: 1.4; }
+    .settings-range { width: 100%; accent-color: #4a90d9; margin: 4px 0; }
+    .settings-action { display: block; width: 100%; padding: 8px; margin-top: 6px;
+                       background: #1a1d2e; border: 1px solid #252d40; border-radius: 6px;
+                       color: #9ca3af; font-size: .78rem; cursor: pointer; text-align: left; }
+    .settings-action:hover { color: #ef4444; border-color: #7f1d1d; }
+    .settings-link { display: block; width: 100%; padding: 8px; margin-top: 6px;
+                     background: #1a1d2e; border: 1px solid #252d40; border-radius: 6px;
+                     color: #7eb3f7; font-size: .78rem; text-decoration: none; text-align: left; }
+    .settings-link:hover { color: #4a90d9; border-color: #3b6ccc; }
+    html[data-theme="light"] .settings-link { background: #f9fafb; border-color: #e5e7eb; color: #2563eb; }
+    .theme-row { display: flex; gap: 6px; }
+    .theme-btn { flex: 1; padding: 8px 4px; background: #1a1d2e; border: 1px solid #252d40;
+                 border-radius: 6px; color: #9ca3af; font-size: .72rem; font-weight: 600; cursor: pointer; }
+    .theme-btn.active { background: #1a3660; border-color: #4a90d9; color: #a8d4ff; }
+    .settings-footer { text-align: center; color: #374151; font-size: .68rem; margin-top: 16px; }
+    /* ── Light theme overrides ── */
+    html[data-theme="light"] body { background: #f5f7fa; color: #1a1d2e; }
+    html[data-theme="light"] #appHeader { background: #fff; border-bottom-color: #e5e7eb; }
+    html[data-theme="light"] #appHeader h1 { color: #1a1d2e; }
+    html[data-theme="light"] #bm-toggle-btn,
+    html[data-theme="light"] #gear-btn { color: #4b5563; border-color: #d1d5db; }
+    html[data-theme="light"] #bottomNav { background: #fff; border-top-color: #e5e7eb; }
+    html[data-theme="light"] .nb { color: #6b7280; }
+    html[data-theme="light"] .nb.active { color: #2563eb; }
+    html[data-theme="light"] .p-top { background: #fff; border-right-color: #e5e7eb; }
+    html[data-theme="light"] #map { background: #e5e7eb; }
+    html[data-theme="light"] #loadStatus { color: #6b7280; }
+    html[data-theme="light"] #hint { background: #dbeafe; color: #1e40af; }
+    html[data-theme="light"] #hint.warn { background: #fef3c7; color: #92400e; }
+    html[data-theme="light"] .btn { background: #fff; color: #2563eb; border-color: #93c5fd; }
+    html[data-theme="light"] .btn.active { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
+    html[data-theme="light"] .btn.green { color: #16a34a; border-color: #86efac; }
+    html[data-theme="light"] .btn.green.active { background: #d1fae5; color: #15803d; border-color: #16a34a; }
+    html[data-theme="light"] .stop-card { background: #fff; }
+    html[data-theme="light"] .stop-card .name { color: #1a1d2e; }
+    html[data-theme="light"] .p-route-card { background: #fff; border-color: #e5e7eb; }
+    html[data-theme="light"] .p-route-card:hover { border-color: #4a90d9; }
+    html[data-theme="light"] .settings-group { background: #fff; border-color: #e5e7eb; }
+    html[data-theme="light"] .settings-label { color: #1a1d2e; }
+    html[data-theme="light"] .settings-hint  { color: #6b7280; }
+    html[data-theme="light"] .settings-action { background: #f9fafb; border-color: #e5e7eb; color: #4b5563; }
+    html[data-theme="light"] .theme-btn { background: #f9fafb; border-color: #e5e7eb; color: #4b5563; }
+    html[data-theme="light"] .theme-btn.active { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
+    html[data-theme="light"] .chip { background: #f9fafb; color: #2563eb; border-color: #e5e7eb; }
+    html[data-theme="light"] .chip-row .chip-label { color: #6b7280; }
+    html[data-theme="light"] #recent-dests .chip-x { color: #9ca3af; }
+    html[data-theme="light"] #bm-dropdown { background: #fff; border-color: #e5e7eb; }
+    html[data-theme="light"] .bm-dd-header { color: #1a1d2e; }
+    html[data-theme="light"] .bm-card { background: #f9fafb; border-color: #e5e7eb; }
+    html[data-theme="light"] .bm-card .name { color: #1a1d2e; }
+    /* Top button hover override */
+    html[data-theme="light"] .btn:hover:not(.active) { background: #f3f4f6; }
+    html[data-theme="light"] .btn.green:hover:not(.active) { background: #ecfdf5; }
+    /* Schedule tabs row */
+    html[data-theme="light"] .s-tabs { background: #fff; border-bottom-color: #e5e7eb; }
+    html[data-theme="light"] .s-tab-btn { color: #6b7280; }
+    html[data-theme="light"] .s-tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+    /* Schedule (Seferler) */
+    html[data-theme="light"] #scr-schedule .schedHeader,
+    html[data-theme="light"] .route-card-header { background: #fff; }
+    html[data-theme="light"] .route-card-header { background: #fff; color: #1a1d2e; }
+    html[data-theme="light"] .rc-name { color: #1a1d2e; }
+    html[data-theme="light"] .rc-meta { color: #6b7280; }
+    html[data-theme="light"] .route-card { background: #fff; border-color: #e5e7eb; }
+    html[data-theme="light"] .route-times { background: #f9fafb; border-color: #e5e7eb; }
+    html[data-theme="light"] .time-chip { background: #f3f4f6; color: #1a1d2e; border-color: #e5e7eb; }
+    html[data-theme="light"] .time-chip.past { color: #9ca3af; background: #f9fafb; }
+    html[data-theme="light"] .time-chip.next { color: #fff; background: #2563eb; border-color: #1d4ed8; }
+    html[data-theme="light"] #schedProgress { background: #e5e7eb; }
+    html[data-theme="light"] .dir-label { color: #6b7280; }
+    /* Trip detail */
+    html[data-theme="light"] .total-box { background: #dbeafe; color: #1e40af; }
+    html[data-theme="light"] .dep-chip { background: #f3f4f6; color: #1a1d2e; border-color: #e5e7eb; }
+    html[data-theme="light"] .dep-chip.next { background: #2563eb; color: #fff; border-color: #1d4ed8; }
+    html[data-theme="light"] .bus-chip { background: #dbeafe; color: #1e40af; }
+    html[data-theme="light"] .tl-line { background: #e5e7eb; }
+    html[data-theme="light"] .tl-dot  { background: #d1d5db; border-color: #9ca3af; }
+    html[data-theme="light"] .tl-badge.board  { background: #dbeafe; color: #1e40af; }
+    html[data-theme="light"] .tl-badge.alight { background: #d1fae5; color: #15803d; }
+    html[data-theme="light"] .tl-name { color: #1a1d2e; }
+    html[data-theme="light"] .tl-id   { color: #6b7280; }
+    html[data-theme="light"] .trip-section-title { color: #6b7280; }
+    html[data-theme="light"] .journey-detail   { color: #4b5563; }
+    html[data-theme="light"] .journey-stop-name { color: #1a1d2e; }
+    html[data-theme="light"] .journey-time      { color: #2563eb; }
+    html[data-theme="light"] .journey-stop-id   { color: #9ca3af; }
+    html[data-theme="light"] .journey-main      { color: #1a1d2e; }
+    /* Swap button */
+    .swap-btn { width: 100%; padding: 6px; border: 1px dashed #3b6ccc; border-radius: 6px;
+                background: #141621; color: #7eb3f7; font-size: .74rem; font-weight: 600;
+                cursor: pointer; }
+    .swap-btn:hover { background: #1e2235; }
+    html[data-theme="light"] .swap-btn { background: #f9fafb; color: #2563eb; border-color: #93c5fd; }
+    html[data-theme="light"] .swap-btn:hover { background: #eff6ff; border-color: #2563eb; }
+    .bus-chip.muted { background: #1e2235; color: #4a5568; }
+    html[data-theme="light"] .bus-chip.muted { background: #f3f4f6; color: #6b7280; }
+    /* Tracker / sched-track */
+    html[data-theme="light"] .track-back, html[data-theme="light"] .track-dir-btn { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+    html[data-theme="light"] .track-dir-btn.active { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
+    html[data-theme="light"] .sched-track-btn { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+    html[data-theme="light"] .sched-track-btn:hover { background: #bfdbfe; border-color: #2563eb; }
+    html[data-theme="light"] .notify-btn { background: #fff; border-color: #e5e7eb; color: #6b7280; }
+    html[data-theme="light"] .notify-btn.active { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+    /* Live & nearby stops */
+    html[data-theme="light"] .ns-header { background: #f9fafb; }
+    html[data-theme="light"] .ns-body   { background: #fff; border-color: #e5e7eb; }
+    html[data-theme="light"] .ns-name   { color: #1a1d2e; }
+    html[data-theme="light"] .ns-tags   { color: #6b7280; }
+    html[data-theme="light"] .ns-dist   { color: #2563eb; }
+    html[data-theme="light"] .no-bus    { color: #9ca3af; }
+    /* Planner guide */
+    html[data-theme="light"] .guide-headline { color: #1a1d2e; }
+    html[data-theme="light"] .guide-sub      { color: #6b7280; }
+    html[data-theme="light"] .guide-gps      { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
+    html[data-theme="light"] .guide-or       { color: #9ca3af; }
+    /* GPS FAB */
+    html[data-theme="light"] #gps-fab { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+    html[data-theme="light"] #gps-fab:hover { background: #1d4ed8; }
+    /* Plan time buttons */
+    html[data-theme="light"] .plan-time-btn { background: #f9fafb; color: #6b7280; border-color: #e5e7eb; }
+    html[data-theme="light"] .plan-time-btn.active { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
+    /* Onboarding */
+    html[data-theme="light"] #onboarding-card { background: #fff; border-color: #e5e7eb; color: #1a1d2e; }
+    html[data-theme="light"] .ob-title { color: #1a1d2e; }
+    html[data-theme="light"] .ob-sub   { color: #6b7280; }
+    html[data-theme="light"] #onboarding { background: rgba(220,225,235,.93); }
+    /* Header h1 already set; ensure load status visible */
+    html[data-theme="light"] h1 { color: #1a1d2e; }
+    html[data-theme="light"] .label { color: #6b7280; }
     /* ── Map ripple ── */
     #map-ripple {
       position: absolute; top: 50%; left: 50%;
@@ -379,15 +546,52 @@
     .leaflet-container { background: #0f1117; }
     .leaflet-control-attribution { background: rgba(15,17,23,.8) !important; color: #4a5568 !important; }
     .leaflet-control-attribution a { color: #4a5568 !important; }
+    html[data-theme="light"] .leaflet-tile { filter: none; }
+    html[data-theme="light"] .leaflet-container { background: #e5e7eb; }
+    html[data-theme="light"] .leaflet-control-attribution { background: rgba(255,255,255,.85) !important; color: #6b7280 !important; }
+    html[data-theme="light"] .leaflet-control-attribution a { color: #4b5563 !important; }
     .leaflet-control-zoom a { background: #1a1d2e !important; color: #7eb3f7 !important; border-color: #252d40 !important; }
     .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1a1d2e; color: #e2e8f0; }
+    html[data-theme="light"] .leaflet-control-zoom a { background: #fff !important; color: #1a1d2e !important; border-color: #e5e7eb !important; }
+    html[data-theme="light"] .leaflet-control-zoom a:hover { background: #f3f4f6 !important; }
+    html[data-theme="light"] .leaflet-popup-content-wrapper,
+    html[data-theme="light"] .leaflet-popup-tip { background: #fff; color: #1a1d2e; }
+    /* Range sliders: filled progress before the thumb */
+    .settings-range {
+      -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; outline: none;
+      background: linear-gradient(to right,
+        #4a90d9 0%, #4a90d9 calc(var(--val-pct, 0) * 1%),
+        #1f2333 calc(var(--val-pct, 0) * 1%), #1f2333 100%);
+    }
+    .settings-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #4a90d9; cursor: pointer; border: 2px solid #1a1d2e; }
+    .settings-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #4a90d9; cursor: pointer; border: 2px solid #1a1d2e; }
+    html[data-theme="light"] .settings-range {
+      background: linear-gradient(to right,
+        #2563eb 0%, #2563eb calc(var(--val-pct, 0) * 1%),
+        #e5e7eb calc(var(--val-pct, 0) * 1%), #e5e7eb 100%);
+    }
+    html[data-theme="light"] .settings-range::-webkit-slider-thumb { background: #2563eb; border-color: #fff; }
+    html[data-theme="light"] .settings-range::-moz-range-thumb     { background: #2563eb; border-color: #fff; }
+    /* Reset button next to slider label */
+    .slider-reset {
+      background: none; border: 1px solid #252d40; border-radius: 4px;
+      color: #6b7a99; font-size: .75rem; padding: 1px 6px; cursor: pointer; margin-left: 6px;
+      transition: color .12s, border-color .12s;
+    }
+    .slider-reset:hover { color: #f59e0b; border-color: #f59e0b; }
+    html[data-theme="light"] .slider-reset { border-color: #e5e7eb; color: #6b7280; }
+    html[data-theme="light"] .slider-reset:hover { color: #1d4ed8; border-color: #2563eb; }
   </style>
 </head>
 <body>
 
 <header id="appHeader">
   <h1>Çanakkale Hat & Sefer</h1>
-  <button id="bm-toggle-btn" onclick="toggleBmDropdown()">⭐ <span id="bm-toggle-label">Yerlerim</span> ▾</button>
+  <div style="display:flex;gap:6px;align-items:center">
+    <span id="offline-badge" title="İnternet bağlantısı yok — canlı veriler güncellenmiyor">Çevrimdışı</span>
+    <button id="bm-toggle-btn" onclick="toggleBmDropdown()">⭐ <span id="bm-toggle-label">Yerlerim</span> ▾</button>
+    <button id="gear-btn" onclick="showScreen('settings')" title="Ayarlar">⚙️</button>
+  </div>
 </header>
 <div id="bm-dropdown">
   <div class="bm-dd-header">
@@ -434,9 +638,8 @@
       <div class="btn-row">
         <button class="btn active" id="btnOrigin" onclick="setMode('origin')" disabled>📍 Konum</button>
         <button class="btn green"  id="btnDest"   onclick="setMode('dest')"   disabled>🏁 Hedef</button>
-        <button class="btn"        id="btnStops"  onclick="setMode('stops')"  disabled>🚏 Durak</button>
         <button class="btn" id="btnPlanTime" onclick="togglePlanTime()" disabled>⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">Planla</span></button>
-        <button class="btn" id="btnReset"   onclick="resetPlanner()"  disabled style="border-color:#7f1d1d;color:#4a5568">✕</button>
+        <button class="btn" id="btnReset" onclick="resetPlanner()" disabled style="border-color:#7f1d1d;color:#4a5568">✕</button>
       </div>
       <div class="plan-time-row" id="plan-time-row" style="display:none">
         <button class="plan-time-btn active" data-offset="0"  onclick="setPlanOffset(0)">Şimdi</button>
@@ -446,6 +649,10 @@
       </div>
       <div id="custom-time-row" style="display:none;padding:5px 9px 0">
         <input type="time" id="custom-time-input" onchange="applyCustomTime()">
+      </div>
+      <div id="recent-dests" class="chip-row" style="display:none"></div>
+      <div id="swap-row" style="display:none;padding:6px 9px 0;">
+        <button id="btnSwap" class="swap-btn" onclick="swapOD()" title="Başlangıç ve hedefi değiştir">⇄ Yön değiştir</button>
       </div>
       <div id="hint" style="display:none"></div>
       <div id="originCard" style="display:none" class="stop-card">
@@ -479,6 +686,65 @@
     </div>
   </div>
 
+  <div id="scr-settings" class="screen">
+    <div class="settings-wrap">
+      <div class="settings-header">
+        <button class="settings-back" onclick="showScreen('planner')">← Geri</button>
+        <h2>Ayarlar</h2>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">Görünüm</div>
+        <div class="theme-row">
+          <button class="theme-btn" data-theme-opt="dark"   onclick="setTheme('dark')">🌙 Karanlık</button>
+          <button class="theme-btn" data-theme-opt="light"  onclick="setTheme('light')">☀️ Aydınlık</button>
+          <button class="theme-btn" data-theme-opt="system" onclick="setTheme('system')">📱 Sistem</button>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">
+          Maksimum yürüme mesafesi: <span id="walkRadiusVal" class="settings-val"></span>
+          <button class="slider-reset" onclick="resetWalkRadius()" title="Varsayılana sıfırla">↺</button>
+        </div>
+        <input type="range" class="settings-range" id="walkRadiusSlider" min="300" max="2000" step="100">
+        <div class="settings-hint">Yürünebilir mesafe sınırı. Daha uzaksa o durak için rota önerilmez.</div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">
+          Yürüme hızı: <span id="walkSpeedVal" class="settings-val"></span>
+          <button class="slider-reset" onclick="resetWalkSpeed()" title="Varsayılana sıfırla">↺</button>
+        </div>
+        <input type="range" class="settings-range" id="walkSpeedSlider" min="50" max="100" step="2">
+        <div class="settings-hint">ETA hesaplaması için kullanılır. Varsayılan 72 m/dk (≈4.3 km/sa).</div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">Çevrimdışı harita</div>
+        <button id="mapCacheBtn" class="settings-action" onclick="downloadOfflineMap()">Haritayı offline indir</button>
+        <div id="mapCacheHint" class="settings-hint">Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır.</div>
+        <div id="mapCacheStatus" class="settings-hint" style="margin-top:4px"></div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">Veri</div>
+        <button class="settings-action" onclick="clearBookmarksData()">Kaydedilen yerleri temizle</button>
+        <button class="settings-action" onclick="clearRecentsData()">Son hedefleri temizle</button>
+        <button class="settings-action" onclick="resetOnboarding()">Tanıtımı tekrar göster</button>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label">Hakkında</div>
+        <a class="settings-link" href="https://kaangultekin.net/" target="_blank" rel="noopener">🌐 Geliştirici sitesi</a>
+        <a class="settings-link" href="https://github.com/GamehunterKaan" target="_blank" rel="noopener">💻 GitHub</a>
+        <a class="settings-link" href="mailto:kaan@kaangultekin.net?subject=Çanakkale%20Hat%20%26%20Sefer">✉️ İletişim — kaan@kaangultekin.net</a>
+      </div>
+
+      <div class="settings-footer">Çanakkale Hat &amp; Sefer · Kaan Gültekin</div>
+    </div>
+  </div>
+
 </div>
 
 <nav id="bottomNav">
@@ -493,6 +759,12 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CACHE_KEY = 'canakkale_bus_v6';
 
+// Çanakkale map bounds + zoom range. Tile pre-cache covers exactly this box at
+// every allowed zoom, so panning/zooming inside the box works fully offline.
+const MAP_BOUNDS   = [[39.95, 26.30], [40.25, 26.55]];   // [SW lat,lng], [NE lat,lng]
+const MAP_MIN_ZOOM = 13;
+const MAP_MAX_ZOOM = 16;
+
 function isCacheFresh(cached) {
   const d = new Date(cached.fetchedAt);
   const n = new Date();
@@ -504,7 +776,56 @@ function isCacheFresh(cached) {
 // ── Screen switching ──────────────────────────────────────────────────────────
 let plannerReady = false;
 // Planner is the default screen — init immediately
-window.addEventListener('DOMContentLoaded', () => { showOnboarding(); plannerReady = true; initPlanner(); });
+window.addEventListener('DOMContentLoaded', () => { applyTheme(SETTINGS.theme || 'dark'); showOnboarding(); plannerReady = true; initPlanner(); initOfflineIndicator(); });
+
+// ── Offline indicator ───────────────────────────────────────────────────────
+// navigator.onLine and the 'offline' event are unreliable across platforms
+// (often stay "online" after a real WiFi disconnect). So we actively probe
+// kentkart every 15s with a no-store request — that's the real source of
+// truth for "can we get live bus data right now?". Real kentkart fetches
+// from refreshBuses/selectTrackPath also feed into the same signal.
+let kentkartFailStreak = 0;
+let offlineProbeTimer  = null;
+function setOfflineUI(off) {
+  document.body.classList.toggle('is-offline', !!off);
+}
+function markKentkartResult(ok) {
+  if (ok) {
+    kentkartFailStreak = 0;
+    setOfflineUI(false);
+  } else {
+    kentkartFailStreak++;
+    if (kentkartFailStreak >= 2) setOfflineUI(true);
+  }
+}
+async function probeKentkart() {
+  try {
+    const r = await fetch(`${API}web/nearest/find?${QS}&_=${Date.now()}`, { cache: 'no-store' });
+    markKentkartResult(r.ok);
+  } catch {
+    markKentkartResult(false);
+  }
+}
+function initOfflineIndicator() {
+  setOfflineUI(!navigator.onLine);
+  window.addEventListener('online',  () => { probeKentkart(); });
+  window.addEventListener('offline', () => setOfflineUI(true));
+  // Active probe loop — works even when no route is selected
+  probeKentkart();
+  offlineProbeTimer = setInterval(probeKentkart, 15000);
+  // Pause the probe when the tab is hidden to save battery; reprobe on return
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (offlineProbeTimer) { clearInterval(offlineProbeTimer); offlineProbeTimer = null; }
+    } else if (!offlineProbeTimer) {
+      probeKentkart();
+      offlineProbeTimer = setInterval(probeKentkart, 15000);
+    }
+  });
+}
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
+  if ((SETTINGS.theme || 'dark') === 'system') applyTheme('system');
+});
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('scr-' + name).classList.add('active');
@@ -515,6 +836,7 @@ function showScreen(name) {
     else if (window._map) setTimeout(() => window._map.invalidateSize(), 50);
     renderBookmarksBar();
   }
+  if (name === 'settings') initSettingsScreen();
 }
 
 // ── Schedule helpers ──────────────────────────────────────────────────────────
@@ -764,7 +1086,13 @@ function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 const API    = 'https://service.kentkart.com/rl1/';
 const REGION = '007';
 const QS     = 'region=' + REGION + '&lang=tr&authType=4&resultType=111';
-const WALK_RADIUS = 900;
+// User-configurable preferences. Loaded once at startup; defaults below.
+const SETTINGS_DEFAULTS = { walkRadius: 900, walkSpeedMpm: 72, theme: 'dark' };
+let SETTINGS = (() => {
+  try { return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('bm_settings_v1') || '{}') }; }
+  catch { return { ...SETTINGS_DEFAULTS }; }
+})();
+function saveSettings() { try { localStorage.setItem('bm_settings_v1', JSON.stringify(SETTINGS)); } catch {} }
 
 // ── Push notification config (fill in after running generate-keys.js + deploying worker) ──
 const VAPID_PUBLIC_KEY = 'BHVCtR1I7eXOv825k0yVg3E6y59A0p7wlgO3rUD90sEOXIec97qg4z5ybGlGjcltgQQxytPw6LD9Q202YxZeC7s';
@@ -796,6 +1124,212 @@ let bookmarks = (() => { try { return JSON.parse(localStorage.getItem('bm_locati
 
 function saveBookmarks() {
   try { localStorage.setItem('bm_locations', JSON.stringify(bookmarks)); } catch {}
+}
+
+// ── Recent destinations ──────────────────────────────────────────────────────
+let recentDests = (() => { try { return JSON.parse(localStorage.getItem('bm_recent_dests_v1') || '[]'); } catch { return []; } })();
+
+function saveRecentDests() {
+  try { localStorage.setItem('bm_recent_dests_v1', JSON.stringify(recentDests)); } catch {}
+}
+
+function pushRecentDest(stop) {
+  if (!stop || !stop.stopId) return;
+  recentDests = [{ stopId: stop.stopId, stopName: stop.stopName, lat: stop.lat, lng: stop.lng, ts: Date.now() },
+                 ...recentDests.filter(r => r.stopId !== stop.stopId)].slice(0, 5);
+  saveRecentDests();
+}
+
+function removeRecentDest(stopId) {
+  recentDests = recentDests.filter(r => r.stopId !== stopId);
+  saveRecentDests();
+  renderRecentDests();
+}
+
+function renderRecentDests() {
+  const el = document.getElementById('recent-dests');
+  if (!el) return;
+  // Only show in 'dest' mode when destination not yet picked, and we have history
+  if (mode !== 'dest' || destClick || !recentDests.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  // Filter out stops that no longer exist (data refreshed)
+  const valid = recentDests.filter(r => allStops.has(r.stopId));
+  if (valid.length !== recentDests.length) { recentDests = valid; saveRecentDests(); }
+  if (!valid.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '<span class="chip-label">Son:</span>' + valid.map(r =>
+    '<span class="chip" onclick="useRecentDest(\'' + r.stopId + '\')">' +
+      '<span>' + esc(r.stopName) + '</span>' +
+      '<span class="chip-x" onclick="event.stopPropagation();removeRecentDest(\'' + r.stopId + '\')">✕</span>' +
+    '</span>'
+  ).join('');
+}
+
+function useRecentDest(stopId) {
+  const r = recentDests.find(x => x.stopId === stopId);
+  if (!r) return;
+  setMode('dest');
+  applyPoint(r.lat, r.lng, 'dest');
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+function applyTheme(mode) {
+  // mode: 'dark' | 'light' | 'system'
+  let effective = mode;
+  if (mode === 'system') {
+    effective = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  document.documentElement.setAttribute('data-theme', effective);
+  // Update active state on theme buttons
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.themeOpt === mode);
+  });
+}
+
+function setTheme(mode) {
+  SETTINGS.theme = mode;
+  saveSettings();
+  applyTheme(mode);
+}
+
+let _settingsRefreshTimer = null;
+function updateSliderFill(slider) {
+  const pct = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+  slider.style.setProperty('--val-pct', pct);
+}
+function initSettingsScreen() {
+  // Sliders
+  const rSlider = document.getElementById('walkRadiusSlider');
+  const sSlider = document.getElementById('walkSpeedSlider');
+  const rVal    = document.getElementById('walkRadiusVal');
+  const sVal    = document.getElementById('walkSpeedVal');
+  if (!rSlider) return;
+  rSlider.value = SETTINGS.walkRadius;
+  sSlider.value = SETTINGS.walkSpeedMpm;
+  rVal.textContent = SETTINGS.walkRadius + ' m';
+  sVal.textContent = SETTINGS.walkSpeedMpm + ' m/dk';
+  updateSliderFill(rSlider);
+  updateSliderFill(sSlider);
+
+  const onSlide = () => {
+    SETTINGS.walkRadius   = parseInt(rSlider.value, 10);
+    SETTINGS.walkSpeedMpm = parseInt(sSlider.value, 10);
+    rVal.textContent = SETTINGS.walkRadius + ' m';
+    sVal.textContent = SETTINGS.walkSpeedMpm + ' m/dk';
+    updateSliderFill(rSlider);
+    updateSliderFill(sSlider);
+    clearTimeout(_settingsRefreshTimer);
+    _settingsRefreshTimer = setTimeout(() => {
+      saveSettings();
+      if (originClick && destClick) findRoutes();
+    }, 300);
+  };
+  rSlider.oninput = onSlide;
+  sSlider.oninput = onSlide;
+
+  // Theme active button
+  applyTheme(SETTINGS.theme || 'dark');
+
+  // Offline map: show actual tile count and rough size estimate
+  const hint = document.getElementById('mapCacheHint');
+  if (hint) {
+    const count = _tilesForBounds().length;
+    const sizeMB = Math.max(1, Math.round(count * 12 / 1024));  // ~12 KB / tile average
+    hint.textContent = 'Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır. ~' + count + ' karo, ~' + sizeMB + ' MB.';
+  }
+}
+
+function resetWalkRadius() {
+  SETTINGS.walkRadius = SETTINGS_DEFAULTS.walkRadius;
+  saveSettings();
+  const s = document.getElementById('walkRadiusSlider');
+  if (s) { s.value = SETTINGS.walkRadius; updateSliderFill(s); document.getElementById('walkRadiusVal').textContent = SETTINGS.walkRadius + ' m'; }
+  if (originClick && destClick) findRoutes();
+}
+function resetWalkSpeed() {
+  SETTINGS.walkSpeedMpm = SETTINGS_DEFAULTS.walkSpeedMpm;
+  saveSettings();
+  const s = document.getElementById('walkSpeedSlider');
+  if (s) { s.value = SETTINGS.walkSpeedMpm; updateSliderFill(s); document.getElementById('walkSpeedVal').textContent = SETTINGS.walkSpeedMpm + ' m/dk'; }
+  if (originClick && destClick) findRoutes();
+}
+
+function clearBookmarksData() {
+  if (!confirm('Tüm kaydedilen yerler silinecek. Devam edilsin mi?')) return;
+  bookmarks = [];
+  saveBookmarks();
+  renderBookmarksBar();
+  alert('Temizlendi.');
+}
+function clearRecentsData() {
+  if (!confirm('Son hedefler geçmişi silinecek. Devam edilsin mi?')) return;
+  recentDests = [];
+  saveRecentDests();
+  renderRecentDests();
+  alert('Temizlendi.');
+}
+function resetOnboarding() {
+  localStorage.removeItem('onboarded_v2');
+  alert('Tanıtım sıfırlandı. Bir sonraki açılışta tekrar görünecek.');
+}
+
+// ── Offline map tile pre-cache ─────────────────────────────────────────────
+// Compute all OSM tiles covering MAP_BOUNDS at every allowed zoom, fetch them
+// (routed through the SW → cached). Cap concurrency so we don't hammer OSM.
+function _lng2tile(lng, z) { return Math.floor((lng + 180) / 360 * Math.pow(2, z)); }
+function _lat2tile(lat, z) {
+  const r = lat * Math.PI / 180;
+  return Math.floor((1 - Math.log(Math.tan(r) + 1/Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z));
+}
+function _tilesForBounds() {
+  // Match Leaflet's _getSubdomain formula: subdomains[abs(x+y) % len]
+  // so every URL we pre-cache here is exactly the one Leaflet will request.
+  const urls = [];
+  const [[sLat, wLng], [nLat, eLng]] = MAP_BOUNDS;
+  const subs = ['a','b','c'];
+  for (let z = MAP_MIN_ZOOM; z <= MAP_MAX_ZOOM; z++) {
+    const x0 = _lng2tile(wLng, z), x1 = _lng2tile(eLng, z);
+    const y0 = _lat2tile(nLat, z), y1 = _lat2tile(sLat, z);
+    for (let x = Math.min(x0,x1); x <= Math.max(x0,x1); x++) {
+      for (let y = Math.min(y0,y1); y <= Math.max(y0,y1); y++) {
+        const sub = subs[Math.abs(x + y) % subs.length];
+        urls.push(`https://${sub}.tile.openstreetmap.org/${z}/${x}/${y}.png`);
+      }
+    }
+  }
+  return urls;
+}
+let _tileDownloadAbort = null;
+async function downloadOfflineMap() {
+  const urls = _tilesForBounds();
+  const total = urls.length;
+  const btn = document.getElementById('mapCacheBtn');
+  const status = document.getElementById('mapCacheStatus');
+  if (!btn || !status) return;
+  if (_tileDownloadAbort) { _tileDownloadAbort.abort(); _tileDownloadAbort = null; btn.textContent = 'Haritayı offline indir'; status.textContent = 'İptal edildi.'; return; }
+  _tileDownloadAbort = new AbortController();
+  const signal = _tileDownloadAbort.signal;
+  btn.textContent = 'İptal et';
+  let done = 0, failed = 0;
+  const update = () => { status.textContent = done + ' / ' + total + (failed ? ' (' + failed + ' hata)' : ''); };
+  update();
+  let idx = 0;
+  async function worker() {
+    while (idx < urls.length && !signal.aborted) {
+      const u = urls[idx++];
+      try {
+        const r = await fetch(u, { signal });
+        if (!r.ok) failed++;
+      } catch { if (!signal.aborted) failed++; }
+      done++;
+      update();
+    }
+  }
+  await Promise.all(Array.from({length: 4}, worker));
+  _tileDownloadAbort = null;
+  btn.textContent = 'Haritayı offline indir';
+  if (signal.aborted) return;
+  status.textContent = 'Tamamlandı: ' + (done - failed) + ' / ' + total + ' karo önbelleğe alındı.';
+  try { localStorage.setItem('bm_map_cached_v1', String(Date.now())); } catch {}
 }
 
 function renderBookmarksBar() {
@@ -886,10 +1420,51 @@ const mkPinIcon = (color) => L.divIcon({
   className: '', iconSize: [28,38], iconAnchor: [14,38], popupAnchor: [0,-38],
   html: '<svg viewBox="0 0 28 38" width="28" height="38"><path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 24 14 24S28 24.5 28 14C28 6.27 21.73 0 14 0z" fill="'+color+'"/><circle cx="14" cy="14" r="6" fill="#fff" opacity=".9"/></svg>'
 });
-const mkBusIcon = (hex) => L.divIcon({
-  className: '', iconSize: [22,22], iconAnchor: [11,11], popupAnchor: [0,-13],
-  html: '<div style="width:22px;height:22px;border-radius:50%;background:#'+hex+';border:2px solid rgba(255,255,255,.25);box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:10px">🚌</div>'
-});
+const mkBusIcon = (hex, brg, label) => {
+  // 30px bus circle anchored at marker position; 14px heading arrow above,
+  // rotated around the circle center so it orbits as bearing changes;
+  // optional plate/label below, absolutely positioned (overflows the box
+  // visually but doesn't affect the marker anchor).
+  const arrow = brg == null ? '' :
+    '<div style="position:absolute;inset:0;transform-origin:15px 29px;transform:rotate('+brg.toFixed(0)+'deg);pointer-events:none">'+
+      '<div style="position:absolute;top:0;left:50%;margin-left:-7px;width:0;height:0;border:7px solid transparent;border-bottom-color:#'+hex+';filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))"></div>'+
+    '</div>';
+  const lbl = label ?
+    '<div style="position:absolute;top:42px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:1px 6px;border-radius:7px;background:#'+hex+';color:'+textOnHex(hex)+';border:1.5px solid rgba(255,255,255,.3);box-shadow:0 1px 4px rgba(0,0,0,.6);font:700 10px/1.2 system-ui;pointer-events:none">'+esc(label)+'</div>' : '';
+  return L.divIcon({
+    className: '',
+    iconSize: [30,44], iconAnchor: [15,29], popupAnchor: [0,-30],
+    html:
+      '<div style="position:relative;width:30px;height:44px">'+arrow+
+        '<div style="position:absolute;top:14px;left:0;width:30px;height:30px;border-radius:50%;background:#'+hex+';border:2px solid rgba(255,255,255,.3);box-shadow:0 1px 5px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:14px">🚌</div>'+
+        lbl+
+      '</div>'
+  });
+};
+
+function bearing(lat1, lng1, lat2, lng2) {
+  const r = Math.PI / 180;
+  const φ1 = lat1 * r, φ2 = lat2 * r, Δλ = (lng2 - lng1) * r;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function nextStopFor(bus, stops) {
+  if (!stops || !stops.length) return null;
+  let cur = stops.find(s => s.stopId === bus.stopId);
+  if (!cur) {
+    // Bus stopId not in path (rare) — fall back to nearest stop by haversine
+    let nd = Infinity;
+    for (const s of stops) {
+      const d = haversine(parseFloat(bus.lat), parseFloat(bus.lng), parseFloat(s.lat), parseFloat(s.lng));
+      if (d < nd) { nd = d; cur = s; }
+    }
+    if (!cur) return null;
+  }
+  const seq = parseInt(cur.seq) || 0;
+  return stops.find(s => (parseInt(s.seq) || 0) === seq + 1) || null;
+}
 
 function haversine(la1,lo1,la2,lo2) {
   const R=6371000,r=Math.PI/180,dL=(la2-la1)*r,dO=(lo2-lo1)*r;
@@ -917,9 +1492,14 @@ function getNextDeparture(code) {
 
 async function initPlanner() {
   document.getElementById('loadBar').style.width = '5%';
-  window._map = L.map('map',{zoomControl:true, preferCanvas:true, tap:false}).setView([40.152,26.41],13);
+  const sharedRenderer = L.canvas({ padding: 0.5, tolerance: 10 });
+  window._map = L.map('map',{
+    zoomControl:true, renderer:sharedRenderer, tap:false,
+    maxBounds: L.latLngBounds(MAP_BOUNDS), maxBoundsViscosity: 1.0,
+    minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM,
+  }).setView([40.152,26.41],13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© OpenStreetMap', maxZoom:19
+    attribution:'© OpenStreetMap', minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM,
   }).addTo(window._map);
   window._map.on('click',e=>{
     if(!allStops.size)return;
@@ -951,19 +1531,20 @@ async function initPlanner() {
   }
 
   // ── Add markers and enable UI ────────────────────────────────────────────────
-  // Canvas renderer: all stop dots drawn on one <canvas> instead of hundreds of divs
-  const _cr = L.canvas({ padding: 0.5 });
+  // Canvas renderer: stops share the map's sharedRenderer so there's only ONE
+  // canvas in the overlayPane — otherwise a second canvas (auto-created by the
+  // first un-rendered polyline) would stack on top and steal all pointer events.
   networkStopLayer = L.layerGroup();
   const _stopCircles = [];
-  const _stopRadius = z => Math.max(3, z - 10); // grows with zoom: z13=3, z14=4, z16=6...
+  const _stopRadius = z => Math.max(5, z - 9); // grows with zoom: z13=5, z14=6, z16=8...
   for(const s of allStops.values()) {
-    const c = L.circleMarker([s.lat,s.lng],{renderer:_cr,radius:_stopRadius(13),color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1})
+    const c = L.circleMarker([s.lat,s.lng],{radius:_stopRadius(13),color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1,bubblingMouseEvents:false})
       .bindTooltip(s.stopName,{direction:'top',offset:[0,-4]})
-      .on('click',()=>openStopOnMap(s.stopId));
+      .on('click', () => openStopOnMap(s.stopId));
     c.addTo(networkStopLayer);
     _stopCircles.push(c);
   }
-  const _updateStopVis = () => {
+  window._updateStopVis = () => {
     if(!networkStopLayer._active) return;
     const z = window._map.getZoom();
     if(z >= 13) {
@@ -975,12 +1556,12 @@ async function initPlanner() {
     }
   };
   networkStopLayer._active = true;
-  window._map.on('zoomend', _updateStopVis);
-  _updateStopVis();
+  window._map.on('zoomend', window._updateStopVis);
+  window._updateStopVis();
 
   document.getElementById('loadBar').style.width='100%';
   document.getElementById('loadStatus').textContent = allStops.size+' durak';
-  ['btnOrigin','btnDest','btnStops','btnPlanTime'].forEach(id=>document.getElementById(id).disabled=false);
+  ['btnOrigin','btnDest','btnPlanTime'].forEach(id=>document.getElementById(id).disabled=false);
   setMode('origin');
   renderBookmarksBar();
   if (navigator.geolocation) {
@@ -1055,6 +1636,14 @@ function estimateWaitMins(routeCode, boardSeq, path) {
 }
 
 function resetPlanner() {
+  // If user is in stops-browser mode, X just exits stops without clearing the plan
+  if (mode === 'stops') {
+    if (stopRefreshTimer) { clearInterval(stopRefreshTimer); stopRefreshTimer = null; }
+    openStopId = null;
+    document.getElementById('stopPanel').innerHTML = '';
+    setMode(originStop && !destStop ? 'dest' : 'origin');
+    return;
+  }
   // Clear markers
   if (originMarker) { window._map.removeLayer(originMarker); originMarker = null; }
   if (destMarker)   { window._map.removeLayer(destMarker);   destMarker   = null; }
@@ -1075,6 +1664,7 @@ function resetPlanner() {
   hidePanelHandle();
   document.getElementById('btnReset').disabled = true;
   document.getElementById('btnReset').style.color = '#4a5568';
+  document.getElementById('swap-row').style.display = 'none';
   setMode('origin');
   setHint('Haritaya tıklayın → başlangıç seçin.');
 }
@@ -1211,12 +1801,19 @@ function applyCustomTime() {
 
 function setMode(m){
   mode=m;
-  ['Origin','Dest','Stops'].forEach(n=>document.getElementById('btn'+n).classList.toggle('active',m===n.toLowerCase()));
+  ['Origin','Dest'].forEach(n=>document.getElementById('btn'+n).classList.toggle('active',m===n.toLowerCase()));
   const isStop=m==='stops';
   document.getElementById('results').style.display=isStop?'none':'';
   document.getElementById('stopPanel').style.display=isStop?'':'none';
   document.getElementById('originCard').style.display='none';
   document.getElementById('destCard').style.display='none';
+  // X (reset) enabled whenever there's something to clear or exit: a plan in progress, stops browser, or live tracker
+  const rb = document.getElementById('btnReset');
+  const hasPlan = !!(originStop || destStop);
+  const tracking = !!trackTimer;
+  rb.disabled = !(hasPlan || isStop || tracking);
+  rb.style.color = rb.disabled ? '#4a5568' : '#ef4444';
+  renderRecentDests();
   // GPS FAB: only show when picking origin
   document.getElementById('gps-fab')?.classList.toggle('visible', m==='origin');
   if(m==='origin'){
@@ -1259,8 +1856,30 @@ function applyPoint(lat,lng,which){
     destMarker=L.marker([lat,lng],{icon:mkPinIcon('#16a34a'),zIndexOffset:1100}).bindTooltip('Hedefiniz').addTo(window._map);
     document.getElementById('destName').textContent=stop.stopName;
     document.getElementById('destDist').textContent=fmtDist(meters)+' (en yakın)';
+    pushRecentDest(stop);
   }
+  document.getElementById('swap-row').style.display = (originStop && destStop) ? '' : 'none';
+  renderRecentDests();
   if(originStop&&destStop)findRoutes();
+}
+
+function swapOD() {
+  if (!originClick || !destClick) return;
+  // Swap state
+  [originClick, destClick] = [destClick, originClick];
+  [originStop,  destStop]  = [destStop,  originStop];
+  // Remove old markers
+  if (originMarker) { window._map.removeLayer(originMarker); originMarker = null; }
+  if (destMarker)   { window._map.removeLayer(destMarker);   destMarker   = null; }
+  // Re-create with swapped roles
+  originMarker = L.marker([originClick.lat, originClick.lng], { icon: mkPinIcon('#2563eb'), zIndexOffset: 1100 }).bindTooltip('Konumunuz').addTo(window._map);
+  destMarker   = L.marker([destClick.lat,   destClick.lng],   { icon: mkPinIcon('#16a34a'), zIndexOffset: 1100 }).bindTooltip('Hedefiniz').addTo(window._map);
+  // Update card labels
+  document.getElementById('originName').textContent = originStop.stopName;
+  document.getElementById('originDist').textContent = fmtDist(originStop.meters) + ' (en yakın)';
+  document.getElementById('destName').textContent   = destStop.stopName;
+  document.getElementById('destDist').textContent   = fmtDist(destStop.meters) + ' (en yakın)';
+  findRoutes();
 }
 
 function findRoutes(){
@@ -1271,12 +1890,12 @@ function findRoutes(){
     const st=path.busStopList||[];if(!st.length)continue;
     const oD=st.map(s=>haversine(oLat,oLng,parseFloat(s.lat),parseFloat(s.lng)));
     const dD=st.map(s=>haversine(dLat,dLng,parseFloat(s.lat),parseFloat(s.lng)));
-    if(oD.some(d=>d<=WALK_RADIUS))nO++;if(dD.some(d=>d<=WALK_RADIUS))nD++;
+    if(oD.some(d=>d<=SETTINGS.walkRadius))nO++;if(dD.some(d=>d<=SETTINGS.walkRadius))nD++;
     let best=null;
     for(let oi=0;oi<st.length;oi++){
-      if(oD[oi]>WALK_RADIUS)continue;
+      if(oD[oi]>SETTINGS.walkRadius)continue;
       let ba=null;
-      for(let di=oi+1;di<st.length;di++){if(dD[di]>WALK_RADIUS)continue;if(!ba||dD[di]<ba.d)ba={di,d:dD[di]};}
+      for(let di=oi+1;di<st.length;di++){if(dD[di]>SETTINGS.walkRadius)continue;if(!ba||dD[di]<ba.d)ba={di,d:dD[di]};}
       if(!ba)continue;
       const sc=ba.di-oi;
       if(!best||oD[oi]<oD[best.oi]||(oD[oi]===oD[best.oi]&&sc<best.sc))
@@ -1295,7 +1914,7 @@ function findRoutes(){
   }).map(m=>{
     const bSeq = parseInt(m.board.seq) || 0;
     const wait = estimateWaitMins(m.path.displayRouteCode, bSeq, m.path);
-    const eta  = Math.round(m.walkB/72) + wait + Math.round(m.sc*MINS_PER_STOP) + Math.round(m.walkA/72);
+    const eta  = Math.round(m.walkB/SETTINGS.walkSpeedMpm) + wait + Math.round(m.sc*MINS_PER_STOP) + Math.round(m.walkA/SETTINGS.walkSpeedMpm);
     return {...m, _wait: wait, _eta: eta};
   }).sort((a,b)=>a._eta-b._eta);
   if(!matches.length){setHint('Doğrudan hat yok. (konuma:'+nO+' hedefe:'+nD+')',true);document.getElementById('results').innerHTML='<p style="color:#4a5568;font-size:.8rem;padding:6px 0">Bağlantı bulunamadı.</p>';hidePanelHandle();return;}
@@ -1312,7 +1931,7 @@ function renderPlannerResults(matches){
   cont.innerHTML='<div class="result-header">Bağlantılı Hatlar</div>';
   for(const m of matches){
     const hex=(m.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
-    const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||'aktif')+'</span>').join(''):'<span class="bus-chip" style="background:#1e2235;color:#4a5568">Aktif araç yok</span>';
+    const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||'aktif')+'</span>').join(''):'<span class="bus-chip muted">Aktif araç yok</span>';
     const c=document.createElement('div');c.className='p-route-card';
     c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span></div>'
       +'<div class="p-route-meta">'+m.sc+' durak arası</div>'
@@ -1359,12 +1978,29 @@ function selectPlannerMatch(m, fitMap = true){
   for(const s of tripStops){
     const isB=s.stopId===m.board.stopId, isA=s.stopId===m.alight.stopId;
     drawnLayers.push(L.marker([parseFloat(s.lat),parseFloat(s.lng)],{icon:mkStopIcon(isB?'#2563eb':isA?'#16a34a':'#'+ROUTE_COLOR,isB||isA?14:9),zIndexOffset:isB||isA?500:200})
-      .bindTooltip((isB?'🟦 ':isA?'🟩 ':'')+s.stopName,{permanent:isB||isA,direction:'top',offset:[0,isB||isA?-10:-5]}).addTo(window._map));
+      .bindTooltip((isB?'🟦 ':isA?'🟩 ':'')+s.stopName,{permanent:isB||isA,direction:'top',offset:[0,isB||isA?-10:-5]})
+      .on('click', () => openStopOnMap(s.stopId))
+      .addTo(window._map));
   }
-  drawBuses(m.buses, ROUTE_COLOR);
+  drawBuses(m.buses, ROUTE_COLOR, m.path.displayRouteCode, m.path.busStopList);
 }
 
-function drawBuses(buses,hex){clearBuses();for(const b of buses){if(!b.lat||!b.lng)continue;busMarkers.push(L.marker([parseFloat(b.lat),parseFloat(b.lng)],{icon:mkBusIcon(hex),zIndexOffset:2000}).bindPopup('<b>'+(b.busLabel||'')+'</b><br>'+(b.plateNumber||'')).addTo(window._map));}}
+function drawBuses(buses,hex,code,stops){
+  clearBuses();
+  for(const b of buses){
+    if(!b.lat||!b.lng)continue;
+    const popup='<b>'+esc(code||'')+'</b> · '+esc(b.busLabel||'')+'<br>'+esc(b.plateNumber||'');
+    const label=b.plateNumber||b.busLabel||'';
+    const bla=parseFloat(b.lat), blo=parseFloat(b.lng);
+    const next=nextStopFor(b,stops);
+    let brg=null;
+    if(next){
+      const sla=parseFloat(next.lat), slo=parseFloat(next.lng);
+      if(Math.abs(bla-sla)>1e-6 || Math.abs(blo-slo)>1e-6) brg=bearing(bla,blo,sla,slo);
+    }
+    busMarkers.push(L.marker([bla,blo],{icon:mkBusIcon(hex,brg,label),zIndexOffset:2000}).bindPopup(popup).addTo(window._map));
+  }
+}
 async function refreshBuses(){
   if(!selectedMatch)return;
   const{path,route}=selectedMatch;
@@ -1372,18 +2008,25 @@ async function refreshBuses(){
     const r=await fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(path.displayRouteCode)+'&direction='+path.direction);
     const d=await r.json();const fp=d.pathList?.[0];
     if(fp){
-      drawBuses(fp.busList||[],(route.routeColor||'4a7dc0').replace('#',''));
+      drawBuses(fp.busList||[],(route.routeColor||'4a7dc0').replace('#',''),path.displayRouteCode,fp.busStopList||path.busStopList);
       // refresh trip detail panel if open
       if(tripMatch&&tripMatch.path.path_code===path.path_code){
         tripMatch.buses=fp.busList||[];showTripDetail(tripMatch,false);
       }
+      markKentkartResult(true);
+    } else {
+      clearBuses();
+      markKentkartResult(false);
     }
-  }catch{}
+  }catch{
+    clearBuses();
+    markKentkartResult(false);
+  }
 }
 function clearDrawn(){drawnLayers.forEach(l=>window._map.removeLayer(l));drawnLayers=[];}
 function clearBuses(){busMarkers.forEach(l=>window._map.removeLayer(l));busMarkers=[];}
-function hideNetworkStops(){if(networkStopLayer){networkStopLayer._active=false;networkStopLayer.remove();}}
-function showNetworkStops(){if(networkStopLayer&&window._map){networkStopLayer._active=true;if(window._map.getZoom()>=8)networkStopLayer.addTo(window._map);}}
+function hideNetworkStops(){ if(networkStopLayer){ networkStopLayer._active=false; networkStopLayer.remove(); } }
+function showNetworkStops(){ if(networkStopLayer){ networkStopLayer._active=true; if(window._updateStopVis) window._updateStopVis(); } }
 
 // ── Route tracker (launched from Seferler tab) ────────────────────────────────
 let trackedPaths   = [];   // all pathCache entries for the tracked route code
@@ -1431,6 +2074,9 @@ async function trackRoute(displayRouteCode) {
   selectedMatch = null; tripMatch = null;
 
   showTrackPanel();
+  // Enable X button so user can exit tracking mode
+  const rb = document.getElementById('btnReset');
+  rb.disabled = false; rb.style.color = '#ef4444';
   if (window._map) window._map.invalidateSize();
   await selectTrackPath(0);
   trackTimer = setInterval(() => selectTrackPath(trackedPathIdx, true), 15000);
@@ -1493,6 +2139,7 @@ async function selectTrackPath(idx, refreshOnly = false) {
       drawnLayers.push(
         L.marker([parseFloat(s.lat), parseFloat(s.lng)], { icon: mkStopIcon('#'+hex, 9), zIndexOffset: 200 })
           .bindTooltip(s.stopName, { direction: 'top', offset: [0, -5] })
+          .on('click', () => openStopOnMap(s.stopId))
           .addTo(window._map)
       );
     }
@@ -1506,11 +2153,18 @@ async function selectTrackPath(idx, refreshOnly = false) {
     const d = await r.json();
     const fp = d.pathList?.[0];
     if (fp) {
-      drawBuses(fp.busList || [], hex);
+      drawBuses(fp.busList || [], hex, pe.path.displayRouteCode, fp.busStopList || pe.path.busStopList);
       renderTrackBuses(fp.busList || [], pe, hex);
+      markKentkartResult(true);
+    } else {
+      clearBuses();
+      renderTrackBuses([], pe, hex);
+      markKentkartResult(false);
     }
   } catch {
+    clearBuses();
     renderTrackBuses(null, pe, hex);
+    markKentkartResult(false);
   }
 
   trackLastRefresh = Date.now();
@@ -1713,8 +2367,8 @@ function showTripDetail(m, fitMap = true) {
   const tripStops = (boardIdx >= 0 && alightIdx >= 0) ? stops.slice(boardIdx, alightIdx + 1) : [];
 
   // Time estimates
-  const walkToMins   = Math.max(1, Math.round(m.walkB / 72));
-  const walkFromMins = Math.max(1, Math.round(m.walkA / 72));
+  const walkToMins   = Math.max(1, Math.round(m.walkB / SETTINGS.walkSpeedMpm));
+  const walkFromMins = Math.max(1, Math.round(m.walkA / SETTINGS.walkSpeedMpm));
   const rideMins     = Math.round(m.sc * MINS_PER_STOP);
 
   // Which buses are approaching the board stop (seq < boardSeq)
@@ -1826,7 +2480,7 @@ function showTripDetail(m, fitMap = true) {
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">⏱</span>'
         +   '<span class="journey-time" style="color:'+waitCol+'">'+(waitMins === 0 ? 'Şimdi' : '~'+waitMins+' dk')+'</span>'
-        +   '<div><span style="color:#c0d0ea;font-weight:600">'+esc(waitLabel)+'</span>'
+        +   '<div><span class="journey-main">'+esc(waitLabel)+'</span>'
         +   '<div class="journey-detail">'+esc(waitDetail)+'</div>'
         +   '</div>'
         + '</div>';
@@ -1835,7 +2489,7 @@ function showTripDetail(m, fitMap = true) {
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🚌</span>'
         +   '<span class="journey-time">~'+rideMins+' dk</span>'
-        +   '<div><span style="color:#c0d0ea;font-weight:600">'+m.sc+' durak</span>'
+        +   '<div><span class="journey-main">'+m.sc+' durak</span>'
         +   '<div class="journey-detail">'+esc(m.path.headSign)+'</div>'
         +   '</div>'
         + '</div>';
@@ -1993,7 +2647,7 @@ function renderStopBuses(stopId,rows){
     const badge='<span class="bus-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+e.routeCode+'</span>';
     let dot,away;
     if(atStop.length){dot='dot-blue';away='Durağa geldi';}
-    else if(approaching.length){const n=approaching[0].stopsAway;dot=n<=2?'dot-blue':n<=5?'dot-green':n<=10?'dot-yellow':'dot-orange';away=n+' durak önde';}
+    else if(approaching.length){const n=approaching[0].stopsAway;dot=n<=2?'dot-blue':n<=5?'dot-green':n<=10?'dot-yellow':'dot-orange';away=n+' durak kaldı';}
     else{dot='dot-grey';const nx=getNextDeparture(e.routeCode);away=nx===undefined?'Aktif araç yok':nx===null?'Bugün sefer kalmadı':'Sıradaki: '+nx;}
     const plate=atStop[0]?.plateNumber||approaching[0]?.plateNumber||'';
     return '<div class="bus-row">'+badge+'<div class="bus-info"><div>'+esc(e.headSign)+'</div><div class="bus-dir">'+plate+'</div></div><div class="bus-dot '+dot+'"></div><span class="bus-away">'+away+'</span></div>';

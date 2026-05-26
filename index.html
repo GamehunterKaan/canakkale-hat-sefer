@@ -88,14 +88,16 @@
     /* ── Schedule ── */
     #scr-schedule { overflow: hidden; }
     .s-tabs {
-      display: flex; flex-shrink: 0; background: #141621;
-      border-bottom: 2px solid #252d40; padding: 0 10px;
+      display: flex; flex-wrap: wrap; flex-shrink: 0;
+      background: #141621; border-bottom: 2px solid #252d40;
+      overflow: hidden;
     }
     .s-tab-btn {
-      padding: 10px 16px; border: none; background: none;
-      color: #6b7a99; font-weight: 700; font-size: .85rem; cursor: pointer;
+      padding: 9px 10px; border: none; background: none;
+      color: #6b7a99; font-weight: 700; font-size: .75rem; cursor: pointer;
       border-bottom: 3px solid transparent; margin-bottom: -2px;
       transition: color .15s, border-color .15s;
+      white-space: nowrap; flex: 0 0 auto;
     }
     .s-tab-btn.active { color: #7eb3f7; border-bottom-color: #4a90d9; }
     .dir-section { margin-top: 8px; }
@@ -110,7 +112,8 @@
     #schedProgressBar { height: 100%; background: #4a90d9; border-radius: 2px; transition: width .3s; width: 0%; }
     #schedMsg { font-size: .85rem; color: #6b7a99; text-align: center; }
     #schedError { display: none; color: #ef4444; font-size: .82rem; text-align: center; line-height: 1.5; }
-    .sched-content { display: none; flex: 1; overflow-y: auto; padding: 10px 12px 12px; }
+    #schedPanels { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .sched-content { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 12px; }
     .sched-content.visible { display: block; }
     .route-card {
       background: #1a1d2e; border-radius: 8px; margin-bottom: 10px;
@@ -618,16 +621,12 @@
 
   <!-- SCHEDULE SCREEN -->
   <div id="scr-schedule" class="screen">
-    <div class="s-tabs">
-      <button class="s-tab-btn" id="tabWD" onclick="switchSchedTab('wd',this)">Hafta İçi</button>
-      <button class="s-tab-btn" id="tabWE" onclick="switchSchedTab('we',this)">Hafta Sonu</button>
-    </div>
+    <div id="schedTabs" class="s-tabs"></div>
     <div id="schedLoading">
       <div id="schedProgress"><div id="schedProgressBar"></div></div>
       <div id="schedMsg">Seferler yükleniyor…</div>
     </div>
-    <div id="routes-wd" class="sched-content"></div>
-    <div id="routes-we" class="sched-content"></div>
+    <div id="schedPanels"></div>
   </div>
 
   <!-- PLANNER SCREEN -->
@@ -757,7 +756,7 @@
 'use strict';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CACHE_KEY = 'canakkale_bus_v6';
+const CACHE_KEY = 'canakkale_bus_v7';
 
 // Çanakkale map bounds + zoom range. Tile pre-cache covers exactly this box at
 // every allowed zoom, so panning/zooming inside the box works fully offline.
@@ -840,7 +839,6 @@ function showScreen(name) {
 }
 
 // ── Schedule helpers ──────────────────────────────────────────────────────────
-function todayIsWeekend() { return [0,6].includes(new Date().getDay()); }
 
 function nowStr() {
   const n = new Date();
@@ -860,15 +858,71 @@ function countUpcoming(times) {
 }
 
 // ── Schedule tab ──────────────────────────────────────────────────────────────
-let schedTab = 'wd';
-function switchSchedTab(name, btn) {
-  schedTab = name;
-  document.querySelectorAll('.s-tab-btn').forEach(b => b.classList.remove('active'));
-  (btn || document.getElementById('tab' + name.toUpperCase())).classList.add('active');
-  document.querySelectorAll('.sched-content').forEach(el => el.classList.remove('visible'));
-  document.getElementById('routes-' + name)?.classList.add('visible');
+let schedTab = null;          // currently displayed schedule id
+function switchSchedTab(sid) {
+  schedTab = sid;
+  document.querySelectorAll('.s-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.sid === sid);
+  });
+  document.querySelectorAll('.sched-content').forEach(el => {
+    el.classList.toggle('visible', el.id === 'routes-' + sid);
+  });
   highlightNextTimes();
 }
+
+// Compute today (Europe/Istanbul) — mirror of the CI script's todayInTurkey
+function todayParts() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const get = k => parts.find(p => p.type === k).value;
+  const y = +get('year'), m = +get('month'), d = +get('day');
+  const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+  return {
+    ymd:  `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+    mmdd: `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
+    year: y,
+    isWeekend: dow === 0 || dow === 6,
+  };
+}
+
+// Pick today's active schedule id from scheduleData.schedules.
+// Same priority as the CI picker: dated special → effective-from → weekday/weekend.
+function pickActiveScheduleId(schedules, today) {
+  if (!schedules?.length) return null;
+  // 1. Specials whose dates contain today's MM-DD (year-aware).
+  const specials = schedules
+    .filter(s => s.kind === 'special')
+    .filter(s => s.year == null || s.year === today.year)
+    .filter(s => Array.isArray(s.dates) && s.dates.includes(today.mmdd))
+    .sort((a, b) => {
+      const pri = id => /arefe/.test(id) ? 0 : /bayram/.test(id) ? 1 : 2;
+      const pa = pri(a.id), pb = pri(b.id);
+      if (pa !== pb) return pa - pb;
+      return (a.dates.length - b.dates.length); // single > range
+    });
+  if (specials.length) return specials[0].id;
+  // 2. Effective-from override matching today's day-of-week.
+  const wantKind = today.isWeekend ? 'effective-weekend' : 'effective-weekday';
+  const eff = schedules
+    .filter(s => s.kind === wantKind)
+    .filter(s => s.year == null || s.year === today.year)
+    .filter(s => s.effectiveFrom && s.effectiveFrom <= today.mmdd)
+    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+  if (eff.length) return eff[0].id;
+  // 3. Regular weekday / weekend
+  const reg = schedules.find(s => s.kind === (today.isWeekend ? 'weekend' : 'weekday'));
+  return reg?.id || schedules[0].id;
+}
+
+function getActiveSchedule() {
+  if (!scheduleData?.schedules?.length) return null;
+  const id = pickActiveScheduleId(scheduleData.schedules, todayParts());
+  return scheduleData.schedules.find(s => s.id === id)
+      || scheduleData.schedules.find(s => s.kind === 'weekday')
+      || scheduleData.schedules[0];
+}
+function getActiveRoutes() { return getActiveSchedule()?.routes || {}; }
 
 // ══════════════════════════════════════════════════════════════
 // PDF FETCHING & PARSING
@@ -882,7 +936,9 @@ async function loadScheduleData(forceRefresh) {
   if (!forceRefresh) {
     try {
       const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-      if (c && isCacheFresh(c)) {
+      // Require the v7 shape (schedules array) — anything else is a stale
+      // pre-migration cache and must be re-fetched.
+      if (c && isCacheFresh(c) && Array.isArray(c.schedules)) {
         scheduleData = c;
         if (c.routes?.length) {
           kentkartRouteMap = new Map();
@@ -899,9 +955,21 @@ async function loadScheduleData(forceRefresh) {
   }
 
   setSchedProgress(10, 'Seferler yükleniyor…');
-  const r = await fetch('./data/schedule.json');
+  // The service worker stale-while-revalidates this URL, which means a user
+  // who updated the app version will get the OLD JSON shape on the first
+  // load after the upgrade. Detect that and force a network-only refetch.
+  let r = await fetch('./data/schedule.json');
   if (!r.ok) throw new Error('schedule.json alınamadı');
-  scheduleData = await r.json();
+  let data = await r.json();
+  if (!Array.isArray(data.schedules)) {
+    setSchedProgress(40, 'Veriler güncelleniyor…');
+    // Cache-busting query string also dodges the SW's URL-keyed cache match,
+    // forcing a fresh network fetch through stale-while-revalidate.
+    r = await fetch('./data/schedule.json?_=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('schedule.json alınamadı (refresh)');
+    data = await r.json();
+  }
+  scheduleData = data;
   if (scheduleData.routes?.length) {
     kentkartRouteMap = new Map();
     for (const route of scheduleData.routes) {
@@ -925,15 +993,39 @@ function setSchedProgress(pct, msg, isError) {
 
 // ── Render schedule ───────────────────────────────────────────────────────────
 function renderSchedule() {
-  if (!scheduleData) return;
-  const age = Math.round((Date.now() - scheduleData.fetchedAt) / 60000);
+  if (!scheduleData?.schedules?.length) {
+    setSchedProgress(100, 'Veri alınamadı. Sayfayı yenileyin.', true);
+    return;
+  }
 
   document.getElementById('schedLoading').style.display = 'none';
-  renderRouteCards(scheduleData.weekday, 'routes-wd', true);
-  renderRouteCards(scheduleData.weekend, 'routes-we', false);
 
-  // Auto-select today's tab (user can still switch manually)
-  switchSchedTab(todayIsWeekend() ? 'we' : 'wd');
+  const activeId = pickActiveScheduleId(scheduleData.schedules, todayParts());
+  const tabRow   = document.getElementById('schedTabs');
+  const panels   = document.getElementById('schedPanels');
+  tabRow.innerHTML = '';
+  panels.innerHTML = '';
+
+  for (const s of scheduleData.schedules) {
+    const isActive = s.id === activeId;
+    const btn = document.createElement('button');
+    btn.className   = 's-tab-btn';
+    btn.dataset.sid = s.id;
+    btn.textContent = s.label || s.id;
+    btn.onclick     = () => switchSchedTab(s.id);
+    tabRow.appendChild(btn);
+
+    const panel = document.createElement('div');
+    panel.className = 'sched-content';
+    panel.id        = 'routes-' + s.id;
+    panels.appendChild(panel);
+
+    // Pass isActive as the "isToday" flag so the next-departure highlight
+    // only runs on today's schedule, not on previewed tabs.
+    renderRouteCards(s.routes || {}, panel.id, isActive);
+  }
+
+  switchSchedTab(activeId);
   highlightNextTimes();
 }
 
@@ -1478,8 +1570,7 @@ function setHint(msg,warn){const el=document.getElementById('hint');el.textConte
 
 function getNextDeparture(code) {
   if (!scheduleData) return undefined;
-  const isWE   = [0,6].includes(new Date().getDay());
-  const dayData = scheduleData[isWE ? 'weekend' : 'weekday'] || {};
+  const dayData = getActiveRoutes();
   const entry  = findSchedEntry(dayData, code);
   if (!entry) return null;
   const toM  = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
@@ -1617,8 +1708,7 @@ function schedTimesForPath(schedEntry, path) {
 // accounting for planOffset. Used for ETA-based sorting in findRoutes.
 function estimateWaitMins(routeCode, boardSeq, path) {
   const effectiveNow = new Date().getHours() * 60 + new Date().getMinutes() + planOffset;
-  const isWE   = [0,6].includes(new Date().getDay());
-  const dayData = scheduleData?.[isWE ? 'weekend' : 'weekday'] || {};
+  const dayData = getActiveRoutes();
   const entry  = findSchedEntry(dayData, routeCode);
   if (!entry) return 999; // no schedule → sort to bottom
   const tm     = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
@@ -1903,8 +1993,7 @@ function findRoutes(){
     }
     if(best){const k=path.path_code;if(!bpMap.has(k)||best.walkB<bpMap.get(k).walkB)bpMap.set(k,best);}
   }
-  const _isWE   = [0,6].includes(new Date().getDay());
-  const _dData  = scheduleData?.[_isWE ? 'weekend' : 'weekday'] || {};
+  const _dData  = getActiveRoutes();
   const matches=[...bpMap.values()].filter(m => {
     if (/^OGR|^ÖĞ/i.test(m.path.displayRouteCode)) return false;
     // Keep if schedule is known in Seferler tab
@@ -2275,8 +2364,7 @@ async function toggleBusNotify() {
   stops.forEach(s => { seqOf[s.stopId] = parseInt(s.seq) || 0; });
 
   // Compute next scheduled departure timestamp (epoch ms) for time-based alert
-  const isWE_     = [0,6].includes(new Date().getDay());
-  const dayData_  = scheduleData?.[isWE_ ? 'weekend' : 'weekday'] || {};
+  const dayData_  = getActiveRoutes();
   const schedE_   = findSchedEntry(dayData_, m.path.displayRouteCode);
   const schedT_   = schedTimesForPath(schedE_, m.path);
   let nextDepTs   = null;
@@ -2381,8 +2469,7 @@ function showTripDetail(m, fitMap = true) {
 
   // ── Schedule lookup ──────────────────────────────────────────────────────────
   // Schedule is keyed by full route name (e.g. "Ç11K KEPEZ ESENLER"), not by code.
-  const isWE    = [0,6].includes(new Date().getDay());
-  const dayData = scheduleData?.[isWE ? 'weekend' : 'weekday'] || {};
+  const dayData = getActiveRoutes();
   const schedEntry = findSchedEntry(dayData, m.path.displayRouteCode);
   const realNow    = new Date().getHours() * 60 + new Date().getMinutes();
   const nowMins    = realNow + planOffset;

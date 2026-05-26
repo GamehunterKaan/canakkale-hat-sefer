@@ -130,7 +130,39 @@ function todayInTurkey(overrideYmd) {
   };
 }
 
-async function getPDFUrls(today) {
+// Title-case a Turkish string respecting Turkish locale rules (İ vs I, etc.)
+function titleCaseTr(s) {
+  return s.split(/\s+/).filter(Boolean).map(w =>
+    w.charAt(0).toLocaleUpperCase('tr') + w.slice(1).toLocaleLowerCase('tr')
+  ).join(' ');
+}
+
+// Build the tab label directly from the municipality link text — strip the
+// boilerplate suffixes the page appends to every PDF name and title-case the
+// rest. Keeps labels in sync with whatever the municipality publishes without
+// hardcoding any keyword-specific phrasing.
+function labelFor(link) {
+  let t = link.text
+    // Drop the "GÜNÜ TOPLU TAŞIMA SEFER SAATLERİ" / "TOPLU TAŞIMA SEFER
+    // SAATLERİ" / "SEFER SAATLERİ" trailers in any combination.
+    .replace(/\s*(?:GÜN[UÜ]\s+)?(?:TOPLU\s+TA[ŞS]IMA\s+)?SEFER\s+SAATLER[İI]\s*$/u, '')
+    .trim();
+  if (!t) t = link.text;
+  return titleCaseTr(t);
+}
+
+function idFor(link) {
+  const first = minDate(link.dates);
+  if (link.kind === 'weekday') return 'weekday';
+  if (link.kind === 'weekend') return 'weekend';
+  if (link.kind === 'effective-weekend') return `effective-weekend-${first || 'x'}`;
+  if (link.kind === 'effective-weekday') return `effective-weekday-${first || 'x'}`;
+  if (/AREFE/.test(link.text))  return `arefe-${first || 'x'}`;
+  if (/BAYRAM/.test(link.text)) return `bayram-${first || 'x'}`;
+  return `special-${first || link.url.split('/').pop().replace(/\.pdf$/i,'')}`;
+}
+
+async function getPdfLinks() {
   const html = await fetchText(MUN_URL);
   const links = [];
   for (const m of html.matchAll(/<a[^>]*href="([^"]+\.pdf)"[^>]*>([\s\S]*?)<\/a>/gi)) {
@@ -144,74 +176,27 @@ async function getPDFUrls(today) {
     const base = decodeURIComponent(url.split('/').pop() || '')
       .replace(/\.pdf$/i, '').replace(/[-_]/g, ' ').toUpperCase();
     const yearMatch = (text + ' ' + base).match(/\b(20\d{2})\b/);
-    links.push({
-      url, text, base,
-      kind:  classifyLink(text),
-      dates: parseDateSet(text + ' ' + base),
-      year:  yearMatch ? parseInt(yearMatch[1], 10) : null,
-    });
+    const dates = parseDateSet(text + ' ' + base);
+    const kind = classifyLink(text);
+    const link = {
+      url, text, base, kind, dates, year: yearMatch ? parseInt(yearMatch[1], 10) : null,
+    };
+    link.id    = idFor(link);
+    link.label = labelFor(link);
+    link.effectiveFrom = kind.startsWith('effective-') ? minDate(dates) : null;
+    links.push(link);
   }
   if (!links.length) throw new Error('No PDF links found on municipality page');
+  return links;
+}
 
-  // Regular slots (first match wins)
-  let wdUrl = links.find(l => l.kind === 'weekday')?.url || null;
-  let weUrl = links.find(l => l.kind === 'weekend')?.url || null;
-
-  // Effective-from overrides: "31 MAYIS İTİBARİYLE HAFTA SONU" replaces the
-  // regular weekend slot on/after May 31. Pick the most recent effective date
-  // that is still <= today, in case the page lists several future cutovers.
-  const applyEffective = (kind, slotSetter) => {
-    const candidates = links
-      .filter(l => l.kind === kind)
-      .filter(l => l.year === null || l.year === today.year)
-      .map(l => ({ link: l, start: minDate(l.dates) }))
-      .filter(c => c.start && c.start <= today.mmdd)
-      .sort((a, b) => b.start.localeCompare(a.start));
-    if (candidates.length) {
-      const w = candidates[0];
-      console.log(`Effective-from override: "${w.link.text}" (start=${w.start}) replaces ${kind === 'effective-weekend' ? 'weekend' : 'weekday'}.`);
-      slotSetter(w.link.url);
-    }
-  };
-  applyEffective('effective-weekend', u => { weUrl = u; });
-  applyEffective('effective-weekday', u => { wdUrl = u; });
-
-  // Today-matching specials (Arefe / Bayram / dated one-offs)
-  const matchingSpecials = links
-    .filter(l => l.kind === 'special')
-    .filter(l => l.year === null || l.year === today.year)
-    .filter(l => l.dates.has(today.mmdd))
-    .sort((a, b) => {
-      const pa = specialPriority(a.text), pb = specialPriority(b.text);
-      if (pa !== pb) return pa - pb;
-      // Single-date match beats a range that contains today.
-      return a.dates.size - b.dates.size;
-    });
-
-  console.log(`Today (Europe/Istanbul): ${today.ymd} (${today.isWeekend ? 'weekend' : 'weekday'})`);
-  console.log(`Found ${links.length} PDF links — ${matchingSpecials.length} special(s) match today`);
-  for (const s of matchingSpecials) {
-    console.log(`  match: "${s.text}" (dates=${[...s.dates].join(',')}, year=${s.year ?? 'n/a'})`);
-  }
-
-  if (matchingSpecials.length) {
-    const winner = matchingSpecials[0];
-    if (today.isWeekend) {
-      console.log(`Substituting "${winner.text}" for weekend schedule.`);
-      weUrl = winner.url;
-    } else {
-      console.log(`Substituting "${winner.text}" for weekday schedule.`);
-      wdUrl = winner.url;
-    }
-  }
-
-  // Final fallback if the page somehow had no regular weekly PDF
-  if (!wdUrl) wdUrl = links.find(l => l.kind !== 'special' && l.kind !== 'ignore')?.url || links[0].url;
-  if (!weUrl) weUrl = links.filter(l => l.kind !== 'special' && l.kind !== 'ignore').slice(-1)[0]?.url || null;
-
-  console.log('Weekday PDF:', wdUrl);
-  console.log('Weekend PDF:', weUrl);
-  return { wdUrl, weUrl };
+function sortSchedules(a, b) {
+  const order = { weekday: 0, weekend: 1, special: 2, 'effective-weekday': 3, 'effective-weekend': 4 };
+  const oa = order[a.kind] ?? 9, ob = order[b.kind] ?? 9;
+  if (oa !== ob) return oa - ob;
+  const sa = minDate(new Set(a.dates)) || '99-99';
+  const sb = minDate(new Set(b.dates)) || '99-99';
+  return sa.localeCompare(sb);
 }
 
 // ── PDF parser (ported from index.html) ──────────────────────────────────────
@@ -305,7 +290,7 @@ async function parsePDF(buffer) {
         else if (fb2.length === 1 && deptItems.length === 0) deptItems = fb2;
       }
 
-      function labelFor(kItem) {
+      function deptLabel(kItem) {
         const selfPart = kItem.text.replace(/\s*(KALKIŞ|HAREKET)\s*$/i, '').trim();
         const above = band
           .filter(i => Math.abs(i.x - kItem.x) < 30 && i.y > kItem.y &&
@@ -319,10 +304,10 @@ async function parsePDF(buffer) {
       let splitX = null, dir0Lbl = '', dir1Lbl = '';
       if (deptItems.length >= 2) {
         splitX  = (deptItems[0].x + deptItems[1].x) / 2;
-        dir0Lbl = labelFor(deptItems[0]);
-        dir1Lbl = labelFor(deptItems[1]);
+        dir0Lbl = deptLabel(deptItems[0]);
+        dir1Lbl = deptLabel(deptItems[1]);
       } else if (deptItems.length === 1) {
-        dir0Lbl = labelFor(deptItems[0]);
+        dir0Lbl = deptLabel(deptItems[0]);
       }
 
       // Assign times by column: each deptItem defines a departure column.
@@ -366,38 +351,43 @@ async function parsePDF(buffer) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  // CLI override: --date=YYYY-MM-DD lets you reproduce any day's pick locally
-  // without waiting for the calendar. Omit to use real Istanbul-local today.
-  const dateArg = process.argv.find(a => a.startsWith('--date='));
-  const today   = todayInTurkey(dateArg ? dateArg.slice('--date='.length) : null);
-
   console.log('Fetching PDF URLs…');
-  const { wdUrl, weUrl } = await getPDFUrls(today);
+  const all = await getPdfLinks();
+  const links = all.filter(l => l.kind !== 'ignore' && l.kind !== 'unknown')
+                   .sort(sortSchedules);
+  console.log(`Found ${all.length} link(s), ${links.length} usable schedule(s) after filtering:`);
+  for (const l of links) {
+    console.log(`  [${l.kind}] ${l.id}  "${l.label}"  dates={${[...l.dates].join(',')}}  ${l.url}`);
+  }
 
-  // Fast-skip: if URLs match the previous run's, the PDFs haven't been
-  // re-uploaded and there's nothing to do. Lets us run the workflow hourly
-  // without re-parsing the same data.
+  // Fast-skip: if the sorted URL list matches the previous run, nothing changed.
+  const urlList = links.map(l => l.url).sort();
   try {
     const prev = JSON.parse(readFileSync('data/schedule.json', 'utf8'));
-    if (prev.wdUrl === wdUrl && prev.weUrl === weUrl) {
-      console.log('PDFs unchanged since last run — skipping parse.');
+    const prevUrls = (prev.schedules || []).map(s => s.url).sort();
+    if (prevUrls.length === urlList.length && prevUrls.every((u, i) => u === urlList[i])) {
+      console.log('PDF URL list unchanged since last run — skipping parse.');
       return;
     }
   } catch {}
 
-  console.log('Downloading PDFs…');
-  const [wdBuf, weBuf] = await Promise.all([
-    fetchBinary(wdUrl),
-    weUrl ? fetchBinary(weUrl) : Promise.resolve(null),
-  ]);
-
-  console.log('Parsing weekday PDF…');
-  const weekday = await parsePDF(wdBuf);
-  console.log(`  → ${Object.keys(weekday).length} routes`);
-
-  console.log('Parsing weekend PDF…');
-  const weekend = weBuf ? await parsePDF(weBuf) : {};
-  console.log(`  → ${Object.keys(weekend).length} routes`);
+  console.log('Downloading & parsing each PDF…');
+  const schedules = [];
+  for (const link of links) {
+    console.log(`  → ${link.label} (${link.id})`);
+    try {
+      const buf = await fetchBinary(link.url);
+      const routes = await parsePDF(buf);
+      console.log(`    parsed ${Object.keys(routes).length} routes`);
+      schedules.push({
+        id: link.id, label: link.label, kind: link.kind,
+        dates: [...link.dates], year: link.year, effectiveFrom: link.effectiveFrom,
+        url: link.url, routes,
+      });
+    } catch (e) {
+      console.warn(`    skipped: ${e.message}`);
+    }
+  }
 
   // Fetch kentkart route list for colors (used by Seferler tab badges)
   console.log('Fetching kentkart route colors…');
@@ -409,9 +399,9 @@ async function main() {
     console.log(`  → ${routes.length} routes`);
   } catch (e) { console.warn('  kentkart fetch failed:', e.message); }
 
-  const out = { weekday, weekend, routes, fetchedAt: Date.now(), wdUrl, weUrl };
+  const out = { schedules, routes, fetchedAt: Date.now() };
   writeFileSync('data/schedule.json', JSON.stringify(out));
-  console.log('✅ schedule.json written');
+  console.log(`✅ schedule.json written (${schedules.length} schedules)`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

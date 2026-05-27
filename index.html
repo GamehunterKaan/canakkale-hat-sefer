@@ -442,6 +442,9 @@
     html[data-theme="light"] .stop-card .name { color: #1a1d2e; }
     html[data-theme="light"] .p-route-card { background: #fff; border-color: #e5e7eb; }
     html[data-theme="light"] .p-route-card:hover { border-color: #4a90d9; }
+    html[data-theme="light"] .settings-header h2 { color: #1a1d2e; }
+    html[data-theme="light"] .settings-back { color: #2563eb; border-color: #d1d5db; }
+    html[data-theme="light"] .settings-back:hover { border-color: #2563eb; }
     html[data-theme="light"] .settings-group { background: #fff; border-color: #e5e7eb; }
     html[data-theme="light"] .settings-label { color: #1a1d2e; }
     html[data-theme="light"] .settings-hint  { color: #6b7280; }
@@ -1069,17 +1072,21 @@ function renderRouteCards(routeMap, panelId, isToday) {
       ? (remaining > 0 ? remaining + ' sefer kaldı' : 'Sefer kalmadı')
       : (d0.length + d1.length) + ' sefer';
 
-    // Look up kentkart display name and color using the route code prefix
+    // Look up kentkart display name and color using the route code prefix.
+    // Express PDF entries ("… EKSPRES") map to the kentkart "-E" variant.
     const pdfCode    = code.split(/\s+/)[0]; // e.g. "Ç1", "Ç11K", "Ç960"
+    const baseCode   = pdfCode.replace(/^Ç(?=\d)/, '').toUpperCase(); // "11K"
+    const isExpress  = /EKSPRES/i.test(name);
     const ktRoute    = kentkartRouteMap &&
-      (kentkartRouteMap.get(pdfCode.toUpperCase()) ||
-       kentkartRouteMap.get(pdfCode.replace(/^Ç(?=\d)/, '').toUpperCase()));
+      ((isExpress && kentkartRouteMap.get(baseCode + '-E')) ||
+       kentkartRouteMap.get(pdfCode.toUpperCase()) ||
+       kentkartRouteMap.get(baseCode));
     const hexColor   = ktRoute?.routeColor?.replace('#','').padStart(6,'0') || '252d40';
     const textColor  = (() => {
       const r=parseInt(hexColor.slice(0,2),16), g=parseInt(hexColor.slice(2,4),16), b=parseInt(hexColor.slice(4,6),16);
       return (r*299+g*587+b*114)/1000 > 145 ? '#000' : '#fff';
     })();
-    const displayCode = ktRoute?.displayRouteCode || pdfCode;
+    const displayCode = ktRoute?.displayRouteCode || (isExpress ? baseCode + '-E' : pdfCode);
     // Use PDF-parsed name so routes with the same code (e.g. Ç11K KEPEZ vs Ç11K DARDANOS)
     // are always distinguishable; strip the leading route-code token to avoid duplication.
     const pdfDest    = name.replace(/^[A-ZÇŞĞÜÖİ0-9]+\s*/i, '').trim();
@@ -1666,13 +1673,21 @@ async function initPlanner() {
 // Normalise a route code for schedule lookup: strip leading Ç before a digit.
 // This makes "Ç960" match the PDF key "960 KEPEZ..." and vice-versa.
 function schedCodeNorm(c) { return c.toUpperCase().replace(/^Ç(?=\d)/, ''); }
+// kentkart marks express variants with a "-E" code suffix (e.g. 11K-E) while
+// the PDF distinguishes them only by an "EKSPRES" token in the route name.
+// Match on the base code, then disambiguate express vs regular when several
+// PDF entries share that code.
 function findSchedEntry(dayData, routeCode) {
-  const norm = schedCodeNorm(routeCode);
-  const key  = Object.keys(dayData).find(k => {
-    const kn = schedCodeNorm(k.split(' ')[0]);
-    return kn === norm;
-  });
-  return key ? dayData[key] : null;
+  const norm      = schedCodeNorm(routeCode);     // "11K" or "11K-E"
+  const isExpress = /-E$/.test(norm);
+  const baseNorm  = norm.replace(/-E$/, '');       // "11K"
+  const candidates = Object.keys(dayData).filter(k =>
+    schedCodeNorm(k.split(' ')[0]) === baseNorm);
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return dayData[candidates[0]];
+  const expressKey = candidates.find(k => /EKSPRES/i.test(k));
+  const plainKey   = candidates.find(k => !/EKSPRES/i.test(k));
+  return dayData[(isExpress ? expressKey : plainKey) || candidates[0]];
 }
 
 // Pick which PDF direction (dir0/dir1) belongs to the user's kentkart path by
@@ -2741,5 +2756,8 @@ function renderStopBuses(stopId,rows){
   }).join('');
 }
 </script>
+<!-- Simple Analytics — privacy-friendly, cookieless -->
+<script async src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+<noscript><img src="https://queue.simpleanalyticscdn.com/noscript.gif" alt="" referrerpolicy="no-referrer-when-downgrade"/></noscript>
 </body>
 </html>

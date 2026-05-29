@@ -25,8 +25,14 @@ self.addEventListener('install', e => {
       .then(c => Promise.all(SHELL_ASSETS.map(u =>
         c.add(u).catch(() => {})   // tolerate one-off CDN hiccup; don't fail install
       )))
-      .then(() => self.skipWaiting())
+      // Don't auto skipWaiting — wait for the page to ask via SKIP_WAITING so
+      // the in-page "Update available" toast can prompt the user instead of
+      // swapping the SW out from under them mid-interaction.
   );
+});
+
+self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {

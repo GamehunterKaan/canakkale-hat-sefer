@@ -43,6 +43,19 @@
       transition: color .12s, border-color .12s;
     }
     #gear-btn:hover { color: #f59e0b; border-color: #f59e0b; }
+    #updateToast {
+      display: none; position: fixed; top: 50px; left: 50%; transform: translateX(-50%);
+      z-index: 9000; background: #1a3a5c; color: #fff; padding: 8px 12px; border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.4); font-size: .82rem; font-weight: 600;
+      align-items: center; gap: 10px;
+    }
+    #updateToast.visible { display: inline-flex; }
+    #updateToast button {
+      background: #4a90d9; color: #fff; border: none; padding: 4px 10px; border-radius: 5px;
+      font-weight: 700; font-size: .78rem; cursor: pointer;
+    }
+    #updateToast button:hover { background: #3b7ec7; }
+    html[data-theme="light"] #updateToast { background: #2563eb; }
     #offline-badge {
       display: none; align-items: center; gap: 4px;
       padding: 3px 8px; border-radius: 10px;
@@ -69,6 +82,108 @@
       text-transform: uppercase; color: #4a5568; letter-spacing: .04em;
     }
     .bm-dd-empty { padding: 10px 12px; color: #4a5568; font-size: .75rem; }
+    /* Duraklar tab */
+    #scr-stops { padding: 0; }
+    #stop-search-input {
+      width: 100%; box-sizing: border-box; padding: 11px 14px; flex-shrink: 0;
+      background: #1a1d2e; color: #e6ebf5; border: none; border-bottom: 1px solid #252d40;
+      font-size: .9rem; outline: none;
+    }
+    #stop-search-input::placeholder { color: #4a5568; }
+    #stop-content { overflow-y: auto; flex: 1; min-height: 0; }
+    .stops-section { padding: 4px 0 6px; }
+    .stops-section-title {
+      padding: 10px 14px 4px; font-size: .65rem; font-weight: 700;
+      text-transform: uppercase; color: #4a5568; letter-spacing: .04em;
+    }
+    .ss-item {
+      display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+      background: none; border: none; padding: 10px 4px 10px 14px;
+      color: #c0d0ea; font-size: .85rem; cursor: pointer;
+      border-bottom: 1px solid #1f2333;
+    }
+    .ss-item:hover, .ss-item:focus { background: #252d40; color: #fff; outline: none; }
+    .ss-text { flex: 1; min-width: 0; }
+    .ss-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ss-meta { font-size: .7rem; color: #6b7a99; margin-top: 2px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ss-fav {
+      background: none; border: none; cursor: pointer; padding: 6px 12px;
+      font-size: 1.25rem; color: #4a5568; flex-shrink: 0; line-height: 1;
+    }
+    .ss-fav.on { color: #f59e0b; }
+    .ss-fav:hover { color: #f59e0b; }
+    .ss-empty { padding: 24px 14px; color: #4a5568; font-size: .8rem; text-align: center; }
+    .ss-empty .ss-action { display: inline-block; margin-top: 8px; background: #252d40; color: #c0d0ea;
+                           border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: .78rem; }
+    .ss-empty .ss-action:hover { background: #2d3548; }
+    /* Detail view */
+    #stops-detail-view { padding: 10px 0 12px; }
+    .sd-back {
+      background: none; border: none; color: #7eb3f7; font-size: .85rem; font-weight: 600;
+      padding: 6px 14px; cursor: pointer;
+    }
+    .sd-back:hover { color: #fff; }
+    .sd-title-row { display: flex; align-items: flex-start; gap: 4px; padding: 8px 4px 6px 14px; }
+    .sd-title-text { flex: 1; min-width: 0; }
+    .sd-title { font-size: 1.05rem; font-weight: 700; color: #e6ebf5;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sd-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px;
+               font-size: .72rem; color: #6b7a99; }
+    .sd-meta-item { white-space: nowrap; }
+    .sd-cta {
+      display: block; width: calc(100% - 28px); margin: 10px 14px 12px;
+      background: #1e3a5c; color: #fff; border: 1px solid #2a4d77; border-radius: 8px;
+      padding: 11px 14px; font-size: .9rem; font-weight: 700; cursor: pointer;
+    }
+    .sd-cta:hover { background: #254873; border-color: #4a90d9; }
+    .sd-routes-title { padding: 8px 14px 4px; font-size: .65rem; font-weight: 700;
+                       text-transform: uppercase; color: #4a5568; letter-spacing: .04em; }
+    .sd-route {
+      display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+      border-bottom: 1px solid #1f2333;
+    }
+    .sd-route-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: .72rem;
+      font-weight: 700; white-space: nowrap; flex-shrink: 0;
+    }
+    .sd-route-info { flex: 1; min-width: 0; }
+    .sd-route-name { font-size: .82rem; color: #c0d0ea; font-weight: 600;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sd-route-status { font-size: .72rem; color: #6b7a99; margin-top: 2px;
+                       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sd-route-status.live-at  { color: #22c55e; font-weight: 700; }
+    .sd-route-status.live-near{ color: #4a90d9; font-weight: 700; }
+    .sd-route-status.live-mid { color: #22c55e; }
+    .sd-route-status.live-far { color: #f59e0b; }
+    .sd-route-live {
+      background: #1f2937; color: #7eb3f7; border: 1px solid #2d3548;
+      border-radius: 6px; padding: 4px 9px; font-size: .72rem; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+    }
+    .sd-route-live:hover { background: #252d40; color: #fff; border-color: #4a90d9; }
+    /* Light mode */
+    html[data-theme="light"] #stop-search-input { background: #fff; color: #1a1d2e; border-bottom-color: #e5e7eb; }
+    html[data-theme="light"] #stop-search-input::placeholder { color: #9ca3af; }
+    html[data-theme="light"] .ss-item { color: #1a1d2e; border-bottom-color: #f3f4f6; }
+    html[data-theme="light"] .ss-item:hover, html[data-theme="light"] .ss-item:focus { background: #f3f4f6; color: #1a1d2e; }
+    html[data-theme="light"] .ss-empty, html[data-theme="light"] .stops-section-title { color: #9ca3af; }
+    html[data-theme="light"] .ss-meta { color: #9ca3af; }
+    html[data-theme="light"] .ss-empty .ss-action { background: #f3f4f6; color: #1a1d2e; }
+    html[data-theme="light"] .ss-fav { color: #d1d5db; }
+    html[data-theme="light"] .sd-back { color: #2563eb; }
+    html[data-theme="light"] .sd-title { color: #1a1d2e; }
+    html[data-theme="light"] .sd-cta { background: #2563eb; border-color: #1d4ed8; }
+    html[data-theme="light"] .sd-cta:hover { background: #1d4ed8; border-color: #1e40af; }
+    html[data-theme="light"] .sd-route { border-bottom-color: #f3f4f6; }
+    html[data-theme="light"] .sd-route-name { color: #1a1d2e; }
+    html[data-theme="light"] .sd-meta, html[data-theme="light"] .sd-route-status { color: #6b7280; }
+    html[data-theme="light"] .sd-route-status.live-at, html[data-theme="light"] .sd-route-status.live-mid { color: #15803d; }
+    html[data-theme="light"] .sd-route-status.live-near { color: #1d4ed8; }
+    html[data-theme="light"] .sd-route-status.live-far { color: #b45309; }
+    html[data-theme="light"] .sd-routes-title { color: #9ca3af; }
+    html[data-theme="light"] .sd-route-live { background: #f3f4f6; color: #2563eb; border-color: #e5e7eb; }
+    html[data-theme="light"] .sd-route-live:hover { background: #e5e7eb; color: #1d4ed8; border-color: #2563eb; }
     #screenWrap { flex: 1; overflow: hidden; display: flex; }
     .screen { display: none; flex: 1; flex-direction: column; overflow: hidden; }
     .screen.active { display: flex; }
@@ -237,6 +352,15 @@
     .ns-tags  { font-size: .64rem; color: #4a5568; margin-top: 2px; }
     .ns-body  { display: none; padding: 6px 10px 8px; border-top: 1px solid #252d40; background: #141621; }
     .nearby-stop.open .ns-body { display: block; }
+    .ns-actions { margin-bottom: 6px; }
+    .ns-view-btn {
+      background: #1f2937; color: #7eb3f7; border: 1px solid #2d3548;
+      border-radius: 6px; padding: 5px 10px; font-size: .72rem; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .ns-view-btn:hover { background: #252d40; color: #fff; border-color: #4a90d9; }
+    html[data-theme="light"] .ns-view-btn { background: #f3f4f6; color: #2563eb; border-color: #e5e7eb; }
+    html[data-theme="light"] .ns-view-btn:hover { background: #e5e7eb; color: #1d4ed8; border-color: #2563eb; }
     .bus-row { display: flex; align-items: center; gap: 7px; padding: 4px 0; border-bottom: 1px solid #1e2235; font-size: .75rem; }
     .bus-row:last-child { border-bottom: none; }
     .bus-badge { padding: 2px 6px; border-radius: 4px; font-size: .68rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
@@ -591,6 +715,10 @@
 </head>
 <body>
 
+<div id="updateToast">
+  <span>Yeni sürüm hazır</span>
+  <button onclick="applyAppUpdate()">Yenile</button>
+</div>
 <header id="appHeader">
   <h1>Çanakkale Hat & Sefer</h1>
   <div style="display:flex;gap:6px;align-items:center">
@@ -688,6 +816,20 @@
     </div>
   </div>
 
+  <!-- DURAKLAR SCREEN -->
+  <div id="scr-stops" class="screen">
+    <input id="stop-search-input" type="search" placeholder="Durak adı ara…" autocomplete="off" oninput="renderStopsList()" />
+    <div id="stop-content">
+      <div id="stops-list-view">
+        <div id="stops-section-search" class="stops-section" style="display:none"></div>
+        <div id="stops-section-favs"   class="stops-section" style="display:none"></div>
+        <div id="stops-section-recent" class="stops-section" style="display:none"></div>
+        <div id="stops-section-nearby" class="stops-section" style="display:none"></div>
+      </div>
+      <div id="stops-detail-view" style="display:none"></div>
+    </div>
+  </div>
+
   <div id="scr-settings" class="screen">
     <div class="settings-wrap">
       <div class="settings-header">
@@ -751,7 +893,8 @@
 
 <nav id="bottomNav">
   <button class="nb"        data-s="schedule" onclick="showScreen('schedule')"><span>📅</span>Seferler</button>
-  <button class="nb active" data-s="planner"  onclick="showScreen('planner')"><span>🗺</span>Rota &amp; Durak</button>
+  <button class="nb active" data-s="planner"  onclick="showScreen('planner')"><span>🗺</span>Rota &amp; Harita</button>
+  <button class="nb"        data-s="stops"    onclick="showScreen('stops')"><span>🚏</span>Duraklar</button>
 </nav>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -829,6 +972,10 @@ matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
   if ((SETTINGS.theme || 'dark') === 'system') applyTheme('system');
 });
 function showScreen(name) {
+  // Reset stop-detail when leaving the Duraklar tab so re-entry shows the list.
+  const wasStops = document.getElementById('scr-stops')?.classList.contains('active');
+  if (wasStops && name !== 'stops') stopDetailId = null;
+
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('scr-' + name).classList.add('active');
   document.querySelectorAll('.nb').forEach(b => b.classList.toggle('active', b.dataset.s === name));
@@ -839,6 +986,11 @@ function showScreen(name) {
     renderBookmarksBar();
   }
   if (name === 'settings') initSettingsScreen();
+  if (name === 'stops') {
+    renderStopsList();
+    const input = document.getElementById('stop-search-input');
+    if (input) setTimeout(() => input.focus(), 0);
+  }
 }
 
 // ── Schedule helpers ──────────────────────────────────────────────────────────
@@ -1228,6 +1380,29 @@ function saveBookmarks() {
 // ── Recent destinations ──────────────────────────────────────────────────────
 let recentDests = (() => { try { return JSON.parse(localStorage.getItem('bm_recent_dests_v1') || '[]'); } catch { return []; } })();
 
+// ── Duraklar tab state ──────────────────────────────────────────────────────
+let favStops    = (() => { try { return JSON.parse(localStorage.getItem('bm_fav_stops_v1')    || '[]'); } catch { return []; } })();
+let recentStops = (() => { try { return JSON.parse(localStorage.getItem('bm_recent_stops_v1') || '[]'); } catch { return []; } })();
+let lastUserPos  = null;       // {lat, lng} cached for the session
+let nearbyDenied = false;      // GPS denied/unavailable — show hint instead
+let stopDetailId = null;       // currently drilled-in stop, null = list view
+
+function saveStopFavs()    { try { localStorage.setItem('bm_fav_stops_v1',    JSON.stringify(favStops));    } catch {} }
+function saveRecentStops() { try { localStorage.setItem('bm_recent_stops_v1', JSON.stringify(recentStops)); } catch {} }
+
+function toggleFavStop(stopId) {
+  if (favStops.includes(stopId)) favStops = favStops.filter(id => id !== stopId);
+  else                            favStops = [stopId, ...favStops];
+  saveStopFavs();
+  renderStopsList();
+}
+
+function pushRecentStop(stopId) {
+  if (!stopId) return;
+  recentStops = [{ stopId, ts: Date.now() }, ...recentStops.filter(r => r.stopId !== stopId)].slice(0, 5);
+  saveRecentStops();
+}
+
 function saveRecentDests() {
   try { localStorage.setItem('bm_recent_dests_v1', JSON.stringify(recentDests)); } catch {}
 }
@@ -1462,13 +1637,299 @@ function toggleBmDropdown() {
   if (open) renderBookmarksBar();
 }
 
-// Close dropdown when clicking outside
+// ── Stop search (Duraklar tab) ──────────────────────────────────────────────
+// Strip Turkish diacritics + lowercase for accent-insensitive search.
+function _foldTr(s) {
+  return (s || '').toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i').replace(/ç/g, 'c').replace(/ğ/g, 'g')
+    .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
+}
+
+// Render one stop list item. `distMeters` optional (shown if provided).
+function _stopItemHtml(stopId, stopName, distMeters) {
+  const fav   = favStops.includes(stopId);
+  const routes = stopToRoutes.get(stopId) || [];
+  const routeCount = new Set(routes.map(r => r.routeCode)).size;
+  const meta = [];
+  meta.push('#' + esc(stopId));
+  if (routeCount) meta.push(routeCount + ' hat');
+  if (distMeters != null) {
+    meta.push(distMeters < 1000 ? Math.round(distMeters) + ' m' : (distMeters/1000).toFixed(1) + ' km');
+  }
+  return '<div class="ss-item" onclick="openStopDetail(\'' + stopId + '\')">'
+       +   '<div class="ss-text">'
+       +     '<div class="ss-name">' + esc(stopName) + '</div>'
+       +     '<div class="ss-meta">' + meta.join(' · ') + '</div>'
+       +   '</div>'
+       +   '<button class="ss-fav' + (fav ? ' on' : '') + '" '
+       +          'onclick="event.stopPropagation();toggleFavStop(\'' + stopId + '\')" '
+       +          'title="' + (fav ? 'Favoriden çıkar' : 'Favorilere ekle') + '">'
+       +     (fav ? '★' : '☆')
+       +   '</button>'
+       + '</div>';
+}
+
+function _renderSection(id, title, html) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = '<div class="stops-section-title">' + title + '</div>' + html;
+}
+
+function _searchStops(q, limit) {
+  const items = [];
+  for (const s of allStops.values()) {
+    const n = _foldTr(s.stopName);
+    if (!n.includes(q)) continue;
+    let rank = 2;
+    if (n.startsWith(q)) rank = 0;
+    else if (new RegExp('(^|\\s)' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(n)) rank = 1;
+    items.push({ s, rank });
+    if (items.length > 200) break;
+  }
+  items.sort((a, b) => a.rank - b.rank || a.s.stopName.localeCompare(b.s.stopName, 'tr'));
+  return items.slice(0, limit).map(x => x.s);
+}
+
+function renderStopsList() {
+  // Detail-view mode: defer to detail renderer.
+  if (stopDetailId) {
+    document.getElementById('stops-list-view').style.display = 'none';
+    document.getElementById('stops-detail-view').style.display = '';
+    renderStopDetail();
+    return;
+  }
+  document.getElementById('stops-list-view').style.display = '';
+  document.getElementById('stops-detail-view').style.display = 'none';
+
+  if (!allStops?.size) {
+    _renderSection('stops-section-search', '', '<div class="ss-empty">Durak verisi yükleniyor…</div>');
+    _renderSection('stops-section-favs',   '', '');
+    _renderSection('stops-section-recent', '', '');
+    _renderSection('stops-section-nearby', '', '');
+    return;
+  }
+
+  const input = document.getElementById('stop-search-input');
+  const q = _foldTr((input?.value || '').trim());
+
+  if (q.length > 0) {
+    const results = _searchStops(q, 30);
+    const html = results.length
+      ? results.map(s => _stopItemHtml(s.stopId, s.stopName)).join('')
+      : '<div class="ss-empty">Eşleşen durak yok.</div>';
+    _renderSection('stops-section-search', 'Sonuçlar', html);
+    _renderSection('stops-section-favs',   '', '');
+    _renderSection('stops-section-recent', '', '');
+    _renderSection('stops-section-nearby', '', '');
+    return;
+  }
+
+  // Empty query — show favs, recents, nearby.
+  _renderSection('stops-section-search', '', '');
+
+  // Favorites
+  const favItems = favStops.map(id => allStops.get(id)).filter(Boolean);
+  _renderSection('stops-section-favs',
+    'Favoriler',
+    favItems.length ? favItems.map(s => _stopItemHtml(s.stopId, s.stopName)).join('') : '');
+
+  // Recent (drop any stale stopIds)
+  const recItems = recentStops.map(r => allStops.get(r.stopId)).filter(Boolean);
+  _renderSection('stops-section-recent',
+    'Son açılanlar',
+    recItems.length ? recItems.map(s => _stopItemHtml(s.stopId, s.stopName)).join('') : '');
+
+  // Nearby
+  if (lastUserPos) {
+    const ranked = [...allStops.values()]
+      .map(s => ({ s, d: haversine(lastUserPos.lat, lastUserPos.lng, s.lat, s.lng) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 8);
+    _renderSection('stops-section-nearby',
+      'Yakındaki duraklar',
+      ranked.map(({ s, d }) => _stopItemHtml(s.stopId, s.stopName, d)).join(''));
+  } else if (nearbyDenied) {
+    _renderSection('stops-section-nearby',
+      'Yakındaki duraklar',
+      '<div class="ss-empty">Konum izni verilmedi. Yakındaki durakları göstermek için izin verin.'
+      + '<br><button class="ss-action" onclick="requestNearbyOnce(true)">Tekrar dene</button></div>');
+  } else {
+    _renderSection('stops-section-nearby',
+      'Yakındaki duraklar',
+      '<div class="ss-empty">Yakındaki duraklar yükleniyor…</div>');
+    requestNearbyOnce();
+  }
+}
+
+function requestNearbyOnce(force) {
+  if (!navigator.geolocation) { nearbyDenied = true; renderStopsList(); return; }
+  if (lastUserPos && !force) return;
+  if (force) nearbyDenied = false;
+  navigator.geolocation.getCurrentPosition(
+    pos => { lastUserPos = { lat: pos.coords.latitude, lng: pos.coords.longitude }; renderStopsList(); },
+    ()  => { nearbyDenied = true; renderStopsList(); },
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+  );
+}
+
+function openStopDetail(stopId) {
+  stopDetailId = stopId;
+  pushRecentStop(stopId);
+  renderStopsList();
+}
+
+function closeStopDetail() {
+  stopDetailId = null;
+  renderStopsList();
+}
+
+function renderStopDetail() {
+  const wrap = document.getElementById('stops-detail-view');
+  if (!wrap) return;
+  const stop = allStops.get(stopDetailId);
+  if (!stop) {
+    wrap.innerHTML = '<button class="sd-back" onclick="closeStopDetail()">← Geri</button>'
+                   + '<div class="ss-empty">Durak bulunamadı.</div>';
+    return;
+  }
+  const fav = favStops.includes(stop.stopId);
+
+  // Routes serving this stop — dedup by routeCode + direction, keep route metadata.
+  const routes = stopToRoutes.get(stop.stopId) || [];
+  const seen = new Set();
+  const uniq = [];
+  for (const r of routes) {
+    const key = r.routeCode + '|' + r.direction;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniq.push(r);
+  }
+  uniq.sort((a, b) => a.routeCode.localeCompare(b.routeCode, 'tr') || (a.direction || '').localeCompare(b.direction || ''));
+  const routeCount = new Set(uniq.map(r => r.routeCode)).size;
+
+  const routesHtml = uniq.length
+    ? uniq.map((r, i) => {
+        const hex = (r.routeColor || '4a7dc0').replace('#', '');
+        const fg  = textOnHex(hex);
+        const head = r.headSign || r.routeName || '';
+        return '<div class="sd-route" id="sd-route-' + i + '" data-code="' + esc(r.routeCode) + '" data-dir="' + esc(r.direction || '') + '">'
+             +   '<span class="sd-route-badge" style="background:#' + hex + ';color:' + fg + '">' + esc(r.routeCode) + '</span>'
+             +   '<div class="sd-route-info">'
+             +     '<div class="sd-route-name">' + esc(head) + '</div>'
+             +     '<div class="sd-route-status">Yükleniyor…</div>'
+             +   '</div>'
+             +   '<button class="sd-route-live" onclick="trackRoute(\'' + esc(r.routeCode) + '\')">🚌 Canlı</button>'
+             + '</div>';
+      }).join('')
+    : '<div class="ss-empty">Bu duraktan geçen hat bulunamadı.</div>';
+
+  const distHtml = lastUserPos
+    ? '<span class="sd-meta-item">' + (() => {
+        const d = haversine(lastUserPos.lat, lastUserPos.lng, stop.lat, stop.lng);
+        return d < 1000 ? Math.round(d) + ' m uzakta' : (d/1000).toFixed(1) + ' km uzakta';
+      })() + '</span>'
+    : '';
+
+  wrap.innerHTML =
+    '<button class="sd-back" onclick="closeStopDetail()">← Geri</button>'
+  + '<div class="sd-title-row">'
+  +   '<div class="sd-title-text">'
+  +     '<div class="sd-title">' + esc(stop.stopName) + '</div>'
+  +     '<div class="sd-meta">'
+  +       '<span class="sd-meta-item">#' + esc(stop.stopId) + '</span>'
+  +       '<span class="sd-meta-item">' + routeCount + ' hat</span>'
+  +       distHtml
+  +     '</div>'
+  +   '</div>'
+  +   '<button class="ss-fav' + (fav ? ' on' : '') + '" '
+  +          'onclick="toggleFavStop(\'' + stop.stopId + '\')" '
+  +          'title="' + (fav ? 'Favoriden çıkar' : 'Favorilere ekle') + '">'
+  +     (fav ? '★' : '☆')
+  +   '</button>'
+  + '</div>'
+  + '<button class="sd-cta" onclick="showStopOnPlanner(\'' + stop.stopId + '\')">📍 Haritada göster</button>'
+  + '<div class="sd-routes-title">Buradan geçen hatlar</div>'
+  + routesHtml;
+
+  // Fetch live buses for this stop and update each row's status
+  if (uniq.length) loadStopDetailBuses(stop.stopId, uniq);
+}
+
+async function loadStopDetailBuses(stopId, uniqRoutes) {
+  try {
+    const responses = await Promise.all(uniqRoutes.map(e =>
+      fetch(API + 'web/pathInfo?' + QS + '&displayRouteCode=' + encodeURIComponent(e.routeCode) + '&direction=' + e.direction)
+        .then(r => r.json()).catch(() => null)
+    ));
+    if (stopDetailId !== stopId) return;
+    // Compute status + sort key per row, update DOM, then reorder.
+    const meta = [];
+    for (let i = 0; i < uniqRoutes.length; i++) {
+      const fp = responses[i]?.pathList?.[0];
+      const row = document.getElementById('sd-route-' + i);
+      const statusEl = row?.querySelector('.sd-route-status');
+      if (!statusEl) { meta.push({ row, sortKey: 99999 }); continue; }
+      let status, klass = '', sortKey = 99999;
+      if (!fp) {
+        status = 'Veri yok';
+      } else {
+        const seqOf = {};
+        for (const s of (fp.busStopList || [])) seqOf[s.stopId] = parseInt(s.seq) || 0;
+        const targetSeq = seqOf[stopId] ?? uniqRoutes[i].seq;
+        const buses = fp.busList || [];
+        const approaching = buses
+          .filter(b => (seqOf[b.stopId] ?? -1) >= 0 && seqOf[b.stopId] < targetSeq)
+          .map(b => ({ ...b, stopsAway: targetSeq - seqOf[b.stopId] }))
+          .sort((a, b) => a.stopsAway - b.stopsAway);
+        const atStop = buses.filter(b => b.stopId === stopId);
+        if (atStop.length) {
+          status = '🟢 Durağa geldi (' + atStop.length + ')';
+          klass  = 'live-at';
+          sortKey = 0;
+        } else if (approaching.length) {
+          const n = approaching[0].stopsAway;
+          status = '🚌 ' + n + ' durak uzaklıkta · ' + approaching.length + ' aktif';
+          klass  = n <= 2 ? 'live-near' : n <= 5 ? 'live-mid' : 'live-far';
+          sortKey = n;
+        } else if (buses.length) {
+          status = buses.length + ' aktif araç (yön: ileri)';
+          klass  = 'live-far';
+          sortKey = 9000; // active, but past this stop — below all approaching
+        } else {
+          const nx = getNextDeparture(uniqRoutes[i].routeCode);
+          status = nx === undefined ? 'Aktif araç yok'
+                 : nx === null ? 'Bugün sefer kalmadı'
+                 : 'Sıradaki: ' + nx;
+          sortKey = 99999; // inactive — keep at bottom in original order
+        }
+      }
+      statusEl.textContent = status;
+      statusEl.className   = 'sd-route-status ' + klass;
+      meta.push({ row, sortKey, originalIndex: i });
+    }
+    // Reorder: active routes by proximity ascending; inactive keep original index.
+    meta.sort((a, b) => a.sortKey - b.sortKey || a.originalIndex - b.originalIndex);
+    const parent = meta[0]?.row?.parentNode;
+    if (parent) for (const { row } of meta) if (row) parent.appendChild(row);
+  } catch {}
+}
+
+function showStopOnPlanner(stopId) {
+  pushRecentStop(stopId);
+  showScreen('planner');
+  showSingleStopOnMap(stopId);
+}
+
+// Close bookmarks dropdown when clicking outside
 document.addEventListener('click', e => {
   const dd = document.getElementById('bm-dropdown');
   if (!dd?.classList.contains('open')) return;
-  if (!dd.contains(e.target) && !document.getElementById('bm-toggle-btn')?.contains(e.target))
+  if (!dd.contains(e.target) && !document.getElementById('bm-toggle-btn')?.contains(e.target)) {
     dd.classList.remove('open');
-  document.getElementById('bm-toggle-btn')?.classList.remove('open');
+    document.getElementById('bm-toggle-btn')?.classList.remove('open');
+  }
 });
 
 function saveLocationBookmark(which) {
@@ -1604,6 +2065,14 @@ async function initPlanner() {
     if(mode==='stops')showNearbyStops(e.latlng.lat,e.latlng.lng);
     else applyPoint(e.latlng.lat,e.latlng.lng,mode);
   });
+  // Stop the GPS FAB's clicks from bubbling to the map container, which would
+  // otherwise also trigger the map's click handler and drop a pin under the
+  // button when GPS fails (or before GPS resolves).
+  const _gpsFab = document.getElementById('gps-fab');
+  if (_gpsFab) {
+    L.DomEvent.disableClickPropagation(_gpsFab);
+    L.DomEvent.disableScrollPropagation(_gpsFab);
+  }
 
   // ── Load stops.json (pre-built by GitHub Actions) ────────────────────────────
   try {
@@ -1745,10 +2214,12 @@ function resetPlanner() {
   if (mode === 'stops') {
     if (stopRefreshTimer) { clearInterval(stopRefreshTimer); stopRefreshTimer = null; }
     openStopId = null;
+    clearSingleStopMarker();
     document.getElementById('stopPanel').innerHTML = '';
     setMode(originStop && !destStop ? 'dest' : 'origin');
     return;
   }
+  clearSingleStopMarker();
   // Clear markers
   if (originMarker) { window._map.removeLayer(originMarker); originMarker = null; }
   if (destMarker)   { window._map.removeLayer(destMarker);   destMarker   = null; }
@@ -1946,6 +2417,14 @@ function useGPS(){
 }
 
 function applyPoint(lat,lng,which){
+  // Reject points outside the Çanakkale map bounds (typically GPS picks from
+  // outside the city, or stale bookmarks). Map clicks are already constrained
+  // by maxBounds so they never trigger this.
+  const [[sLat, wLng], [nLat, eLng]] = MAP_BOUNDS;
+  if (lat < sLat || lat > nLat || lng < wLng || lng > eLng) {
+    setHint('Bu konum Çanakkale sınırlarının dışında. Lütfen haritadan bir nokta seçin.', true);
+    return;
+  }
   const{stop,meters}=nearestStop(lat,lng);if(!stop)return;
   if(which==='origin'){
     originClick={lat,lng};originStop={...stop,meters};
@@ -2448,9 +2927,34 @@ function urlB64ToUint8Array(b64) {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
-// Register service worker on page load
+// Register service worker on page load — also listen for new SW activations
+// and surface an "Update available" pill so users can refresh on demand.
+let _pendingWorker = null;
+function applyAppUpdate() {
+  if (_pendingWorker) _pendingWorker.postMessage({ type: 'SKIP_WAITING' });
+  setTimeout(() => location.reload(), 200);
+}
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    const promote = () => {
+      _pendingWorker = reg.waiting;
+      document.getElementById('updateToast')?.classList.add('visible');
+    };
+    if (reg.waiting && navigator.serviceWorker.controller) promote();
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) promote();
+      });
+    });
+  }).catch(() => {});
+  let _reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_reloaded) return;
+    _reloaded = true;
+    location.reload();
+  });
 }
 
 // ── Trip detail ───────────────────────────────────────────────────────────────
@@ -2700,8 +3204,27 @@ function closeTripDetail() {
 }
 
 // ── Stops feature ─────────────────────────────────────────────────────────────
-function openStopOnMap(stopId){const s=allStops.get(stopId);if(!s)return;setMode('stops');window._map.setView([s.lat,s.lng],Math.max(window._map.getZoom(),16));showNearbyStops(s.lat,s.lng);}
+function openStopOnMap(stopId){const s=allStops.get(stopId);if(!s)return;clearSingleStopMarker();setMode('stops');window._map.setView([s.lat,s.lng],Math.max(window._map.getZoom(),16));showNearbyStops(s.lat,s.lng);}
+
+// Show ONLY the picked stop on the map with a labelled marker — used by the
+// Duraklar tab's "Haritada göster" so the user sees just their target stop
+// instead of the 5-nearest cluster.
+let _singleStopMarker = null;
+function clearSingleStopMarker() {
+  if (_singleStopMarker && window._map) { window._map.removeLayer(_singleStopMarker); _singleStopMarker = null; }
+}
+function showSingleStopOnMap(stopId) {
+  const s = allStops.get(stopId); if (!s) return;
+  if (stopRefreshTimer) clearInterval(stopRefreshTimer);
+  openStopId = null;
+  setMode('stops');
+  window._map.setView([s.lat, s.lng], Math.max(window._map.getZoom(), 17));
+  renderNearbyList([{ ...s, meters: 0 }]);
+  openStop(stopId);   // places the labelled marker
+  stopRefreshTimer = setInterval(() => { if (openStopId) openStop(openStopId, true); }, 30000);
+}
 function showNearbyStops(lat,lng){
+  clearSingleStopMarker();
   if(stopRefreshTimer)clearInterval(stopRefreshTimer);openStopId=null;
   const nearby=[...allStops.values()].map(s=>({...s,meters:Math.round(haversine(lat,lng,s.lat,s.lng))})).sort((a,b)=>a.meters-b.meters).slice(0,5);
   setHint((nearby[0]?.stopName||'?')+' yakınında '+nearby.length+' durak.');
@@ -2715,15 +3238,35 @@ function renderNearbyList(stops){
     const rn=[...new Set(routes.map(r=>r.routeCode))].join(', ')||'—';
     const div=document.createElement('div');div.className='nearby-stop';div.dataset.stopId=s.stopId;
     div.innerHTML='<div class="ns-header"><span class="ns-dist">'+s.meters+'m</span><div><div class="ns-name">'+esc(s.stopName)+' <span style="color:#374151;font-size:.62rem">#'+s.stopId+'</span></div><div class="ns-tags">'+rn+'</div></div></div>'
-      +'<div class="ns-body" id="sb-'+s.stopId+'"><span class="loading-spin"></span>Yükleniyor…</div>';
+      +'<div class="ns-body" id="sb-'+s.stopId+'">'
+      +  '<div class="ns-actions">'
+      +    '<button class="ns-view-btn" onclick="event.stopPropagation();viewStopInDuraklar(\''+s.stopId+'\')">🚏 Duraklar\'da aç</button>'
+      +  '</div>'
+      +  '<div class="ns-buses"><span class="loading-spin"></span>Yükleniyor…</div>'
+      +'</div>';
     div.onclick=()=>openStop(s.stopId);panel.appendChild(div);
   }
 }
 function openStop(stopId,silent){
   document.querySelectorAll('.nearby-stop').forEach(el=>el.classList.toggle('open',el.dataset.stopId===stopId));
   openStopId=stopId;
-  if(!silent){const b=document.getElementById('sb-'+stopId);if(b)b.innerHTML='<span class="loading-spin"></span>Yükleniyor…';}
+  // Move/refresh the labelled marker so the active stop is always visually
+  // distinguished on the map. Same behaviour whether arriving from a map
+  // click (showNearbyStops) or a click in the nearby list.
+  const s=allStops.get(stopId);
+  if(s){
+    clearSingleStopMarker();
+    _singleStopMarker=L.marker([s.lat,s.lng],{icon:mkStopIcon('#f59e0b',14),zIndexOffset:1500})
+      .bindTooltip(s.stopName,{permanent:true,direction:'top',offset:[0,-10]})
+      .addTo(window._map);
+  }
+  if(!silent){const b=document.querySelector('#sb-'+stopId+' .ns-buses');if(b)b.innerHTML='<span class="loading-spin"></span>Yükleniyor…';}
   fetchStopBuses(stopId);
+}
+function viewStopInDuraklar(stopId){
+  stopDetailId=stopId;
+  pushRecentStop(stopId);
+  showScreen('stops');
 }
 async function fetchStopBuses(stopId){
   const entries=stopToRoutes.get(stopId)||[];const seen=new Set();
@@ -2742,7 +3285,7 @@ async function fetchStopBuses(stopId){
   renderStopBuses(stopId,rows);
 }
 function renderStopBuses(stopId,rows){
-  const body=document.getElementById('sb-'+stopId);if(!body)return;
+  const body=document.querySelector('#sb-'+stopId+' .ns-buses');if(!body)return;
   if(!rows.length){body.innerHTML='<div class="no-bus">Hat bulunamadı.</div>';return;}
   body.innerHTML=rows.map(({entry:e,approaching,atStop})=>{
     const hex=e.routeColor.replace('#','').padStart(6,'0');

@@ -33,13 +33,15 @@ Each route card has a **🚌 Canlı** button that jumps straight to the live tra
 
 ---
 
-### 🗺 Rota & Durak — Trip Planner & Live Map
+### 🗺 Rota & Harita — Trip Planner & Live Map
 
 Tap the map (or use GPS) to set your starting point and destination. The planner finds every direct route that connects them, sorted by **total ETA** — walking time + wait for the next bus + ride time + walking to destination.
 
 - **Plan ahead** — use the time offset buttons (+30 dk, +1 sa, +2 sa) to plan for later
-- **Live bus data** — shows which buses are approaching your boarding stop right now
+- **Live bus data** — shows which buses are approaching your boarding stop right now. Tap a bus to see its current stop and where it's heading next
 - **Scheduled fallback** — when no live data is available, the ETA falls back to today's active timetable. On Bayram, Arefe, or any dated special day, the planner automatically consults the matching schedule instead of the regular weekday one
+- **Real walking directions** — the dashed walking lines from origin to boarding stop and from alight stop to destination follow real roads via OSRM, with a midpoint label showing duration and distance. Falls back to a straight line + estimate when offline
+- **Tap a stop to pick it** — while in Konum or Hedef pick mode, tapping any stop circle on the map snaps your pin to that stop exactly
 - **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
 
 ![Trip planner showing route options sorted by ETA](screenshots/planner.png)
@@ -88,6 +90,21 @@ Powered by a Cloudflare Worker (free tier) that polls the kentkart API every min
 Save home, work, or any frequent destination — it appears as a dropdown next to the app title. Tap 📍 or 🏁 to instantly set it as your start or end point without touching the map.
 
 The planner also remembers your **last 5 destinations** as a chip row and offers a **⇄ Yön değiştir** button to swap origin and destination in place when both are set.
+
+---
+
+### 🚏 Duraklar — Stop Hub
+
+A dedicated bottom-tab for finding and managing stops without using the map.
+
+- **Search** by stop name with Turkish-folded matching (`kepez` finds *Kepez*, `iskele` finds *İskele*).
+- **Favoriler** — star any stop with ★ to pin it to the top of the list. Persisted across reloads.
+- **Son açılanlar** — the last 5 stops you opened.
+- **Yakındaki duraklar** — 8 nearest stops by haversine when GPS is granted, with distance shown on every row. Graceful fallback when location is denied.
+- **Route chips** — every stop row shows the kentkart route colors that serve it, so you can pick the right stop at a glance.
+- **Detail view** — tap a stop to see its routes with live status per direction (*Durağa geldi*, *N durak uzaklıkta*, *Aktif araç yok*, scheduled fallback). Sorted by closest approaching bus first.
+- **📍 Haritada göster** — drops a labelled pin for that exact stop on the planner map.
+- **🔗 Paylaş** — generates a `?stop=<id>` deep-link via the native share sheet or clipboard so others can open the same stop directly.
 
 ---
 
@@ -163,5 +180,6 @@ Everything except the notification worker runs entirely in the browser. No backe
 - **Maps** — [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles, all vector layers sharing one explicit `L.canvas` renderer (avoids the multi-canvas event-stacking pitfall that breaks hit-testing)
 - **Offline** — Service worker precaches the app shell + Leaflet CDN, stale-while-revalidates the JSON data, and cache-firsts OSM tiles with a FIFO cap. An on-demand tile downloader fetches every tile in the Çanakkale bbox at the allowed zoom range so the map works fully offline once primed
 - **Live data** — [Kentkart](https://kentkart.com) public API fetched directly by the browser (same data used by physical stop displays). A 15s connectivity probe drives the offline indicator
+- **Walking directions** — [OSRM](https://project-osrm.org) public routing API for on-road walking lines between origin/destination and the boarding/alight stops, with a haversine + walk-speed fallback when the service is unreachable
 - **Push** — Web Push (RFC 8030/8291/8292) via Cloudflare Workers + KV
 - **Zero runtime dependencies** — no frameworks, no build step

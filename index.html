@@ -107,12 +107,24 @@
     .ss-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ss-meta { font-size: .7rem; color: #6b7a99; margin-top: 2px;
                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ss-fav {
-      background: none; border: none; cursor: pointer; padding: 6px 12px;
-      font-size: 1.25rem; color: #4a5568; flex-shrink: 0; line-height: 1;
+    .ss-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+    .ss-route-chip {
+      display: inline-block; font-size: .62rem; font-weight: 700;
+      padding: 1px 5px; border-radius: 3px; line-height: 1.5;
+      white-space: nowrap; letter-spacing: .01em;
     }
+    .ss-route-chip.more { background: #252d40; color: #8a96b0; }
+    html[data-theme="light"] .ss-route-chip.more { background: #e5e7eb; color: #6b7280; }
+    .ss-fav, .ss-share {
+      background: none; border: none; cursor: pointer; padding: 6px 10px;
+      font-size: 1.15rem; color: #4a5568; flex-shrink: 0; line-height: 1;
+    }
+    .ss-fav { font-size: 1.25rem; padding: 6px 12px; }
     .ss-fav.on { color: #f59e0b; }
     .ss-fav:hover { color: #f59e0b; }
+    .ss-share:hover { color: #7eb3f7; }
+    html[data-theme="light"] .ss-share { color: #6b7280; }
+    html[data-theme="light"] .ss-share:hover { color: #2563eb; }
     .ss-empty { padding: 24px 14px; color: #4a5568; font-size: .8rem; text-align: center; }
     .ss-empty .ss-action { display: inline-block; margin-top: 8px; background: #252d40; color: #c0d0ea;
                            border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: .78rem; }
@@ -361,6 +373,15 @@
     .ns-view-btn:hover { background: #252d40; color: #fff; border-color: #4a90d9; }
     html[data-theme="light"] .ns-view-btn { background: #f3f4f6; color: #2563eb; border-color: #e5e7eb; }
     html[data-theme="light"] .ns-view-btn:hover { background: #e5e7eb; color: #1d4ed8; border-color: #2563eb; }
+    .walk-label {
+      display: inline-block; background: rgba(20,22,33,.92); color: #fff;
+      border: 1px solid rgba(255,255,255,.2);
+      padding: 2px 8px; border-radius: 10px;
+      font: 700 .72rem/1.3 system-ui; white-space: nowrap;
+      box-shadow: 0 1px 4px rgba(0,0,0,.5);
+      transform: translate(-50%, -50%);
+    }
+    html[data-theme="light"] .walk-label { background: #1a3a5c; }
     .bus-row { display: flex; align-items: center; gap: 7px; padding: 4px 0; border-bottom: 1px solid #1e2235; font-size: .75rem; }
     .bus-row:last-child { border-bottom: none; }
     .bus-badge { padding: 2px 6px; border-radius: 4px; font-size: .68rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
@@ -972,9 +993,13 @@ matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
   if ((SETTINGS.theme || 'dark') === 'system') applyTheme('system');
 });
 function showScreen(name) {
-  // Reset stop-detail when leaving the Duraklar tab so re-entry shows the list.
+  // Reset stop-detail when leaving the Duraklar tab so re-entry shows the list,
+  // and drop the ?stop=… from the URL.
   const wasStops = document.getElementById('scr-stops')?.classList.contains('active');
-  if (wasStops && name !== 'stops') stopDetailId = null;
+  if (wasStops && name !== 'stops') {
+    stopDetailId = null;
+    _setStopDeepLinkInUrl(null);
+  }
 
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('scr-' + name).classList.add('active');
@@ -1305,6 +1330,7 @@ async function refreshSchedule() {
   try {
     await loadScheduleData(false);
     renderSchedule();
+    applyDeepLink();
   } catch(e) {
     setSchedProgress(100, 'Yüklenemedi: ' + e.message, true);
   }
@@ -1379,6 +1405,23 @@ function saveBookmarks() {
 
 // ── Recent destinations ──────────────────────────────────────────────────────
 let recentDests = (() => { try { return JSON.parse(localStorage.getItem('bm_recent_dests_v1') || '[]'); } catch { return []; } })();
+
+// ── Deep-link parsing ───────────────────────────────────────────────────────
+// Share-friendly URLs like /?stop=12345 open that stop's detail in Duraklar.
+let _pendingStopDeepLink = (() => {
+  try { return new URLSearchParams(window.location.search).get('stop') || null; }
+  catch { return null; }
+})();
+function applyDeepLink() {
+  if (!_pendingStopDeepLink) return;
+  if (!allStops || !allStops.size) return; // try again after stops finish loading
+  const id = _pendingStopDeepLink;
+  _pendingStopDeepLink = null;
+  if (!allStops.has(id)) return;            // unknown stop, give up silently
+  stopDetailId = id;
+  pushRecentStop(id);
+  showScreen('stops');
+}
 
 // ── Duraklar tab state ──────────────────────────────────────────────────────
 let favStops    = (() => { try { return JSON.parse(localStorage.getItem('bm_fav_stops_v1')    || '[]'); } catch { return []; } })();
@@ -1645,14 +1688,33 @@ function _foldTr(s) {
     .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
 }
 
-// Render one stop list item. `distMeters` optional (shown if provided).
+// Render one stop list item. `distMeters` optional — when omitted and GPS is
+// known, the distance is computed automatically so it shows up in every list.
 function _stopItemHtml(stopId, stopName, distMeters) {
-  const fav   = favStops.includes(stopId);
+  const fav    = favStops.includes(stopId);
   const routes = stopToRoutes.get(stopId) || [];
-  const routeCount = new Set(routes.map(r => r.routeCode)).size;
-  const meta = [];
-  meta.push('#' + esc(stopId));
-  if (routeCount) meta.push(routeCount + ' hat');
+  // Dedup by routeCode, sort, build small colour chips
+  const seenR = new Set(), uniqR = [];
+  for (const r of routes) {
+    if (seenR.has(r.routeCode)) continue;
+    seenR.add(r.routeCode); uniqR.push(r);
+  }
+  uniqR.sort((a, b) => a.routeCode.localeCompare(b.routeCode, 'tr'));
+  const MAX_CHIPS = 6;
+  const visible = uniqR.slice(0, MAX_CHIPS);
+  const more    = uniqR.length - visible.length;
+  const chipsHtml = visible.map(r => {
+    const hex = (r.routeColor || '4a7dc0').replace('#','').padStart(6,'0');
+    return '<span class="ss-route-chip" style="background:#' + hex + ';color:' + textOnHex(hex) + '">' + esc(r.routeCode) + '</span>';
+  }).join('') + (more > 0 ? '<span class="ss-route-chip more">+' + more + '</span>' : '');
+
+  // Auto-fill distance from cached GPS when not explicitly provided.
+  if (distMeters == null && lastUserPos) {
+    const s = allStops.get(stopId);
+    if (s) distMeters = haversine(lastUserPos.lat, lastUserPos.lng, s.lat, s.lng);
+  }
+
+  const meta = ['#' + esc(stopId)];
   if (distMeters != null) {
     meta.push(distMeters < 1000 ? Math.round(distMeters) + ' m' : (distMeters/1000).toFixed(1) + ' km');
   }
@@ -1660,6 +1722,7 @@ function _stopItemHtml(stopId, stopName, distMeters) {
        +   '<div class="ss-text">'
        +     '<div class="ss-name">' + esc(stopName) + '</div>'
        +     '<div class="ss-meta">' + meta.join(' · ') + '</div>'
+       +     (chipsHtml ? '<div class="ss-chips">' + chipsHtml + '</div>' : '')
        +   '</div>'
        +   '<button class="ss-fav' + (fav ? ' on' : '') + '" '
        +          'onclick="event.stopPropagation();toggleFavStop(\'' + stopId + '\')" '
@@ -1729,11 +1792,14 @@ function renderStopsList() {
   // Empty query — show favs, recents, nearby.
   _renderSection('stops-section-search', '', '');
 
-  // Favorites
+  // Favorites — show a discoverability hint when empty so first-time users
+  // realise the ★ button does something.
   const favItems = favStops.map(id => allStops.get(id)).filter(Boolean);
   _renderSection('stops-section-favs',
     'Favoriler',
-    favItems.length ? favItems.map(s => _stopItemHtml(s.stopId, s.stopName)).join('') : '');
+    favItems.length
+      ? favItems.map(s => _stopItemHtml(s.stopId, s.stopName)).join('')
+      : '<div class="ss-empty">Bir durağa ★ basarak favorilere ekleyin.</div>');
 
   // Recent (drop any stale stopIds)
   const recItems = recentStops.map(r => allStops.get(r.stopId)).filter(Boolean);
@@ -1777,12 +1843,42 @@ function requestNearbyOnce(force) {
 function openStopDetail(stopId) {
   stopDetailId = stopId;
   pushRecentStop(stopId);
+  _setStopDeepLinkInUrl(stopId);
   renderStopsList();
 }
 
 function closeStopDetail() {
   stopDetailId = null;
+  _setStopDeepLinkInUrl(null);
   renderStopsList();
+}
+
+// Keep the URL's ?stop=… in sync with the currently viewed stop so the link
+// stays shareable while you're inside a detail view, and clears the moment
+// you back out or leave the tab.
+function _setStopDeepLinkInUrl(stopId) {
+  try {
+    const u = new URL(window.location.href);
+    if (stopId) u.searchParams.set('stop', stopId);
+    else        u.searchParams.delete('stop');
+    const qs = u.searchParams.toString();
+    history.replaceState(null, '', u.pathname + (qs ? '?' + qs : '') + u.hash);
+  } catch {}
+}
+
+function shareStop(stopId) {
+  const stop = allStops.get(stopId); if (!stop) return;
+  const url = window.location.origin + window.location.pathname + '?stop=' + encodeURIComponent(stopId);
+  if (navigator.share) {
+    navigator.share({ title: stop.stopName, text: stop.stopName + ' — Çanakkale Hat & Sefer', url }).catch(() => {});
+  } else if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => setHint('Bağlantı kopyalandı.'),
+      () => prompt('Bağlantıyı kopyalayın:', url)
+    );
+  } else {
+    prompt('Bağlantıyı kopyalayın:', url);
+  }
 }
 
 function renderStopDetail() {
@@ -1843,6 +1939,7 @@ function renderStopDetail() {
   +       distHtml
   +     '</div>'
   +   '</div>'
+  +   '<button class="ss-share" onclick="shareStop(\'' + stop.stopId + '\')" title="Durağı paylaş">🔗</button>'
   +   '<button class="ss-fav' + (fav ? ' on' : '') + '" '
   +          'onclick="toggleFavStop(\'' + stop.stopId + '\')" '
   +          'title="' + (fav ? 'Favoriden çıkar' : 'Favorilere ekle') + '">'
@@ -2002,6 +2099,69 @@ const mkBusIcon = (hex, brg, label) => {
   });
 };
 
+// ── Walking-route directions (OSRM) ────────────────────────────────────────
+// Fetches an actual walking route between two points from the OSRM public
+// demo server. Returns null on any failure so callers can fall back to a
+// straight dashed line + haversine label.
+async function fetchWalkingRoute(a, b) {
+  if (!a || !b) return null;
+  const url = 'https://router.project-osrm.org/route/v1/foot/'
+            + a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat
+            + '?overview=full&geometries=geojson';
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d.code !== 'Ok' || !d.routes?.length) return null;
+    const route = d.routes[0];
+    return {
+      coords:   route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+      distance: route.distance,  // meters
+      duration: route.duration,  // seconds
+    };
+  } catch { return null; }
+}
+
+// Midpoint of a polyline path, weighted by segment length so labels sit on
+// the middle of the road rather than at the array's median index.
+function _polylineMidpoint(coords) {
+  if (!coords?.length) return null;
+  if (coords.length === 1) return coords[0];
+  let total = 0;
+  const seg = [];
+  for (let i = 1; i < coords.length; i++) {
+    const d = haversine(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1]);
+    seg.push(d); total += d;
+  }
+  let acc = 0;
+  for (let i = 0; i < seg.length; i++) {
+    if (acc + seg[i] >= total / 2) {
+      const t = seg[i] ? (total/2 - acc) / seg[i] : 0;
+      return [
+        coords[i][0] + (coords[i+1][0] - coords[i][0]) * t,
+        coords[i][1] + (coords[i+1][1] - coords[i][1]) * t,
+      ];
+    }
+    acc += seg[i];
+  }
+  return coords[coords.length - 1];
+}
+
+function _walkLabelMarker(latlng, durationSec, distanceM) {
+  const mins = Math.max(1, Math.round(durationSec / 60));
+  const text = mins + ' dk · ' + fmtDist(Math.round(distanceM));
+  return L.marker(latlng, {
+    icon: L.divIcon({
+      className: '',
+      html: '<span class="walk-label">' + esc(text) + '</span>',
+      iconSize: null,
+    }),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 800,
+  });
+}
+
 function bearing(lat1, lng1, lat2, lng2) {
   const r = Math.PI / 180;
   const φ1 = lat1 * r, φ2 = lat2 * r, Δλ = (lng2 - lng1) * r;
@@ -2107,7 +2267,12 @@ async function initPlanner() {
   for(const s of allStops.values()) {
     const c = L.circleMarker([s.lat,s.lng],{radius:_stopRadius(13),color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1,bubblingMouseEvents:false})
       .bindTooltip(s.stopName,{direction:'top',offset:[0,-4]})
-      .on('click', () => openStopOnMap(s.stopId));
+      // In Konum/Hedef pick modes, treat a stop tap as picking that stop's
+      // exact location instead of opening the stops-browser panel.
+      .on('click', () => {
+        if (mode === 'origin' || mode === 'dest') applyPoint(s.lat, s.lng, mode);
+        else openStopOnMap(s.stopId);
+      });
     c.addTo(networkStopLayer);
     _stopCircles.push(c);
   }
@@ -2136,6 +2301,7 @@ async function initPlanner() {
       applyPoint(pos.coords.latitude, pos.coords.longitude, 'origin');
     }, () => {});
   }
+  applyDeepLink();
 }
 
 // Returns estimated minutes to wait for the next bus at the boarding stop,
@@ -2536,18 +2702,56 @@ function selectPlannerMatch(m, fitMap = true){
   const pts=(m.path.pointList||[]).map(p=>[parseFloat(p.lat),parseFloat(p.lng)]);
   if(pts.length){const l=L.polyline(pts,{color:'#'+ROUTE_COLOR,weight:5,opacity:.9}).addTo(window._map);drawnLayers.push(l);if(fitMap)window._map.fitBounds(l.getBounds(),{padding:[40,40]});}
 
-  // Walking lines: origin → boarding stop, alight stop → destination
+  // Walking lines: origin → boarding stop, alight stop → destination.
+  // Draws an immediate straight dashed line as a placeholder, then asks OSRM
+  // for the actual on-road walking route and swaps the line + adds a label
+  // showing duration + distance. Falls back to the straight line when OSRM
+  // fails (offline, rate-limited).
+  const _walkGen = (selectPlannerMatch._gen = (selectPlannerMatch._gen || 0) + 1);
+  function _drawWalk(a, b, color) {
+    if (!a || !b) return;
+    // 1. Immediate straight line so the trip never looks half-rendered.
+    const straight = L.polyline(
+      [[a.lat, a.lng], [b.lat, b.lng]],
+      { color, weight: 4, opacity: .85, dashArray: '6,8' }
+    ).addTo(window._map);
+    drawnLayers.push(straight);
+    // 2. Distance label (haversine first; OSRM may overwrite below).
+    const dStraight = haversine(a.lat, a.lng, b.lat, b.lng);
+    const tStraight = (dStraight / SETTINGS.walkSpeedMpm) * 60;
+    let labelM = _walkLabelMarker([(a.lat+b.lat)/2, (a.lng+b.lng)/2], tStraight, dStraight).addTo(window._map);
+    drawnLayers.push(labelM);
+    // 3. Try OSRM in the background; replace on success.
+    fetchWalkingRoute(a, b).then(route => {
+      if (_walkGen !== selectPlannerMatch._gen) return; // stale: user picked another trip
+      if (!route) return;
+      // Remove placeholder line + label
+      window._map.removeLayer(straight);
+      drawnLayers = drawnLayers.filter(l => l !== straight && l !== labelM);
+      window._map.removeLayer(labelM);
+      // Draw real route
+      const routed = L.polyline(route.coords, { color, weight: 4, opacity: .9 }).addTo(window._map);
+      drawnLayers.push(routed);
+      const mid = _polylineMidpoint(route.coords);
+      if (mid) {
+        labelM = _walkLabelMarker(mid, route.duration, route.distance).addTo(window._map);
+        drawnLayers.push(labelM);
+      }
+    });
+  }
   if (originClick && m.board) {
-    drawnLayers.push(L.polyline(
-      [[originClick.lat, originClick.lng], [parseFloat(m.board.lat), parseFloat(m.board.lng)]],
-      { color: '#2563eb', weight: 4, opacity: .85, dashArray: '6,8' }
-    ).addTo(window._map));
+    _drawWalk(
+      { lat: originClick.lat, lng: originClick.lng },
+      { lat: parseFloat(m.board.lat), lng: parseFloat(m.board.lng) },
+      '#2563eb'
+    );
   }
   if (destClick && m.alight) {
-    drawnLayers.push(L.polyline(
-      [[parseFloat(m.alight.lat), parseFloat(m.alight.lng)], [destClick.lat, destClick.lng]],
-      { color: '#16a34a', weight: 4, opacity: .85, dashArray: '6,8' }
-    ).addTo(window._map));
+    _drawWalk(
+      { lat: parseFloat(m.alight.lat), lng: parseFloat(m.alight.lng) },
+      { lat: destClick.lat, lng: destClick.lng },
+      '#16a34a'
+    );
   }
 
   // Only show stops between board and alight (inclusive); skip the rest
@@ -2572,15 +2776,22 @@ function drawBuses(buses,hex,code,stops){
   clearBuses();
   for(const b of buses){
     if(!b.lat||!b.lng)continue;
-    const popup='<b>'+esc(code||'')+'</b> · '+esc(b.busLabel||'')+'<br>'+esc(b.plateNumber||'');
     const label=b.plateNumber||b.busLabel||'';
     const bla=parseFloat(b.lat), blo=parseFloat(b.lng);
-    const next=nextStopFor(b,stops);
+    // Find current stop (by stopId) and the next stop in seq order — used for
+    // both the heading-arrow bearing and the popup's "Şu an / Sıradaki" rows.
+    const cur  = stops?.find(s => s.stopId === b.stopId) || null;
+    const next = nextStopFor(b,stops);
     let brg=null;
     if(next){
       const sla=parseFloat(next.lat), slo=parseFloat(next.lng);
       if(Math.abs(bla-sla)>1e-6 || Math.abs(blo-slo)>1e-6) brg=bearing(bla,blo,sla,slo);
     }
+    let popup = '<b>'+esc(code||'')+'</b>';
+    if (b.busLabel) popup += ' · '+esc(b.busLabel);
+    if (b.plateNumber) popup += '<br>'+esc(b.plateNumber);
+    if (cur)  popup += '<br><span style="color:#7eb3f7">Şu an:</span> '+esc(cur.stopName);
+    if (next) popup += '<br><span style="color:#22c55e">Sıradaki:</span> '+esc(next.stopName);
     busMarkers.push(L.marker([bla,blo],{icon:mkBusIcon(hex,brg,label),zIndexOffset:2000}).bindPopup(popup).addTo(window._map));
   }
 }
@@ -3077,7 +3288,7 @@ function showTripDetail(m, fitMap = true) {
         +   '<span class="journey-icon">🚶</span>'
         +   '<span class="journey-time">~'+walkToMins+' dk</span>'
         +   '<div><span class="journey-stop-name">'+esc(m.board.stopName)+'</span> <span class="journey-stop-id">#'+m.board.stopId+'</span>'
-        +   '<div class="journey-detail">'+fmtDist(m.walkB)+' yürüyüş · Biniş noktası</div>'
+        +   '<div class="journey-detail">'+fmtDist(m.walkB)+' · '+Math.max(1, Math.round(m.walkB/SETTINGS.walkSpeedMpm))+' dk yürüyüş · Biniş noktası</div>'
         +   '</div>'
         + '</div>';
 
@@ -3105,7 +3316,7 @@ function showTripDetail(m, fitMap = true) {
         +   '<span class="journey-icon">🏁</span>'
         +   '<span class="journey-time">~'+walkFromMins+' dk</span>'
         +   '<div><span class="journey-stop-name">'+esc(m.alight.stopName)+'</span> <span class="journey-stop-id">#'+m.alight.stopId+'</span>'
-        +   '<div class="journey-detail">'+fmtDist(m.walkA)+' yürüyüş · İniş noktası</div>'
+        +   '<div class="journey-detail">'+fmtDist(m.walkA)+' · '+Math.max(1, Math.round(m.walkA/SETTINGS.walkSpeedMpm))+' dk yürüyüş · İniş noktası</div>'
         +   '</div>'
         + '</div>';
 

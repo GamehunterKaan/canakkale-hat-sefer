@@ -351,10 +351,38 @@
     .p-route-card { padding: 9px 11px; border-radius: 7px; background: #1a1d2e; border: 1.5px solid #252d40; margin-bottom: 7px; cursor: pointer; transition: border-color .15s; }
     .p-route-card:hover  { border-color: #4a90d9; }
     .p-route-card.active { border-color: #4a90d9; background: #1a2744; }
-    .p-route-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+    .p-route-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; flex-wrap: wrap; }
     .p-route-badge { padding: 2px 7px; border-radius: 4px; font-size: .72rem; font-weight: 700; white-space: nowrap; }
     .p-route-name  { font-size: .78rem; font-weight: 600; flex: 1; }
     .p-route-meta  { font-size: .72rem; color: #6b7a99; }
+    .p-multileg-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      background: #3d2a08; color: #f59e0b; border: 1px solid #5b3f0a;
+      font-size: .65rem; font-weight: 700; white-space: nowrap;
+    }
+    .p-leg-arrow { color: #6b7a99; font-weight: 700; font-size: .8rem; }
+    .p-route-eta { margin-left: auto; font-size: .75rem; font-weight: 700; color: #c0d0ea; }
+    html[data-theme="light"] .p-multileg-badge { background: #fef3c7; color: #b45309; border-color: #fbbf24; }
+    .p-longwalk-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      background: #3a1a1a; color: #f87171; border: 1px solid #5b2a2a;
+      font-size: .62rem; font-weight: 700; white-space: nowrap;
+    }
+    html[data-theme="light"] .p-longwalk-badge { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+    html[data-theme="light"] .p-leg-arrow { color: #9ca3af; }
+    html[data-theme="light"] .p-route-eta { color: #1a1d2e; }
+    .p-taxi-card { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      margin-top: 4px; padding: 9px 11px; border-radius: 7px; background: #211d12;
+      border: 1.5px dashed #4a3f1a; }
+    .p-taxi-left { display: flex; align-items: center; gap: 9px; }
+    .p-taxi-ico { font-size: 1.15rem; }
+    .p-taxi-title { font-size: .8rem; font-weight: 700; color: #f5c451; }
+    .p-taxi-sub { font-size: .7rem; color: #9a8c5a; }
+    .p-taxi-fare { font-size: .85rem; font-weight: 700; color: #f5c451; white-space: nowrap; }
+    .p-taxi-card.active { border-style: solid; border-color: #eab308; background: #2b2410; }
+    html[data-theme="light"] .p-taxi-card { background: #fef9ec; border-color: #f0d896; }
+    html[data-theme="light"] .p-taxi-title, html[data-theme="light"] .p-taxi-fare { color: #a16207; }
+    html[data-theme="light"] .p-taxi-sub { color: #b08a2e; }
     .bus-chip { display: inline-block; background: #1a2744; color: #7eb3f7; border-radius: 4px; padding: 2px 5px; font-size: .68rem; font-weight: 600; margin: 2px 2px 0 0; }
     .nearby-stop { margin: 0 0 5px; border-radius: 7px; border: 1.5px solid #252d40; overflow: hidden; cursor: pointer; transition: border-color .15s; }
     .nearby-stop:hover, .nearby-stop.open { border-color: #4a90d9; }
@@ -1393,6 +1421,7 @@ let refreshTimer = null;
 let selectedMatch = null;
 let currentMatches = [];
 let tripMatch = null;
+let currentTaxi = null;   // { km, min, tl } driving estimate for the active O/D, shown at the bottom of results
 let stopRefreshTimer = null;
 let openStopId   = null;
 
@@ -2099,27 +2128,104 @@ const mkBusIcon = (hex, brg, label) => {
   });
 };
 
-// ── Walking-route directions (OSRM) ────────────────────────────────────────
-// Fetches an actual walking route between two points from the OSRM public
-// demo server. Returns null on any failure so callers can fall back to a
-// straight dashed line + haversine label.
+// ── Taxi estimate ───────────────────────────────────────────────────────────
+// Çanakkale taxi tariff: 100 ₺ açılış (opening) + 50 ₺/km, with a 200 ₺
+// "kısa mesafe / indi-bindi" minimum fare. (A real home→airport trip billed
+// ~400 ₺, which matches: 100 + ~5.7 km × 50 ≈ 385 ₺.) Idle waiting (4 ₺/min)
+// isn't part of a point-to-point estimate. Fare = max(minimum, açılış + km×rate).
+const TAXI_TARIFF = {
+  openTL:    100,  // taksimetre açılış
+  perKmTL:   50,   // kilometre başı
+  minimumTL: 200,  // kısa mesafe (indi-bindi) minimum ücret
+};
+function _taxiEstimate(distM, durSec) {
+  const km = distM / 1000;
+  const fare = Math.max(TAXI_TARIFF.minimumTL, TAXI_TARIFF.openTL + km * TAXI_TARIFF.perKmTL);
+  return { km, min: Math.round(durSec / 60), tl: Math.round(fare / 5) * 5 }; // fare rounded to nearest 5 ₺
+}
+
+// ── Driving route (Valhalla auto) — for the taxi estimate ────────────────────
+// Uses the SHORTEST-DISTANCE auto route, not the default time-optimal one. A
+// taxi meter bills distance driven, and cabs take the short route — whereas the
+// time-optimal route can detour onto a longer ring road/highway (İskele→home was
+// 13.4 km time-optimal vs 7.0 km shortest). Shortest matches the real fare.
+async function fetchDrivingRoute(a, b) {
+  if (!a || !b) return null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), WALK_ROUTE_TIMEOUT_MS);
+    const r = await fetch('https://valhalla1.openstreetmap.de/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: [{ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }], costing: 'auto', costing_options: { auto: { shortest: true } }, units: 'kilometers' }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const trip = (await r.json()).trip;
+    if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
+    let coords = [];
+    for (const leg of trip.legs) if (leg.shape) coords = coords.concat(_decodePolyline6(leg.shape));
+    return { distance: trip.summary.length * 1000, duration: trip.summary.time, coords };
+  } catch { return null; }
+}
+
+// ── Walking-route directions (Valhalla pedestrian routing) ─────────────────
+// Fetches a real PEDESTRIAN walking route from the free FOSSGIS Valhalla
+// instance. We deliberately do NOT use the OSRM public demo: its /foot/
+// endpoint actually serves the driving profile, so it can't cross roads or use
+// footpaths — it inflated short pedestrian moves (a 31 m road crossing, an
+// 800 m campus cut-through) into hundreds of meters / kilometers, which wrongly
+// dropped reachable stops and viable transfers. Valhalla's pedestrian costing
+// gives honest walking distances (crosses roads, uses footpaths). Returns null
+// on any failure so callers fall back to a straight line + haversine.
+const _walkRouteCache = new Map();
+const WALK_ROUTE_TIMEOUT_MS = 7000;
+// Decode a Valhalla-encoded polyline (Google polyline algorithm, precision 6).
+function _decodePolyline6(str) {
+  let i = 0, lat = 0, lng = 0; const coords = [];
+  while (i < str.length) {
+    let result = 0, shift = 0, b;
+    do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    result = 0; shift = 0;
+    do { b = str.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    coords.push([lat / 1e6, lng / 1e6]);
+  }
+  return coords;
+}
 async function fetchWalkingRoute(a, b) {
   if (!a || !b) return null;
-  const url = 'https://router.project-osrm.org/route/v1/foot/'
-            + a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat
-            + '?overview=full&geometries=geojson';
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    const d = await r.json();
-    if (d.code !== 'Ok' || !d.routes?.length) return null;
-    const route = d.routes[0];
-    return {
-      coords:   route.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
-      distance: route.distance,  // meters
-      duration: route.duration,  // seconds
-    };
-  } catch { return null; }
+  const k = a.lat.toFixed(5)+','+a.lng.toFixed(5)+'>'+b.lat.toFixed(5)+','+b.lng.toFixed(5);
+  if (_walkRouteCache.has(k)) return _walkRouteCache.get(k);
+  const body = JSON.stringify({
+    locations: [{ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }],
+    costing: 'pedestrian', units: 'kilometers',
+  });
+  const p = (async () => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), WALK_ROUTE_TIMEOUT_MS);
+      const r = await fetch('https://valhalla1.openstreetmap.de/route', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body, signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) return null;
+      const d = await r.json();
+      const trip = d.trip;
+      if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
+      let coords = [];
+      for (const leg of trip.legs) if (leg.shape) coords = coords.concat(_decodePolyline6(leg.shape));
+      return {
+        coords,
+        distance: trip.summary.length * 1000,  // km → meters, real pedestrian distance
+        duration: trip.summary.time,            // seconds (realistic walking time)
+      };
+    } catch { return null; }
+  })();
+  _walkRouteCache.set(k, p);
+  return p;
 }
 
 // Midpoint of a polyline path, weighted by segment length so labels sit on
@@ -2356,23 +2462,29 @@ function schedTimesForPath(schedEntry, path) {
 }
 
 // accounting for planOffset. Used for ETA-based sorting in findRoutes.
-function estimateWaitMins(routeCode, boardSeq, path) {
-  const effectiveNow = new Date().getHours() * 60 + new Date().getMinutes() + planOffset;
+// Compute wait time before boarding a route's bus at `boardSeq`, evaluated
+// from an arbitrary `fromMins` (minutes-into-today). Generalised so multi-leg
+// trip planning can compute leg-2 wait based on the predicted arrival at the
+// transfer stop, not "now."
+function estimateWaitFromMins(routeCode, boardSeq, path, fromMins) {
   const dayData = getActiveRoutes();
-  const entry  = findSchedEntry(dayData, routeCode);
-  if (!entry) return 999; // no schedule → sort to bottom
-  const tm     = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
-  const times  = schedTimesForPath(entry, path).sort((a, b) => tm(a) - tm(b));
+  const entry   = findSchedEntry(dayData, routeCode);
+  if (!entry) return 999;
+  const tm = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
+  const times = (schedTimesForPath(entry, path) || []).sort((a, b) => tm(a) - tm(b));
   if (!times.length) return 20;
-  const toMins = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
   const travel = Math.max(0, boardSeq - 1) * MINS_PER_STOP;
   for (const t of times) {
     const arr = tm(t) + travel;
-    if (arr >= effectiveNow) return Math.max(0, Math.round(arr - effectiveNow));
+    if (arr >= fromMins) return Math.max(0, Math.round(arr - fromMins));
   }
-  // All today's buses gone — next-day first bus
-  if (times.length) return Math.max(0, Math.round(tm(times[0]) + travel + 1440 - effectiveNow));
-  return 999;
+  // All today's buses gone — wrap to first bus tomorrow
+  return Math.max(0, Math.round(tm(times[0]) + travel + 1440 - fromMins));
+}
+
+function estimateWaitMins(routeCode, boardSeq, path) {
+  const effectiveNow = new Date().getHours() * 60 + new Date().getMinutes() + planOffset;
+  return estimateWaitFromMins(routeCode, boardSeq, path, effectiveNow);
 }
 
 function resetPlanner() {
@@ -2393,7 +2505,7 @@ function resetPlanner() {
   if (destPin)      { window._map.removeLayer(destPin);      destPin      = null; }
   // Clear state
   originClick = destClick = originStop = destStop = null;
-  selectedMatch = null; currentMatches = []; tripMatch = null;
+  selectedMatch = null; currentMatches = []; tripMatch = null; currentTaxi = null;
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
   closeTrackPanel();
   stopBusNotify();
@@ -2632,125 +2744,453 @@ function swapOD() {
   findRoutes();
 }
 
-function findRoutes(){
-  clearDrawn();clearBuses();showNetworkStops();document.getElementById('results').innerHTML='';
-  const oLat=originClick.lat,oLng=originClick.lng,dLat=destClick.lat,dLng=destClick.lng;
-  let nO=0,nD=0;const bpMap=new Map();
-  for(const{path,route}of pathCache){
-    const st=path.busStopList||[];if(!st.length)continue;
-    const oD=st.map(s=>haversine(oLat,oLng,parseFloat(s.lat),parseFloat(s.lng)));
-    const dD=st.map(s=>haversine(dLat,dLng,parseFloat(s.lat),parseFloat(s.lng)));
-    if(oD.some(d=>d<=SETTINGS.walkRadius))nO++;if(dD.some(d=>d<=SETTINGS.walkRadius))nD++;
-    let best=null;
-    for(let oi=0;oi<st.length;oi++){
-      if(oD[oi]>SETTINGS.walkRadius)continue;
-      let ba=null;
-      for(let di=oi+1;di<st.length;di++){if(dD[di]>SETTINGS.walkRadius)continue;if(!ba||dD[di]<ba.d)ba={di,d:dD[di]};}
-      if(!ba)continue;
-      const sc=ba.di-oi;
-      if(!best||oD[oi]<oD[best.oi]||(oD[oi]===oD[best.oi]&&sc<best.sc))
-        best={oi,sc,path,route,board:st[oi],alight:st[ba.di],walkB:Math.round(oD[oi]),walkA:Math.round(ba.d),buses:path.busList||[]};
-    }
-    if(best){const k=path.path_code;if(!bpMap.has(k)||best.walkB<bpMap.get(k).walkB)bpMap.set(k,best);}
-  }
-  const _dData  = getActiveRoutes();
-  const matches=[...bpMap.values()].filter(m => {
-    if (/^OGR|^ÖĞ/i.test(m.path.displayRouteCode)) return false;
-    // Keep if schedule is known in Seferler tab
-    if (findSchedEntry(_dData, m.path.displayRouteCode)) return true;
-    // Keep if live GPS position available from kentkart
-    return (m.buses || []).some(b => b.lat && b.lng);
-  }).map(m=>{
-    const bSeq = parseInt(m.board.seq) || 0;
-    const wait = estimateWaitMins(m.path.displayRouteCode, bSeq, m.path);
-    const eta  = Math.round(m.walkB/SETTINGS.walkSpeedMpm) + wait + Math.round(m.sc*MINS_PER_STOP) + Math.round(m.walkA/SETTINGS.walkSpeedMpm);
-    return {...m, _wait: wait, _eta: eta};
-  }).sort((a,b)=>a._eta-b._eta);
-  if(!matches.length){setHint('Doğrudan hat yok. (konuma:'+nO+' hedefe:'+nD+')',true);document.getElementById('results').innerHTML='<p style="color:#4a5568;font-size:.8rem;padding:6px 0">Bağlantı bulunamadı.</p>';hidePanelHandle();return;}
-  currentMatches = matches; tripMatch = null;
-  hidePlannerGuide();
-  setHint(matches.length+' hat bulundu. Detay için bir hatta tıklayın.');
-  renderPlannerResults(matches);selectPlannerMatch(matches[0]);
-  expandPanel(matches.length);
-  if(refreshTimer)clearInterval(refreshTimer);refreshTimer=setInterval(refreshBuses,30000);
+let _findGen = 0;
+// Paint a spinner into the results panel, then yield two animation frames so
+// the browser actually renders it before we run the synchronous route search.
+// Without the yield, the heavy JS would block the paint and the spinner would
+// never be seen.
+function _showPlannerSpinner(msg) {
+  document.getElementById('results').innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;color:#9ca3af;padding:14px 6px;font-size:.85rem">'
+    + '<span class="loading-spin" style="width:14px;height:14px"></span>'
+    + esc(msg)
+    + '</div>';
 }
+const _nextPaint = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+async function findRoutes(){
+  const gen = ++_findGen;
+  clearDrawn();clearBuses();showNetworkStops();
+  _showPlannerSpinner('Rotalar hesaplanıyor…');
+  setHint('Rotalar hesaplanıyor…');
+  await _nextPaint();
+  if (gen !== _findGen) return;
+
+  // Bus trips + a taxi estimate (driving route) in parallel.
+  const [trips, drive] = await Promise.all([
+    planTrips(gen),
+    fetchDrivingRoute({ lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }),
+  ]);
+  if (gen !== _findGen) return;
+  currentTaxi = drive ? { ..._taxiEstimate(drive.distance, drive.duration), coords: drive.coords || [] } : null;
+  if (!trips) { _appendTaxiCard(); return; } // planTrips already rendered the empty/error state
+
+  currentMatches = trips.list; tripMatch = null;
+  hidePlannerGuide();
+  const hasMulti = trips.list.some(m => m.isMultiLeg);
+  const base = trips.list.length + (hasMulti ? ' seçenek bulundu (aktarmalı dahil).' : ' hat bulundu. Detay için bir hatta tıklayın.');
+  setHint(trips.relaxed ? base + ' Yürüme mesafeleri ayarınızdan uzun.' : base, trips.relaxed);
+  renderPlannerResults(trips.list); selectPlannerMatch(trips.list[0]);
+  expandPanel(trips.list.length);
+  if (refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(refreshBuses, 30000);
+}
+
+// ── Trip planner ────────────────────────────────────────────────────────────
+// One clean pass. Real PEDESTRIAN walk distances (Valhalla matrix) decide which
+// stops are reachable from the origin and to the destination; transfers use
+// straight-line distance (they are short by construction, and road-routing a
+// short hop like crossing a street is unreliable). Direct and 1-transfer trips
+// compete in a single ETA ranking — a transfer must beat a direct by more than
+// TRANSFER_PENALTY_MIN to outrank it. Trips whose walks fit walkRadius are shown
+// first; only if none do we fall back to long-walk trips (≤3×), flagged.
+const MINS_PER_STOP = 1.5;
+const MAX_WAIT_MIN = 240;            // drop trips whose next bus is >4h out (schedule wrapped)
+const TRANSFER_WALK_MAX_M = 400;     // max straight-line walk for a transfer between two stops
+const TRANSFER_PENALTY_MIN = 10;     // a transfer must save >this vs a direct to rank above it
+const WALK_RELAX_MULT = 3;           // long-walk fallback radius = walkRadius × this
+const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
+const _tmMin = t => { const [h, m] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + m; };
+
+// Next-departure wait at a stop, evaluated from `fromMins`, using a path's
+// pre-sorted terminal-departure minutes. Returns minutes to wait (capped logic
+// in caller). 20 = schedule unknown but route is live; large = wrapped to tomorrow.
+function _waitFromTimes(times, boardSeq, fromMins) {
+  if (!times.length) return 20;
+  const travel = Math.max(0, boardSeq - 1) * MINS_PER_STOP;
+  for (const t of times) { const a = t + travel; if (a >= fromMins) return Math.max(0, Math.round(a - fromMins)); }
+  return Math.max(0, Math.round(times[0] + travel + 1440 - fromMins)); // first bus tomorrow
+}
+
+// Real walking distance (meters) from one point to a set of stops, via Valhalla
+// matrix. Returns Map(stopId → meters). Falls back to haversine per stop if the
+// matrix call fails. `reverse` swaps direction (stops → point).
+async function _walkDistances(point, stops, reverse) {
+  const ids = [...stops.keys()];
+  if (!ids.length) return new Map();
+  const pts = ids.map(id => { const s = stops.get(id); return { lat: s.lat, lon: s.lng }; });
+  const mx = reverse ? await _walkMatrix(pts, [{ lat: point.lat, lon: point.lng }])
+                     : await _walkMatrix([{ lat: point.lat, lon: point.lng }], pts);
+  const out = new Map();
+  ids.forEach((id, i) => {
+    let m = null;
+    if (mx) m = reverse ? (mx[i] && mx[i][0]) : (mx[0] && mx[0][i]);
+    if (m == null) { const s = stops.get(id); m = haversine(point.lat, point.lng, s.lat, s.lng); }
+    out.set(id, m);
+  });
+  return out;
+}
+
+// Returns { list, relaxed } or null (after rendering an empty state). `list`
+// holds direct + multi-leg trip objects matching the renderer's expected shape.
+async function planTrips(gen) {
+  const O = { lat: originClick.lat, lng: originClick.lng };
+  const D = { lat: destClick.lat,   lng: destClick.lng };
+  const W = SETTINGS.walkRadius, MAXW = W * WALK_RELAX_MULT;
+  const nowMins = new Date().getHours()*60 + new Date().getMinutes() + planOffset;
+  const dayData = getActiveRoutes();
+  const walkMins = m => m / SETTINGS.walkSpeedMpm;
+
+  // Usable paths with pre-sorted schedule times (skip student/ghost routes that
+  // have neither a schedule nor live buses).
+  const usable = [];
+  for (const pe of pathCache) {
+    const p = pe.path, st = p.busStopList || [];
+    if (!st.length || /^OGR|^ÖĞ/i.test(p.displayRouteCode)) continue;
+    const entry = findSchedEntry(dayData, p.displayRouteCode);
+    const hasLive = (p.busList || []).some(b => b.lat && b.lng);
+    if (!entry && !hasLive) continue;
+    usable.push({
+      p, route: pe.route, st, code: p.displayRouteCode, buses: p.busList || [],
+      times: entry ? (schedTimesForPath(entry, p) || []).map(_tmMin).sort((a,b)=>a-b) : [],
+    });
+  }
+
+  // Distinct stops within the relaxed radius (haversine) of origin / dest — a
+  // superset of everything reachable, since real walk ≥ straight-line. Capped to
+  // the nearest MAX_NEAR_STOPS so the matrix stays small.
+  const collect = (lat, lng) => {
+    const m = new Map();
+    for (const u of usable) for (const s of u.st) {
+      if (m.has(s.stopId)) continue;
+      const dd = haversine(lat, lng, +s.lat, +s.lng);
+      if (dd <= MAXW) m.set(s.stopId, { lat: +s.lat, lng: +s.lng, d: dd });
+    }
+    return new Map([...m.entries()].sort((a,b)=>a[1].d-b[1].d).slice(0, MAX_NEAR_STOPS));
+  };
+  const originStops = collect(O.lat, O.lng);
+  const destStops   = collect(D.lat, D.lng);
+
+  // Real pedestrian walk distances (2 matrix calls, in parallel).
+  const [boardWalk, alightWalk] = await Promise.all([
+    _walkDistances(O, originStops, false),
+    _walkDistances(D, destStops, true),
+  ]);
+  if (gen !== _findGen) return null;
+
+  const candidates = [];
+
+  // ── Direct trips ──────────────────────────────────────────────────────────
+  // For each path, pick the board/alight stop pair (board before alight) that
+  // minimises ETA, using real walk distances.
+  for (const u of usable) {
+    let best = null;
+    for (let i = 0; i < u.st.length; i++) {
+      const bw = boardWalk.get(u.st[i].stopId);
+      if (bw == null || bw > MAXW) continue;
+      const wait = _waitFromTimes(u.times, parseInt(u.st[i].seq)||0, nowMins + walkMins(bw));
+      if (wait >= MAX_WAIT_MIN) continue;
+      for (let j = i + 1; j < u.st.length; j++) {
+        const aw = alightWalk.get(u.st[j].stopId);
+        if (aw == null || aw > MAXW) continue;
+        const eta = Math.round(walkMins(bw) + wait + (j - i)*MINS_PER_STOP + walkMins(aw));
+        if (!best || eta < best._eta) best = {
+          isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
+          board: u.st[i], alight: u.st[j], walkB: Math.round(bw), walkA: Math.round(aw),
+          sc: j - i, _wait: wait, _eta: eta, _maxWalk: Math.max(bw, aw),
+        };
+      }
+    }
+    if (best) candidates.push(best);
+  }
+
+  // ── 1-transfer trips ────────────────────────────────────────────────────────
+  // Pair every path reaching the origin (A) with every path reaching the dest
+  // (B≠A); find a transfer where a stop on A (after boarding) is within
+  // TRANSFER_WALK_MAX_M of a stop on B (before alighting). Same stopId = 0 m.
+  const originPaths = usable.map(u => ({
+    u, boards: u.st.map((s,i)=>({s,i,w:boardWalk.get(s.stopId)})).filter(x => x.w != null && x.w <= MAXW),
+  })).filter(x => x.boards.length);
+  const destPaths = usable.map(u => ({
+    u, alights: u.st.map((s,i)=>({s,i,w:alightWalk.get(s.stopId)})).filter(x => x.w != null && x.w <= MAXW),
+  })).filter(x => x.alights.length);
+
+  for (const A of originPaths) {
+    const board = A.boards.reduce((a,b)=> b.w < a.w ? b : a); // closest board on A
+    const leg1Wait = _waitFromTimes(A.u.times, parseInt(board.s.seq)||0, nowMins + walkMins(board.w));
+    if (leg1Wait >= MAX_WAIT_MIN) continue;
+    for (const B of destPaths) {
+      if (B.u.code === A.u.code) continue;
+      const alight = B.alights.reduce((a,b)=> b.w < a.w ? b : a); // closest alight on B
+      let best = null;
+      for (let xi = board.i + 1; xi < A.u.st.length; xi++) {
+        const X = A.u.st[xi];
+        for (let yj = 0; yj < alight.i; yj++) {
+          const Y = B.u.st[yj];
+          const t = (X.stopId === Y.stopId) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
+          if (t > TRANSFER_WALK_MAX_M) continue;
+          const ride1 = (xi - board.i) * MINS_PER_STOP;
+          const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + ride1 + walkMins(t);
+          const leg2Wait = _waitFromTimes(B.u.times, parseInt(Y.seq)||0, arriveB2);
+          if (leg2Wait >= MAX_WAIT_MIN) continue;
+          const ride2 = (alight.i - yj) * MINS_PER_STOP;
+          const eta = Math.round(walkMins(board.w) + leg1Wait + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(alight.w));
+          // Prefer the lowest-ETA transfer point; tie-break toward the shortest
+          // transfer walk (more robust, nicer to use).
+          if (!best || eta < best._eta || (eta === best._eta && t < best._t))
+            best = { X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta };
+        }
+      }
+      if (best) candidates.push({
+        isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w),
+        leg1: {
+          path: A.u.p, route: A.u.route, board: board.s, alight: best.X,
+          walkB: Math.round(board.w), sc: best.xi - board.i, wait: leg1Wait,
+          ride: Math.round(best.ride1), buses: A.u.buses,
+        },
+        leg2: {
+          path: B.u.p, route: B.u.route, board: best.Y, alight: alight.s,
+          walkA: Math.round(alight.w), sc: alight.i - best.yj, wait: best.leg2Wait,
+          ride: Math.round(best.ride2), buses: B.u.buses,
+          transferWalkM: Math.round(best.t), transferWalkMins: Math.max(0, Math.round(walkMins(best.t))),
+        },
+      });
+    }
+  }
+
+  if (!candidates.length) {
+    currentMatches = []; tripMatch = null; selectedMatch = null;
+    clearDrawn(); clearBuses();
+    setHint('Bağlantı bulunamadı.', true);
+    document.getElementById('results').innerHTML =
+      '<p style="color:#4a5568;font-size:.8rem;padding:6px 0">Bu konum ve hedef için hat bulunamadı.</p>';
+    hidePanelHandle();
+    return null;
+  }
+
+  // Redundant-transfer filter: if a single bus already makes the whole trip
+  // *comfortably* (a direct whose walks fit walkRadius), drop any transfer that
+  // uses that same route as a leg — you'd just ride the direct (leg1 reaches
+  // dest) or board it at the origin (leg2 reaches origin) instead of changing.
+  // Keyed on the REAL comfy-direct set, so it only fires when the direct is
+  // genuinely convenient — a long-walk "direct" (e.g. a 1.7 km hike to the stop)
+  // does NOT suppress a transfer that rides you there. This is what keeps the
+  // good "ride to Beldemiz, transfer toward home" trips while killing "board ÇT3
+  // then change" when ÇT3 already runs straight to the destination.
+  const comfyDirectCodes = new Set(
+    candidates.filter(c => !c.isMultiLeg && c._maxWalk <= W).map(c => c.path.displayRouteCode)
+  );
+  const kept = comfyDirectCodes.size
+    ? candidates.filter(c => !c.isMultiLeg
+        || (!comfyDirectCodes.has(c.leg1.path.displayRouteCode)
+         && !comfyDirectCodes.has(c.leg2.path.displayRouteCode)))
+    : candidates;
+
+  // Dedupe multi-leg to one (best ETA) per route-pair so the list isn't full of
+  // the same A→B with slightly different transfer points.
+  const seenPair = new Map();
+  const deduped = [];
+  for (const c of kept) {
+    if (!c.isMultiLeg) { deduped.push(c); continue; }
+    const key = c.leg1.path.displayRouteCode + '|' + c.leg2.path.displayRouteCode;
+    const prev = seenPair.get(key);
+    if (!prev) { seenPair.set(key, c); deduped.push(c); }
+    else if (c._eta < prev._eta) { deduped[deduped.indexOf(prev)] = c; seenPair.set(key, c); }
+  }
+
+  // Rank: ETA, with the transfer penalty applied to multi-leg ordering only.
+  const rank = m => m._eta + (m.isMultiLeg ? TRANSFER_PENALTY_MIN : 0);
+  const sorted = deduped.sort((a, b) => rank(a) - rank(b));
+
+  // Prefer trips whose walks all fit walkRadius; only if none do, fall back to
+  // long-walk trips (≤ MAXW) and flag them.
+  const comfy = sorted.filter(m => m._maxWalk <= W);
+  const pool = comfy.length ? comfy : sorted;
+  const relaxed = !comfy.length;
+  for (const m of pool) m._longWalk = m._maxWalk > W;
+
+  return { list: pool.slice(0, 5), relaxed };
+}
+
+
+// Valhalla one-shot distance matrix: every source→target walking distance in a
+// SINGLE request. This is the speed win — instead of dozens of point-to-point
+// /route calls (slow, serialized by the browser's 6-connection cap), the whole
+// planner needs only ~3 matrix calls. Returns a 2D array of meters (null cell
+// on failure), or null if the request fails so callers fall back to haversine.
+async function _walkMatrix(sources, targets) {
+  if (!sources.length || !targets.length) return null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), WALK_ROUTE_TIMEOUT_MS);
+    const r = await fetch('https://valhalla1.openstreetmap.de/sources_to_targets', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sources, targets, costing: 'pedestrian', units: 'kilometers' }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const mx = d.sources_to_targets;
+    if (!Array.isArray(mx)) return null;
+    return mx.map(row => row.map(c => (c && c.distance != null) ? c.distance * 1000 : null));
+  } catch { return null; }
+}
+
 
 function renderPlannerResults(matches){
   const cont=document.getElementById('results');
-  cont.innerHTML='<div class="result-header">Bağlantılı Hatlar</div>';
+  const isMulti = matches.length && matches[0].isMultiLeg;
+  cont.innerHTML='<div class="result-header">' + (isMulti ? 'Aktarmalı Hatlar' : 'Bağlantılı Hatlar') + '</div>';
   for(const m of matches){
-    const hex=(m.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
-    const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||'aktif')+'</span>').join(''):'<span class="bus-chip muted">Aktif araç yok</span>';
     const c=document.createElement('div');c.className='p-route-card';
-    c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span></div>'
-      +'<div class="p-route-meta">'+m.sc+' durak arası</div>'
-      +'<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkB)+')</span></div>'
-      +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>'
-      +'<div style="margin-top:4px">'+bh+'</div>';
+    if (m.isMultiLeg) {
+      const h1=(m.leg1.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
+      const h2=(m.leg2.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
+      const totalRide = m.leg1.ride + m.leg1.wait + m.leg2.ride + m.leg2.wait;
+      const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="Yürüme yarıçapından uzun">⚠️ uzun yürüyüş</span>' : '';
+      c.innerHTML =
+        '<div class="p-route-top">'
+        + '<span class="p-multileg-badge">🔁 1 aktarma</span>'
+        + longWalkChip
+        + '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
+        + '<span class="p-leg-arrow">→</span>'
+        + '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
+        + '<span class="p-route-eta">~'+m._eta+' dk</span>'
+        + '</div>'
+        + '<div class="p-route-meta">'+m.leg1.sc+' + '+m.leg2.sc+' durak · '+totalRide+' dk yolculuk</div>'
+        + '<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.leg1.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.leg1.walkB)+')</span></div>'
+        + '<div style="font-size:.7rem;color:#f59e0b">🔁 <b>'+esc(m.leg1.alight.stopName)+'</b>'
+        + (m.leg2.transferWalkM > 0 ? ' <span style="color:#4a5568">('+fmtDist(m.leg2.transferWalkM)+' aktarma yürüyüşü)</span>' : ' <span style="color:#4a5568">(aynı durakta)</span>')
+        + '</div>'
+        + '<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.leg2.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.leg2.walkA)+')</span></div>';
+    } else {
+      const hex=(m.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
+      const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||'aktif')+'</span>').join(''):'<span class="bus-chip muted">Aktif araç yok</span>';
+      const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="Yürüme yarıçapından uzun">⚠️ uzun yürüyüş</span>' : '';
+      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+'</div>'
+        +'<div class="p-route-meta">'+m.sc+' durak arası</div>'
+        +'<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkB)+')</span></div>'
+        +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>'
+        +'<div style="margin-top:4px">'+bh+'</div>';
+    }
     c.onclick=()=>showTripDetail(m);cont.appendChild(c);
   }
+  _appendTaxiCard();
+}
+
+// Appends a taxi estimate card to the bottom of the results panel (driving time
+// + approximate fare). Skipped if the driving route couldn't be fetched.
+function _appendTaxiCard() {
+  if (!currentTaxi) return;
+  const cont = document.getElementById('results');
+  if (!cont || cont.querySelector('.p-taxi-card')) return;
+  const t = currentTaxi;
+  const c = document.createElement('div');
+  c.className = 'p-taxi-card';
+  if (t.coords && t.coords.length) c.style.cursor = 'pointer';
+  c.innerHTML =
+    '<div class="p-taxi-left"><span class="p-taxi-ico">🚕</span><div>'
+    + '<div class="p-taxi-title">Taksi</div>'
+    + '<div class="p-taxi-sub">'+t.km.toFixed(1)+' km · ~'+t.min+' dk</div>'
+    + '</div></div>'
+    + '<div class="p-taxi-fare">≈'+t.tl+' ₺</div>';
+  if (t.coords && t.coords.length) c.onclick = showTaxiRoute;
+  cont.appendChild(c);
+}
+
+// Draw the taxi's driving route on the map (origin → dest) and mark the card
+// active, mirroring how a bus trip is selected.
+function showTaxiRoute() {
+  if (!currentTaxi || !currentTaxi.coords?.length) return;
+  selectedMatch = null; tripMatch = null;
+  document.querySelectorAll('.p-route-card').forEach(c => c.classList.remove('active'));
+  document.querySelector('.p-taxi-card')?.classList.add('active');
+  clearDrawn(); clearBuses(); hideNetworkStops();
+  // origin/dest pins (originMarker/destMarker) persist on the map already.
+  const line = L.polyline(currentTaxi.coords, { color: '#eab308', weight: 5, opacity: .9 }).addTo(window._map);
+  drawnLayers.push(line);
+  const mid = _polylineMidpoint(currentTaxi.coords);
+  if (mid) drawnLayers.push(L.marker(mid, { icon: L.divIcon({ className: '', html: '<span class="walk-label">🚕 '+currentTaxi.km.toFixed(1)+' km · ~'+currentTaxi.min+' dk · ≈'+currentTaxi.tl+' ₺</span>', iconSize: null }), interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(window._map));
+  window._map.fitBounds(line.getBounds(), { padding: [45, 45] });
 }
 
 function selectPlannerMatch(m, fitMap = true){
   selectedMatch=m;
   document.querySelectorAll('.p-route-card').forEach(c=>c.classList.remove('active'));
-  [...document.getElementById('results').querySelectorAll('.p-route-card')]
-    .find(c=>c.querySelector('.p-route-badge')?.textContent===m.path.displayRouteCode&&c.innerHTML.includes(m.path.headSign))?.classList.add('active');
+  document.querySelector('.p-taxi-card')?.classList.remove('active');
+  if (m.isMultiLeg) {
+    // Active card by matching the two badges + transfer name
+    [...document.getElementById('results').querySelectorAll('.p-route-card')].find(c => {
+      const badges = c.querySelectorAll('.p-route-badge');
+      return badges.length === 2
+          && badges[0].textContent === m.leg1.path.displayRouteCode
+          && badges[1].textContent === m.leg2.path.displayRouteCode;
+    })?.classList.add('active');
+  } else {
+    [...document.getElementById('results').querySelectorAll('.p-route-card')]
+      .find(c=>c.querySelector('.p-route-badge')?.textContent===m.path.displayRouteCode&&c.innerHTML.includes(m.path.headSign))?.classList.add('active');
+  }
   clearDrawn();clearBuses();hideNetworkStops();
+
+  // Shared walk generation counter — both branches use _drawWalk and need the
+  // same race-safety semantics so an in-flight OSRM fetch for a previous trip
+  // doesn't overwrite the current trip's lines.
+  const _walkGen = (selectPlannerMatch._gen = (selectPlannerMatch._gen || 0) + 1);
+  function _drawWalk(a, b, color, slot) {
+    if (!a || !b) return;
+    const straight = L.polyline(
+      [[a.lat, a.lng], [b.lat, b.lng]],
+      { color, weight: 4, opacity: .85, dashArray: '6,8' }
+    ).addTo(window._map);
+    drawnLayers.push(straight);
+    const dStraight = haversine(a.lat, a.lng, b.lat, b.lng);
+    const tStraight = (dStraight / SETTINGS.walkSpeedMpm) * 60;
+    let labelM = _walkLabelMarker([(a.lat+b.lat)/2, (a.lng+b.lng)/2], tStraight, dStraight).addTo(window._map);
+    drawnLayers.push(labelM);
+    fetchWalkingRoute(a, b).then(route => {
+      if (_walkGen !== selectPlannerMatch._gen) return;
+      if (!route) return;
+      window._map.removeLayer(straight);
+      drawnLayers = drawnLayers.filter(l => l !== straight && l !== labelM);
+      window._map.removeLayer(labelM);
+      const routed = L.polyline(route.coords, { color, weight: 4, opacity: .9 }).addTo(window._map);
+      drawnLayers.push(routed);
+      const mid = _polylineMidpoint(route.coords);
+      if (mid) {
+        // Label time from distance ÷ the user's walkSpeedMpm setting (not the
+        // router's own duration) so it honors their configured walking pace.
+        const walkSec = (route.distance / SETTINGS.walkSpeedMpm) * 60;
+        labelM = _walkLabelMarker(mid, walkSec, route.distance).addTo(window._map);
+        drawnLayers.push(labelM);
+      }
+      if (slot) _updateTripWalk(slot, route.distance);
+    });
+  }
+
+  if (m.isMultiLeg) { _selectMultiLeg(m, fitMap, _drawWalk); return; }
 
   const ROUTE_COLOR = 'f59e0b'; // always yellow
   const pts=(m.path.pointList||[]).map(p=>[parseFloat(p.lat),parseFloat(p.lng)]);
   if(pts.length){const l=L.polyline(pts,{color:'#'+ROUTE_COLOR,weight:5,opacity:.9}).addTo(window._map);drawnLayers.push(l);if(fitMap)window._map.fitBounds(l.getBounds(),{padding:[40,40]});}
 
   // Walking lines: origin → boarding stop, alight stop → destination.
-  // Draws an immediate straight dashed line as a placeholder, then asks OSRM
-  // for the actual on-road walking route and swaps the line + adds a label
-  // showing duration + distance. Falls back to the straight line when OSRM
-  // fails (offline, rate-limited).
-  const _walkGen = (selectPlannerMatch._gen = (selectPlannerMatch._gen || 0) + 1);
-  function _drawWalk(a, b, color) {
-    if (!a || !b) return;
-    // 1. Immediate straight line so the trip never looks half-rendered.
-    const straight = L.polyline(
-      [[a.lat, a.lng], [b.lat, b.lng]],
-      { color, weight: 4, opacity: .85, dashArray: '6,8' }
-    ).addTo(window._map);
-    drawnLayers.push(straight);
-    // 2. Distance label (haversine first; OSRM may overwrite below).
-    const dStraight = haversine(a.lat, a.lng, b.lat, b.lng);
-    const tStraight = (dStraight / SETTINGS.walkSpeedMpm) * 60;
-    let labelM = _walkLabelMarker([(a.lat+b.lat)/2, (a.lng+b.lng)/2], tStraight, dStraight).addTo(window._map);
-    drawnLayers.push(labelM);
-    // 3. Try OSRM in the background; replace on success.
-    fetchWalkingRoute(a, b).then(route => {
-      if (_walkGen !== selectPlannerMatch._gen) return; // stale: user picked another trip
-      if (!route) return;
-      // Remove placeholder line + label
-      window._map.removeLayer(straight);
-      drawnLayers = drawnLayers.filter(l => l !== straight && l !== labelM);
-      window._map.removeLayer(labelM);
-      // Draw real route
-      const routed = L.polyline(route.coords, { color, weight: 4, opacity: .9 }).addTo(window._map);
-      drawnLayers.push(routed);
-      const mid = _polylineMidpoint(route.coords);
-      if (mid) {
-        labelM = _walkLabelMarker(mid, route.duration, route.distance).addTo(window._map);
-        drawnLayers.push(labelM);
-      }
-    });
-  }
+  // OSRM-routed via the shared _drawWalk helper defined above. The slot
+  // parameter lets _drawWalk patch the trip-detail card with the actual
+  // road distance once OSRM resolves (straight-line haversine on first paint).
   if (originClick && m.board) {
     _drawWalk(
       { lat: originClick.lat, lng: originClick.lng },
       { lat: parseFloat(m.board.lat), lng: parseFloat(m.board.lng) },
-      '#2563eb'
+      '#2563eb',
+      'board'
     );
   }
   if (destClick && m.alight) {
     _drawWalk(
       { lat: parseFloat(m.alight.lat), lng: parseFloat(m.alight.lng) },
       { lat: destClick.lat, lng: destClick.lng },
-      '#16a34a'
+      '#16a34a',
+      'alight'
     );
   }
 
@@ -2772,8 +3212,78 @@ function selectPlannerMatch(m, fitMap = true){
   drawBuses(m.buses, ROUTE_COLOR, m.path.displayRouteCode, m.path.busStopList);
 }
 
-function drawBuses(buses,hex,code,stops){
-  clearBuses();
+// Render a multi-leg trip on the map: leg-1 polyline, transfer walk, leg-2
+// polyline, plus the origin/destination walks. Bus markers for both legs.
+function _selectMultiLeg(m, fitMap, drawWalk) {
+  const HEX_L1 = 'f59e0b';
+  const HEX_L2 = (m.leg2.route.routeColor || '4a7dc0').replace('#','').padStart(6,'0');
+
+  const pts1 = (m.leg1.path.pointList || []).map(p => [parseFloat(p.lat), parseFloat(p.lng)]);
+  const pts2 = (m.leg2.path.pointList || []).map(p => [parseFloat(p.lat), parseFloat(p.lng)]);
+  if (pts1.length) drawnLayers.push(L.polyline(pts1, { color: '#'+HEX_L1, weight: 5, opacity: .9 }).addTo(window._map));
+  if (pts2.length) drawnLayers.push(L.polyline(pts2, { color: '#'+HEX_L2, weight: 5, opacity: .9 }).addTo(window._map));
+
+  // Walking segments: origin → leg1.board, transfer walk (if >0), leg2.alight → dest.
+  // Slot tags let _drawWalk patch the open multi-leg trip-detail card with
+  // real on-road distance once OSRM resolves.
+  if (originClick && m.leg1.board) {
+    drawWalk({ lat: originClick.lat, lng: originClick.lng },
+             { lat: parseFloat(m.leg1.board.lat), lng: parseFloat(m.leg1.board.lng) },
+             '#2563eb', 'leg1-board');
+  }
+  if (m.leg2.transferWalkM > 0) {
+    drawWalk(
+      { lat: parseFloat(m.leg1.alight.lat), lng: parseFloat(m.leg1.alight.lng) },
+      { lat: parseFloat(m.leg2.board.lat),  lng: parseFloat(m.leg2.board.lng)  },
+      '#f59e0b', 'transfer'
+    );
+  }
+  if (destClick && m.leg2.alight) {
+    drawWalk({ lat: parseFloat(m.leg2.alight.lat), lng: parseFloat(m.leg2.alight.lng) },
+             { lat: destClick.lat, lng: destClick.lng }, '#16a34a', 'leg2-alight');
+  }
+
+  // Per-leg stop markers between board and alight (transfer point gets the 🔁)
+  function drawLegStops(path, board, alight, legColorHex, boardIsTransfer) {
+    const stops = path.busStopList || [];
+    const bIdx = stops.findIndex(s => s.stopId === board.stopId);
+    const aIdx = stops.findIndex(s => s.stopId === alight.stopId);
+    const trip = (bIdx >= 0 && aIdx >= 0) ? stops.slice(bIdx, aIdx + 1) : stops;
+    for (const s of trip) {
+      const isB = s.stopId === board.stopId, isA = s.stopId === alight.stopId;
+      const color  = isB ? (boardIsTransfer ? '#f59e0b' : '#2563eb')
+                  : isA ? (alight === m.leg2.alight ? '#16a34a' : '#f59e0b')
+                  : '#'+legColorHex;
+      const prefix = isB ? (boardIsTransfer ? '🔁 ' : '🟦 ')
+                  : isA ? (alight === m.leg2.alight ? '🟩 ' : '🔁 ')
+                  : '';
+      drawnLayers.push(L.marker([parseFloat(s.lat), parseFloat(s.lng)], {
+        icon: mkStopIcon(color, isB || isA ? 14 : 9),
+        zIndexOffset: isB || isA ? 500 : 200,
+      }).bindTooltip(prefix + s.stopName, { permanent: isB || isA, direction: 'top', offset: [0, isB||isA ? -10 : -5] })
+        .on('click', () => openStopOnMap(s.stopId))
+        .addTo(window._map));
+    }
+  }
+  drawLegStops(m.leg1.path, m.leg1.board, m.leg1.alight, HEX_L1, false);
+  drawLegStops(m.leg2.path, m.leg2.board, m.leg2.alight, HEX_L2, m.leg2.transferWalkM === 0);
+
+  // Bus markers for both legs (don't clear between calls)
+  drawBuses(m.leg1.buses || [], HEX_L1, m.leg1.path.displayRouteCode, m.leg1.path.busStopList);
+  drawBuses(m.leg2.buses || [], HEX_L2, m.leg2.path.displayRouteCode, m.leg2.path.busStopList, true);
+
+  if (fitMap) {
+    const bounds = L.latLngBounds([]);
+    pts1.forEach(p => bounds.extend(p));
+    pts2.forEach(p => bounds.extend(p));
+    if (originClick) bounds.extend([originClick.lat, originClick.lng]);
+    if (destClick)   bounds.extend([destClick.lat, destClick.lng]);
+    if (bounds.isValid()) window._map.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+function drawBuses(buses,hex,code,stops,noClear){
+  if(!noClear) clearBuses();
   for(const b of buses){
     if(!b.lat||!b.lng)continue;
     const label=b.plateNumber||b.busLabel||'';
@@ -2797,6 +3307,28 @@ function drawBuses(buses,hex,code,stops){
 }
 async function refreshBuses(){
   if(!selectedMatch)return;
+  // Multi-leg trips refetch both legs and redraw in one batch.
+  if (selectedMatch.isMultiLeg) {
+    const m = selectedMatch;
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(m.leg1.path.displayRouteCode)+'&direction='+m.leg1.path.direction).then(x=>x.json()).catch(()=>null),
+        fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(m.leg2.path.displayRouteCode)+'&direction='+m.leg2.path.direction).then(x=>x.json()).catch(()=>null),
+      ]);
+      const fp1 = r1?.pathList?.[0], fp2 = r2?.pathList?.[0];
+      m.leg1.buses = fp1?.busList || [];
+      m.leg2.buses = fp2?.busList || [];
+      const HEX_L1 = 'f59e0b';
+      const HEX_L2 = (m.leg2.route.routeColor || '4a7dc0').replace('#','').padStart(6,'0');
+      drawBuses(m.leg1.buses, HEX_L1, m.leg1.path.displayRouteCode, fp1?.busStopList || m.leg1.path.busStopList);
+      drawBuses(m.leg2.buses, HEX_L2, m.leg2.path.displayRouteCode, fp2?.busStopList || m.leg2.path.busStopList, true);
+      markKentkartResult(!!(fp1 || fp2));
+    } catch {
+      clearBuses();
+      markKentkartResult(false);
+    }
+    return;
+  }
   const{path,route}=selectedMatch;
   try{
     const r=await fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(path.displayRouteCode)+'&direction='+path.direction);
@@ -2804,8 +3336,11 @@ async function refreshBuses(){
     if(fp){
       drawBuses(fp.busList||[],(route.routeColor||'4a7dc0').replace('#',''),path.displayRouteCode,fp.busStopList||path.busStopList);
       // refresh trip detail panel if open
-      if(tripMatch&&tripMatch.path.path_code===path.path_code){
-        tripMatch.buses=fp.busList||[];showTripDetail(tripMatch,false);
+      if(tripMatch&&!tripMatch.isMultiLeg&&tripMatch.path.path_code===path.path_code){
+        // skipMap=true: bus markers are already refreshed by drawBuses above;
+        // re-rendering the polyline + walking lines would trigger a fresh OSRM
+        // fetch and cause visible flicker every 30s.
+        tripMatch.buses=fp.busList||[];showTripDetail(tripMatch,false,true);
       }
       markKentkartResult(true);
     } else {
@@ -3010,7 +3545,7 @@ let notifySubId  = null; // subscription ID returned by the Worker
 
 async function toggleBusNotify() {
   // Cancel if already watching this trip
-  if (notifyMatch && tripMatch && notifyMatch.path.path_code === tripMatch.path.path_code) {
+  if (notifyMatch && tripMatch && !tripMatch.isMultiLeg && notifyMatch.path.path_code === tripMatch.path.path_code) {
     await stopBusNotify();
     const btn = document.getElementById('notify-btn');
     if (btn) { btn.textContent = '🔕 Bildir'; btn.classList.remove('active'); }
@@ -3169,11 +3704,118 @@ if ('serviceWorker' in navigator) {
 }
 
 // ── Trip detail ───────────────────────────────────────────────────────────────
-const MINS_PER_STOP = 1.5;
+// (MINS_PER_STOP, MAX_WAIT_MIN, TRANSFER_PENALTY_MIN are declared with the planner above.)
 
-function showTripDetail(m, fitMap = true) {
+// Render the trip-detail panel for a 2-leg (1-transfer) match. Mirrors the
+// single-leg layout but adds an explicit Aktarma step between the two rides.
+function _showMultiLegTripDetail(m) {
+  const h1 = (m.leg1.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
+  const h2 = (m.leg2.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
+  const walkToBoardMins  = Math.max(1, Math.round(m.leg1.walkB / SETTINGS.walkSpeedMpm));
+  const walkFromAlightMins = Math.max(1, Math.round(m.leg2.walkA / SETTINGS.walkSpeedMpm));
+  const totalEta = m._eta;
+
+  // Predicted arrival time at the transfer stop (minutes-into-day)
+  const nowMins = new Date().getHours()*60 + new Date().getMinutes() + planOffset;
+  const arriveAtTransferMins = nowMins + walkToBoardMins + m.leg1.wait + m.leg1.ride + (m.leg2.transferWalkMins || 0);
+  const fmtClock = mins => {
+    const wrapped = ((mins % 1440) + 1440) % 1440;
+    const h = Math.floor(wrapped / 60).toString().padStart(2, '0');
+    const mn = Math.floor(wrapped % 60).toString().padStart(2, '0');
+    return h + ':' + mn;
+  };
+
+  let html = '';
+  html += '<div class="trip-section">';
+  html += '<div class="trip-section-title">Aktarmalı Yolculuk · Tahmini ' + totalEta + ' dk</div>';
+
+  // Step 1: walk to first board
+  html += '<div class="journey-step">'
+       + '<div class="journey-num">1</div>'
+       + '<div class="journey-text">'
+       +   '<div class="journey-main">' + walkToBoardMins + ' dk yürüyüş</div>'
+       +   '<div class="journey-detail">' + fmtDist(m.leg1.walkB) + ' · ' + esc(m.leg1.board.stopName) + '\'na</div>'
+       + '</div></div>';
+
+  // Step 2: leg 1 ride
+  html += '<div class="journey-step">'
+       + '<div class="journey-num">2</div>'
+       + '<div class="journey-text">'
+       +   '<div class="journey-main">'
+       +     '<span class="sched-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
+       +     ' · ' + m.leg1.sc + ' durak · ' + m.leg1.ride + ' dk'
+       +   '</div>'
+       +   '<div class="journey-detail">Sıradaki kalkış ~' + m.leg1.wait + ' dk içinde</div>'
+       + '</div></div>';
+
+  // Step 3: transfer
+  const xferText = m.leg2.transferWalkM > 0
+    ? m.leg2.transferWalkMins + ' dk · ' + fmtDist(m.leg2.transferWalkM) + ' aktarma yürüyüşü'
+    : 'Aynı durakta aktarma';
+  html += '<div class="journey-step">'
+       + '<div class="journey-num">🔁</div>'
+       + '<div class="journey-text">'
+       +   '<div class="journey-main">Aktarma · ' + esc(m.leg1.alight.stopName) + '</div>'
+       +   '<div class="journey-detail">' + xferText + ' · ' + esc(m.leg2.path.displayRouteCode) + '\'in sıradaki kalkışı '+fmtClock(arriveAtTransferMins + m.leg2.wait)+' (~' + m.leg2.wait + ' dk bekleme)</div>'
+       + '</div></div>';
+
+  // Step 4: leg 2 ride
+  html += '<div class="journey-step">'
+       + '<div class="journey-num">3</div>'
+       + '<div class="journey-text">'
+       +   '<div class="journey-main">'
+       +     '<span class="sched-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
+       +     ' · ' + m.leg2.sc + ' durak · ' + m.leg2.ride + ' dk'
+       +   '</div>'
+       +   '<div class="journey-detail">' + esc(m.leg2.board.stopName) + ' → ' + esc(m.leg2.alight.stopName) + '</div>'
+       + '</div></div>';
+
+  // Step 5: walk to destination
+  html += '<div class="journey-step">'
+       + '<div class="journey-num">4</div>'
+       + '<div class="journey-text">'
+       +   '<div class="journey-main">' + walkFromAlightMins + ' dk yürüyüş</div>'
+       +   '<div class="journey-detail">' + fmtDist(m.leg2.walkA) + ' · Hedefe</div>'
+       + '</div></div>';
+
+  html += '</div>';
+
+  const cont = document.getElementById('results');
+  cont.innerHTML = '<div style="padding:12px 2px;overflow-y:auto;height:100%">' + html + '</div>';
+  document.getElementById('stopPanel').style.display = 'none';
+  cont.style.display = '';
+}
+
+// Patches walk distance/time on an open trip-detail card once OSRM resolves
+// with the real on-road distance for either the board or alight leg. The
+// initial render uses straight-line haversine because findRoutes is sync;
+// this corrects it asynchronously, and rolls the new value into the total.
+function _updateTripWalk(slot, meters) {
+  const w = window._tripWalks;
+  if (!w) return;
+  const mins = Math.max(1, Math.round(meters / SETTINGS.walkSpeedMpm));
+  if (slot === 'board') {
+    w.walkBMins = mins;
+    const t = document.getElementById('trip-walk-board-time');
+    if (t) t.textContent = '~' + mins + ' dk';
+    const d = document.getElementById('trip-walk-board-detail');
+    if (d) d.textContent = fmtDist(meters) + ' · ' + mins + ' dk yürüyüş · Biniş noktası';
+  } else if (slot === 'alight') {
+    w.walkAMins = mins;
+    const t = document.getElementById('trip-walk-alight-time');
+    if (t) t.textContent = '~' + mins + ' dk';
+    const d = document.getElementById('trip-walk-alight-detail');
+    if (d) d.textContent = fmtDist(meters) + ' · ' + mins + ' dk yürüyüş · İniş noktası';
+  } else return;
+  const total = w.walkBMins + w.waitMins + w.rideMins + w.walkAMins;
+  const tot = document.getElementById('trip-total-value');
+  if (tot) tot.textContent = '~' + total + ' dk';
+}
+
+function showTripDetail(m, fitMap = true, skipMap = false) {
   tripMatch = m;
-  selectPlannerMatch(m, fitMap); // draw route on map
+  if (!skipMap) selectPlannerMatch(m, fitMap); // draw route on map
+  if (m.isMultiLeg) { _showMultiLegTripDetail(m); return; }
 
   const stops   = m.path.busStopList || [];
   const seqOf   = {};
@@ -3251,6 +3893,9 @@ function showTripDetail(m, fitMap = true) {
   }
 
   const totalMins = walkToMins + waitMins + rideMins + walkFromMins;
+  // Snapshot for async OSRM correction — _updateTripWalk patches this card
+  // once real road distance arrives.
+  window._tripWalks = { walkBMins: walkToMins, walkAMins: walkFromMins, waitMins, rideMins };
 
   // ── Scheduled departure chips (next 5 terminal departures) ──────────────────
   const nextTimes = allSchedTimes.filter(t => t >= curStr).slice(0, 5);
@@ -3286,9 +3931,9 @@ function showTripDetail(m, fitMap = true) {
   // Walk to board
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🚶</span>'
-        +   '<span class="journey-time">~'+walkToMins+' dk</span>'
+        +   '<span class="journey-time" id="trip-walk-board-time">~'+walkToMins+' dk</span>'
         +   '<div><span class="journey-stop-name">'+esc(m.board.stopName)+'</span> <span class="journey-stop-id">#'+m.board.stopId+'</span>'
-        +   '<div class="journey-detail">'+fmtDist(m.walkB)+' · '+Math.max(1, Math.round(m.walkB/SETTINGS.walkSpeedMpm))+' dk yürüyüş · Biniş noktası</div>'
+        +   '<div class="journey-detail" id="trip-walk-board-detail">'+fmtDist(m.walkB)+' · '+walkToMins+' dk yürüyüş · Biniş noktası</div>'
         +   '</div>'
         + '</div>';
 
@@ -3314,15 +3959,15 @@ function showTripDetail(m, fitMap = true) {
   // Alight + walk to dest
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🏁</span>'
-        +   '<span class="journey-time">~'+walkFromMins+' dk</span>'
+        +   '<span class="journey-time" id="trip-walk-alight-time">~'+walkFromMins+' dk</span>'
         +   '<div><span class="journey-stop-name">'+esc(m.alight.stopName)+'</span> <span class="journey-stop-id">#'+m.alight.stopId+'</span>'
-        +   '<div class="journey-detail">'+fmtDist(m.walkA)+' · '+Math.max(1, Math.round(m.walkA/SETTINGS.walkSpeedMpm))+' dk yürüyüş · İniş noktası</div>'
+        +   '<div class="journey-detail" id="trip-walk-alight-detail">'+fmtDist(m.walkA)+' · '+walkFromMins+' dk yürüyüş · İniş noktası</div>'
         +   '</div>'
         + '</div>';
 
   html += '<div class="total-box">'
         +   '<span class="total-box-label">Toplam tahmini süre</span>'
-        +   '<span class="total-box-value">~'+totalMins+' dk</span>'
+        +   '<span class="total-box-value" id="trip-total-value">~'+totalMins+' dk</span>'
         + '</div>';
   html += '</div>';
 
@@ -3402,15 +4047,111 @@ function showTripDetail(m, fitMap = true) {
   cont.style.display = '';
 }
 
+function _showMultiLegTripDetail(m) {
+  const h1 = (m.leg1.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
+  const h2 = (m.leg2.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
+  const walkBMins  = Math.max(1, Math.round(m.leg1.walkB / SETTINGS.walkSpeedMpm));
+  const walkAMins  = Math.max(1, Math.round(m.leg2.walkA / SETTINGS.walkSpeedMpm));
+  const xferMins   = m.leg2.transferWalkMins;
+  // Snapshot for async OSRM correction — _updateTripWalk patches this card
+  // once real road distances arrive for the three walking segments.
+  window._tripWalks = {
+    multi: true, ref: m,
+    walkBMins, walkAMins, xferMins,
+    leg1Wait: m.leg1.wait, leg2Wait: m.leg2.wait,
+    leg1Ride: m.leg1.ride, leg2Ride: m.leg2.ride,
+  };
+
+  let html = '';
+  // Header
+  html += '<div style="display:flex;align-items:center;gap:6px;padding-bottom:8px;border-bottom:1px solid #252d40;margin-bottom:10px;flex-wrap:wrap">'
+        +   '<button class="trip-back" onclick="closeTripDetail()">← Hatlar</button>'
+        +   '<span class="p-multileg-badge">🔁 1 aktarma</span>'
+        +   '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
+        +   '<span class="p-leg-arrow">→</span>'
+        +   '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
+        +   '<span style="flex:1"></span>'
+        +   '<span class="p-route-eta">~'+m._eta+' dk</span>'
+        + '</div>';
+
+  // Journey summary
+  html += '<div class="trip-section">';
+  html += '<div class="trip-section-title">Yolculuk Özeti</div>';
+
+  // 1. Walk to board
+  html += '<div class="journey-step">'
+        +   '<span class="journey-icon">🚶</span>'
+        +   '<div style="flex:1">'
+        +     '<div class="journey-main" id="ml-leg1-board-main">'+walkBMins+' dk · '+fmtDist(m.leg1.walkB)+' yürüyüş</div>'
+        +     '<div class="journey-detail">Biniş: '+esc(m.leg1.board.stopName)+'</div>'
+        +   '</div>'
+        + '</div>';
+
+  // 2. Leg 1 ride
+  html += '<div class="journey-step">'
+        +   '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
+        +   '<div style="flex:1">'
+        +     '<div class="journey-main">'+m.leg1.wait+' dk bekleme + '+m.leg1.ride+' dk yolculuk</div>'
+        +     '<div class="journey-detail">'+m.leg1.sc+' durak · '+esc(m.leg1.board.stopName)+' → '+esc(m.leg1.alight.stopName)+'</div>'
+        +   '</div>'
+        + '</div>';
+
+  // 3. Aktarma
+  html += '<div class="journey-step">'
+        +   '<span class="journey-icon">🔁</span>'
+        +   '<div style="flex:1">'
+        +     '<div class="journey-main">Aktarma · '+esc(m.leg1.alight.stopName)
+        +       (m.leg2.transferWalkM > 0 ? '' : ' (aynı durak)')+'</div>'
+        +     '<div class="journey-detail" id="ml-transfer-detail">'
+        +       (m.leg2.transferWalkM > 0
+                  ? xferMins+' dk yürüme · '+fmtDist(m.leg2.transferWalkM)+' · '
+                  : '')
+        +       m.leg2.wait+' dk bekleme'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+
+  // 4. Leg 2 ride
+  html += '<div class="journey-step">'
+        +   '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
+        +   '<div style="flex:1">'
+        +     '<div class="journey-main">'+m.leg2.ride+' dk yolculuk</div>'
+        +     '<div class="journey-detail">'+m.leg2.sc+' durak · '+esc(m.leg2.board.stopName)+' → '+esc(m.leg2.alight.stopName)+'</div>'
+        +   '</div>'
+        + '</div>';
+
+  // 5. Walk to dest
+  html += '<div class="journey-step">'
+        +   '<span class="journey-icon">🚶</span>'
+        +   '<div style="flex:1">'
+        +     '<div class="journey-main" id="ml-leg2-alight-main">'+walkAMins+' dk · '+fmtDist(m.leg2.walkA)+' yürüyüş</div>'
+        +     '<div class="journey-detail">İniş: '+esc(m.leg2.alight.stopName)+' → hedef</div>'
+        +   '</div>'
+        + '</div>';
+
+  html += '</div>';
+
+  const cont = document.getElementById('results');
+  cont.innerHTML = '<div style="padding:12px 2px;overflow-y:auto;height:100%">' + html + '</div>';
+  document.getElementById('stopPanel').style.display = 'none';
+  cont.style.display = '';
+}
+
 function closeTripDetail() {
   stopBusNotify();
   tripMatch = null;
   renderPlannerResults(currentMatches);
   if (selectedMatch) {
-    // Re-highlight active card
-    [...document.getElementById('results').querySelectorAll('.p-route-card')]
-      .find(c => c.querySelector('.p-route-badge')?.textContent === selectedMatch.path.displayRouteCode)
-      ?.classList.add('active');
+    // Re-highlight active card — match by code(s) depending on direct vs multi-leg.
+    [...document.getElementById('results').querySelectorAll('.p-route-card')].find(c => {
+      const badges = c.querySelectorAll('.p-route-badge');
+      if (selectedMatch.isMultiLeg) {
+        return badges.length === 2
+            && badges[0].textContent === selectedMatch.leg1.path.displayRouteCode
+            && badges[1].textContent === selectedMatch.leg2.path.displayRouteCode;
+      }
+      return badges[0]?.textContent === selectedMatch.path.displayRouteCode;
+    })?.classList.add('active');
   }
 }
 

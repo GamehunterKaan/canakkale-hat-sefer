@@ -15,6 +15,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'file://' + workerPath;
 
 const MUN_URL = 'https://ulasim.canakkale.bel.tr/rehber/hatlar-otobus-saatleri/';
 
+// Real network timetables span many pages (one table block per route — the
+// live weekday/weekend PDFs are 14–18 pages). One-off shuttle notices like
+// "KÜTÜPHANE SEFERLERİ" are tiny 1–2 page PDFs that parse into a route or two
+// and pollute the Seferler tabs. Skip PDFs below this page count.
+const MIN_PDF_PAGES = 6;
+
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 async function fetchText(url) {
@@ -203,6 +209,7 @@ function sortSchedules(a, b) {
 
 async function parsePDF(buffer) {
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer), disableFontFace: true }).promise;
+  if (pdf.numPages < MIN_PDF_PAGES) return { routes: {}, numPages: pdf.numPages, skipped: true };
   const routeMap = {};
   const ROUTE_RE  = /^(Ç\d+[A-ZÇŞĞÜÖİ]*|ÇT\d+|\d+[ÇGK]|960)/;
   const TIME_RE   = /^\d{2}:\d{2}$/;
@@ -345,7 +352,7 @@ async function parsePDF(buffer) {
       dir1: { label: dir1.label, times: [...dir1.times].sort((a, b) => toM(a) - toM(b)) },
     };
   }
-  return result;
+  return { routes: result, numPages: pdf.numPages, skipped: false };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -361,10 +368,12 @@ async function main() {
   }
 
   // Fast-skip: if the sorted URL list matches the previous run, nothing changed.
+  // Compare against both the schedules we kept AND the small PDFs we skipped, so
+  // a page-skipped PDF (e.g. the library shuttle) doesn't force a re-parse forever.
   const urlList = links.map(l => l.url).sort();
   try {
     const prev = JSON.parse(readFileSync('data/schedule.json', 'utf8'));
-    const prevUrls = (prev.schedules || []).map(s => s.url).sort();
+    const prevUrls = [...(prev.schedules || []).map(s => s.url), ...(prev.skippedUrls || [])].sort();
     if (prevUrls.length === urlList.length && prevUrls.every((u, i) => u === urlList[i])) {
       console.log('PDF URL list unchanged since last run — skipping parse.');
       return;
@@ -373,11 +382,17 @@ async function main() {
 
   console.log('Downloading & parsing each PDF…');
   const schedules = [];
+  const skippedUrls = [];
   for (const link of links) {
     console.log(`  → ${link.label} (${link.id})`);
     try {
       const buf = await fetchBinary(link.url);
-      const routes = await parsePDF(buf);
+      const { routes, numPages, skipped } = await parsePDF(buf);
+      if (skipped) {
+        console.log(`    skipped: only ${numPages} page(s) (< ${MIN_PDF_PAGES}) — likely a special shuttle notice, not a network timetable`);
+        skippedUrls.push(link.url);
+        continue;
+      }
       console.log(`    parsed ${Object.keys(routes).length} routes`);
       schedules.push({
         id: link.id, label: link.label, kind: link.kind,
@@ -400,8 +415,9 @@ async function main() {
   } catch (e) { console.warn('  kentkart fetch failed:', e.message); }
 
   const out = { schedules, routes, fetchedAt: Date.now() };
+  if (skippedUrls.length) out.skippedUrls = skippedUrls; // remembered so fast-skip stays accurate
   writeFileSync('data/schedule.json', JSON.stringify(out));
-  console.log(`✅ schedule.json written (${schedules.length} schedules)`);
+  console.log(`✅ schedule.json written (${schedules.length} schedules${skippedUrls.length ? `, ${skippedUrls.length} skipped` : ''})`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

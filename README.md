@@ -46,7 +46,10 @@ Tap the map (or use GPS) to set your starting point and destination. The planner
 - **Tap a stop to pick it** — while in Konum or Hedef pick mode, tapping any stop circle on the map snaps your pin to that stop exactly
 - **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
 
-![Trip planner showing route options sorted by ETA](screenshots/planner.png)
+<p>
+  <img src="screenshots/planner.png" width="49%" alt="Trip planner showing route options sorted by ETA">
+  <img src="screenshots/one-transfer.png" width="49%" alt="One transfer trip map view">
+</p>
 
 ---
 
@@ -109,7 +112,7 @@ A dedicated bottom-tab for finding and managing stops without using the map.
 - **📍 Haritada göster** — drops a labelled pin for that exact stop on the planner map.
 - **🔗 Paylaş** — generates a `?stop=<id>` deep-link via the native share sheet or clipboard so others can open the same stop directly.
 
-![Duraklar tab showing the stop hub with search, favorites, and nearby stops](screenshots/duraklar.png)
+![Duraklar tab showing the stop hub with search, favorites, and nearby stops](screenshots/stops.png)
 
 ---
 

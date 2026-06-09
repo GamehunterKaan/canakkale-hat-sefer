@@ -108,8 +108,12 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Same-origin JSON data → stale-while-revalidate
+  // Same-origin JSON data → stale-while-revalidate. A cache-busting query
+  // (?_=…, used by the app's background freshness check / manual refresh) is
+  // passed straight to the network and NOT cached, so those one-off URLs don't
+  // pile up in DATA_CACHE. The app falls back to the plain (cached) URL offline.
   if (sameOrigin && url.pathname.startsWith('/data/') && url.pathname.endsWith('.json')) {
+    if (url.search) return; // network passthrough, no cache
     event.respondWith(staleWhileRevalidate(req, DATA_CACHE));
     return;
   }

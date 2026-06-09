@@ -959,13 +959,6 @@ const MAP_BOUNDS   = [[39.95, 26.30], [40.25, 26.55]];   // [SW lat,lng], [NE la
 const MAP_MIN_ZOOM = 13;
 const MAP_MAX_ZOOM = 16;
 
-function isCacheFresh(cached) {
-  const d = new Date(cached.fetchedAt);
-  const n = new Date();
-  return d.getFullYear() === n.getFullYear() &&
-         d.getMonth()    === n.getMonth()    &&
-         d.getDate()     === n.getDate();
-}
 
 // ── Screen switching ──────────────────────────────────────────────────────────
 let plannerReady = false;
@@ -1140,55 +1133,97 @@ function getActiveRoutes() { return getActiveSchedule()?.routes || {}; }
 let scheduleData    = null;
 let kentkartRouteMap = null; // displayRouteCode → {name, routeColor}
 
+// Set scheduleData and rebuild the kentkart route-color lookup from a payload.
+function applyScheduleData(data) {
+  scheduleData = data;
+  kentkartRouteMap = null;
+  if (data.routes?.length) {
+    kentkartRouteMap = new Map();
+    for (const route of data.routes) {
+      const code = route.displayRouteCode.toUpperCase();
+      const stripped = code.replace(/^Ç(?=\d)/, '');
+      kentkartRouteMap.set(code, route);
+      if (stripped !== code) kentkartRouteMap.set(stripped, route);
+    }
+  }
+}
+
+// Fetch the freshest schedule.json straight from the network. The cache-busting
+// query + no-store dodges both the HTTP cache and the service worker's
+// stale-while-revalidate (which would otherwise hand back the cached copy).
+// Throws on failure so callers can fall back to the cached copy.
+async function fetchScheduleFresh() {
+  const r = await fetch('./data/schedule.json?_=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error('schedule.json alınamadı (refresh)');
+  const data = await r.json();
+  if (!Array.isArray(data.schedules)) throw new Error('schedule.json geçersiz');
+  return data;
+}
+
 async function loadScheduleData(forceRefresh) {
-  if (!forceRefresh) {
-    try {
-      const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-      // Require the v7 shape (schedules array) — anything else is a stale
-      // pre-migration cache and must be re-fetched.
-      if (c && isCacheFresh(c) && Array.isArray(c.schedules)) {
-        scheduleData = c;
-        if (c.routes?.length) {
-          kentkartRouteMap = new Map();
-          for (const route of c.routes) {
-            const code = route.displayRouteCode.toUpperCase();
-            const stripped = code.replace(/^Ç(?=d)/, '');
-            kentkartRouteMap.set(code, route);
-            if (stripped !== code) kentkartRouteMap.set(stripped, route);
-          }
-        }
-        return;
-      }
-    } catch {}
+  if (forceRefresh) {
+    // Manual refresh → fresh, cache-busted copy, falling back to the SW-cached
+    // copy when offline.
+    let data;
+    try { data = await fetchScheduleFresh(); }
+    catch {
+      const r = await fetch('./data/schedule.json');
+      if (!r.ok) throw new Error('schedule.json alınamadı');
+      data = await r.json();
+      if (!Array.isArray(data.schedules)) throw new Error('schedule.json geçersiz');
+    }
+    applyScheduleData(data);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+    setSchedProgress(100, 'Tamamlandı.');
+    return;
   }
 
+  // Instant: serve any cached copy regardless of age, then refresh in the
+  // background and re-apply if the server has a newer build. (We no longer gate
+  // on same-day freshness — that hid same-day schedule updates.)
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (c && Array.isArray(c.schedules)) {
+      applyScheduleData(c);
+      refreshScheduleInBackground(c.fetchedAt);
+      return;
+    }
+  } catch {}
+
+  // No usable cache → SW-served fetch (works offline). The old-shape branch
+  // (after an app upgrade) forces a fresh fetch.
   setSchedProgress(10, 'Seferler yükleniyor…');
-  // The service worker stale-while-revalidates this URL, which means a user
-  // who updated the app version will get the OLD JSON shape on the first
-  // load after the upgrade. Detect that and force a network-only refetch.
   let r = await fetch('./data/schedule.json');
   if (!r.ok) throw new Error('schedule.json alınamadı');
   let data = await r.json();
   if (!Array.isArray(data.schedules)) {
     setSchedProgress(40, 'Veriler güncelleniyor…');
-    // Cache-busting query string also dodges the SW's URL-keyed cache match,
-    // forcing a fresh network fetch through stale-while-revalidate.
-    r = await fetch('./data/schedule.json?_=' + Date.now(), { cache: 'no-store' });
-    if (!r.ok) throw new Error('schedule.json alınamadı (refresh)');
-    data = await r.json();
+    data = await fetchScheduleFresh();
   }
-  scheduleData = data;
-  if (scheduleData.routes?.length) {
-    kentkartRouteMap = new Map();
-    for (const route of scheduleData.routes) {
-      const code     = route.displayRouteCode.toUpperCase();
-      const stripped = code.replace(/^Ç(?=d)/, '');
-      kentkartRouteMap.set(code, route);
-      if (stripped !== code) kentkartRouteMap.set(stripped, route);
-    }
-  }
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(scheduleData)); } catch {}
+  applyScheduleData(data);
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
   setSchedProgress(100, 'Tamamlandı.');
+  // The SW may have served a stale copy — verify against the network.
+  refreshScheduleInBackground(data.fetchedAt);
+}
+
+// Fire-and-forget: pull the newest schedule.json and, if its build is newer
+// than what's shown, swap it in and re-render the Seferler tab (keeping the
+// user's open tab). Silent on failure so offline users keep the cached copy.
+let _schedBgRefreshed = false;
+async function refreshScheduleInBackground(shownFetchedAt) {
+  if (_schedBgRefreshed) return;   // at most once per page load
+  _schedBgRefreshed = true;
+  let data;
+  try { data = await fetchScheduleFresh(); } catch { return; }
+  if (!(data.fetchedAt > (shownFetchedAt || 0))) return; // nothing newer
+  applyScheduleData(data);
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+  if (document.getElementById('schedTabs')?.children.length) {
+    const keep = schedTab;
+    renderSchedule();
+    if (keep && document.getElementById('routes-' + keep)) switchSchedTab(keep);
+  }
 }
 
 function setSchedProgress(pct, msg, isError) {

@@ -2880,27 +2880,39 @@ async function planTrips(gen) {
   const candidates = [];
 
   // ── Direct trips ──────────────────────────────────────────────────────────
-  // For each path, pick the board/alight stop pair (board before alight) that
-  // minimises ETA, using real walk distances.
+  // Board the stop NEAREST the origin, then alight at the stop nearest the
+  // destination that the bus reaches after it. We do NOT minimise total ETA
+  // here: doing so would trade a longer walk for a shorter ride and send you
+  // past the closest stop to one farther along the route, which nobody wants —
+  // people walk to the nearest stop and accept the extra stops on the bus. If
+  // the nearest stop has no reachable alight after it (wrong direction), fall
+  // through to the next-nearest board.
   for (const u of usable) {
-    let best = null;
+    const boards = [];
     for (let i = 0; i < u.st.length; i++) {
-      const bw = boardWalk.get(u.st[i].stopId);
-      if (bw == null || bw > MAXW) continue;
-      const wait = _waitFromTimes(u.times, parseInt(u.st[i].seq)||0, nowMins + walkMins(bw));
-      if (wait >= MAX_WAIT_MIN) continue;
-      for (let j = i + 1; j < u.st.length; j++) {
-        const aw = alightWalk.get(u.st[j].stopId);
-        if (aw == null || aw > MAXW) continue;
-        const eta = Math.round(walkMins(bw) + wait + (j - i)*MINS_PER_STOP + walkMins(aw));
-        if (!best || eta < best._eta) best = {
-          isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
-          board: u.st[i], alight: u.st[j], walkB: Math.round(bw), walkA: Math.round(aw),
-          sc: j - i, _wait: wait, _eta: eta, _maxWalk: Math.max(bw, aw),
-        };
-      }
+      const w = boardWalk.get(u.st[i].stopId);
+      if (w != null && w <= MAXW) boards.push({ i, w });
     }
-    if (best) candidates.push(best);
+    boards.sort((a, b) => a.w - b.w);
+    let chosen = null;
+    for (const b of boards) {
+      let ai = -1, aw = Infinity;
+      for (let j = b.i + 1; j < u.st.length; j++) {
+        const w = alightWalk.get(u.st[j].stopId);
+        if (w != null && w <= MAXW && w < aw) { aw = w; ai = j; }
+      }
+      if (ai >= 0) { chosen = { bi: b.i, bw: b.w, ai, aw }; break; }
+    }
+    if (!chosen) continue;
+    const wait = _waitFromTimes(u.times, parseInt(u.st[chosen.bi].seq)||0, nowMins + walkMins(chosen.bw));
+    if (wait >= MAX_WAIT_MIN) continue;
+    const eta = Math.round(walkMins(chosen.bw) + wait + (chosen.ai - chosen.bi)*MINS_PER_STOP + walkMins(chosen.aw));
+    candidates.push({
+      isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
+      board: u.st[chosen.bi], alight: u.st[chosen.ai],
+      walkB: Math.round(chosen.bw), walkA: Math.round(chosen.aw),
+      sc: chosen.ai - chosen.bi, _wait: wait, _eta: eta, _maxWalk: Math.max(chosen.bw, chosen.aw),
+    });
   }
 
   // ── 1-transfer trips ────────────────────────────────────────────────────────

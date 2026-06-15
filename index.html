@@ -428,7 +428,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     #map { position: relative; z-index: 0; flex: 1; min-height: 0; min-width: 0; }
     #gps-fab {
-      position: absolute; right: 12px; bottom: 16px; z-index: 500;
+      position: absolute; right: 12px; bottom: 72px; z-index: 500;
       width: 46px; height: 46px; border-radius: 50%;
       background: #1a3660; border: 2px solid #4a90d9;
       color: #7eb3f7; font-size: 1.1rem;
@@ -438,6 +438,33 @@
     }
     #gps-fab:hover { background: #1e3d70; }
     #gps-fab.visible { display: flex; }
+    /* Live-location ("blue dot") toggle — always available on the map */
+    #live-fab {
+      position: absolute; right: 12px; bottom: 16px; z-index: 500;
+      width: 46px; height: 46px; border-radius: 50%;
+      background: #1a3660; border: 2px solid #4a90d9; color: #7eb3f7;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.6); transition: background .15s;
+    }
+    #live-fab:hover { background: #1e3d70; }
+    #live-fab.active { background: #4285f4; border-color: #4285f4; color: #fff; }
+    .locate-ico { width: 18px; height: 18px; border: 2px solid currentColor; border-radius: 50%; position: relative; }
+    .locate-ico::before { content: ''; position: absolute; width: 5px; height: 5px; background: currentColor; border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+    html[data-theme="light"] #live-fab { background: #fff; border-color: #4285f4; color: #4285f4; }
+    html[data-theme="light"] #live-fab.active { background: #4285f4; color: #fff; }
+    /* The moving blue dot, with an optional heading arrow. The wrapper is
+       rotated to the GPS course; the dot is rotationally symmetric so only the
+       arrow visibly turns. */
+    .live-wrap { position: relative; width: 22px; height: 22px; }
+    .live-dot { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border-radius: 50%; background: #4285f4; border: 2.5px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+    .live-dot::after { content: ''; position: absolute; inset: -7px; border-radius: 50%; background: rgba(66,133,244,.28); animation: livePulse 2s ease-out infinite; z-index: -1; }
+    /* Arrow: a triangle whose apex points "up" (north); the wrapper is rotated
+       to the heading around its centre (the dot), so the arrow turns with it. */
+    .live-beam { position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+      border-left: 6px solid transparent; border-right: 6px solid transparent;
+      border-bottom: 11px solid #4285f4; transform: translate(-50%, -100%);
+      filter: drop-shadow(0 0 1px rgba(255,255,255,.9)); }
+    @keyframes livePulse { 0% { transform: scale(.5); opacity: .8; } 100% { transform: scale(1.9); opacity: 0; } }
     /* ── Panel expand/collapse (mobile only) ── */
     /* Expanded: p-top fills all space, panel-handle stays, map collapses */
     .p-top.panel-full { flex: 1; max-height: unset; }
@@ -859,6 +886,7 @@
     </div>
     <div id="map">
       <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
+      <button id="live-fab" onclick="toggleLiveLocation()" title="Canlı konumum"><span class="locate-ico"></span></button>
       <div id="map-ripple">
         <div class="rr"></div><div class="rr"></div><div class="rr"></div>
       </div>
@@ -1900,7 +1928,7 @@ function requestNearbyOnce(force) {
   navigator.geolocation.getCurrentPosition(
     pos => { lastUserPos = { lat: pos.coords.latitude, lng: pos.coords.longitude }; renderStopsList(); },
     ()  => { nearbyDenied = true; renderStopsList(); },
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 }
   );
 }
 
@@ -2369,10 +2397,9 @@ async function initPlanner() {
   // Stop the GPS FAB's clicks from bubbling to the map container, which would
   // otherwise also trigger the map's click handler and drop a pin under the
   // button when GPS fails (or before GPS resolves).
-  const _gpsFab = document.getElementById('gps-fab');
-  if (_gpsFab) {
-    L.DomEvent.disableClickPropagation(_gpsFab);
-    L.DomEvent.disableScrollPropagation(_gpsFab);
+  for (const id of ['gps-fab', 'live-fab']) {
+    const el = document.getElementById(id);
+    if (el) { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); }
   }
 
   // ── Load stops.json (pre-built by GitHub Actions) ────────────────────────────
@@ -2440,7 +2467,7 @@ async function initPlanner() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
       applyPoint(pos.coords.latitude, pos.coords.longitude, 'origin');
-    }, () => {});
+    }, () => {}, { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 });
   }
   applyDeepLink();
 }
@@ -2721,12 +2748,65 @@ function setMode(m){
 function useGPS(){
   if(!navigator.geolocation){alert('Konum desteği yok.');return;}
   setHint('GPS alınıyor…');
-  navigator.geolocation.getCurrentPosition(pos=>{
+  const onPos = pos => {
     const{latitude:lat,longitude:lng}=pos.coords;
     window._map.setView([lat,lng],16);
     if(mode==='stops')showNearbyStops(lat,lng);
     else{applyPoint(lat,lng,'origin');setMode('dest');}
-  },()=>setHint('Konum alınamadı.',true));
+  };
+  // Accept a recent (≤2 min) cached fix instantly, and use coarse (network)
+  // location rather than waiting on a fresh high-accuracy GPS lock — a trip
+  // start point only needs to be within a block or two, and forcing a fresh
+  // hardware fix is what made this take ~10s on phones.
+  navigator.geolocation.getCurrentPosition(
+    onPos,
+    () => setHint('Konum alınamadı.', true),
+    { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 }
+  );
+}
+
+// ── Live location ("blue dot") ──────────────────────────────────────────────
+// A continuously-updating marker so you can watch yourself walk to a stop. Uses
+// watchPosition with high accuracy. When the GPS reports a heading (course over
+// ground, available while moving) the marker shows a direction arrow rotated to
+// it; standing still, heading is null so it falls back to a plain dot.
+let _liveWatchId = null, _liveMarker = null, _liveCircle = null, _liveCentered = false;
+
+function _liveIcon(heading) {
+  const hasDir = heading != null && !isNaN(heading);
+  const rot = hasDir ? 'transform:rotate(' + heading + 'deg)' : '';
+  const beam = hasDir ? '<div class="live-beam"></div>' : '';
+  return L.divIcon({ className: '', html: '<div class="live-wrap" style="' + rot + '">' + beam + '<div class="live-dot"></div></div>', iconSize: [22,22], iconAnchor: [11,11] });
+}
+
+function toggleLiveLocation() {
+  if (_liveWatchId != null) { stopLiveLocation(); return; }
+  if (!navigator.geolocation) { alert('Konum desteği yok.'); return; }
+  document.getElementById('live-fab')?.classList.add('active');
+  setHint('Canlı konum açık.');
+  _liveCentered = false;
+  _liveWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude: lat, longitude: lng, accuracy, heading } = pos.coords;
+      if (!_liveMarker) {
+        _liveMarker = L.marker([lat, lng], { icon: _liveIcon(heading), zIndexOffset: 1600, interactive: false, keyboard: false }).addTo(window._map);
+        _liveCircle = L.circle([lat, lng], { radius: accuracy || 30, color: '#4285f4', weight: 1, opacity: .5, fillColor: '#4285f4', fillOpacity: .12, interactive: false }).addTo(window._map);
+      } else {
+        _liveMarker.setLatLng([lat, lng]).setIcon(_liveIcon(heading));
+        _liveCircle.setLatLng([lat, lng]).setRadius(accuracy || 30);
+      }
+      if (!_liveCentered) { window._map.setView([lat, lng], Math.max(window._map.getZoom(), 16)); _liveCentered = true; }
+    },
+    () => { setHint('Canlı konum alınamadı.', true); stopLiveLocation(); },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+  );
+}
+
+function stopLiveLocation() {
+  if (_liveWatchId != null) { navigator.geolocation.clearWatch(_liveWatchId); _liveWatchId = null; }
+  if (_liveMarker) { window._map.removeLayer(_liveMarker); _liveMarker = null; }
+  if (_liveCircle) { window._map.removeLayer(_liveCircle); _liveCircle = null; }
+  document.getElementById('live-fab')?.classList.remove('active');
 }
 
 function applyPoint(lat,lng,which){

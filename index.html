@@ -428,7 +428,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     #map { position: relative; z-index: 0; flex: 1; min-height: 0; min-width: 0; }
     #gps-fab {
-      position: absolute; right: 12px; bottom: 72px; z-index: 500;
+      position: absolute; right: 12px; bottom: 16px; z-index: 500;
       width: 46px; height: 46px; border-radius: 50%;
       background: #1a3660; border: 2px solid #4a90d9;
       color: #7eb3f7; font-size: 1.1rem;
@@ -438,20 +438,6 @@
     }
     #gps-fab:hover { background: #1e3d70; }
     #gps-fab.visible { display: flex; }
-    /* Live-location ("blue dot") toggle — always available on the map */
-    #live-fab {
-      position: absolute; right: 12px; bottom: 16px; z-index: 500;
-      width: 46px; height: 46px; border-radius: 50%;
-      background: #1a3660; border: 2px solid #4a90d9; color: #7eb3f7;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.6); transition: background .15s;
-    }
-    #live-fab:hover { background: #1e3d70; }
-    #live-fab.active { background: #4285f4; border-color: #4285f4; color: #fff; }
-    .locate-ico { width: 18px; height: 18px; border: 2px solid currentColor; border-radius: 50%; position: relative; }
-    .locate-ico::before { content: ''; position: absolute; width: 5px; height: 5px; background: currentColor; border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%,-50%); }
-    html[data-theme="light"] #live-fab { background: #fff; border-color: #4285f4; color: #4285f4; }
-    html[data-theme="light"] #live-fab.active { background: #4285f4; color: #fff; }
     /* The moving blue dot, with an optional heading arrow. The wrapper is
        rotated to the GPS course; the dot is rotationally symmetric so only the
        arrow visibly turns. */
@@ -886,7 +872,6 @@
     </div>
     <div id="map">
       <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
-      <button id="live-fab" onclick="toggleLiveLocation()" title="Canlı konumum"><span class="locate-ico"></span></button>
       <div id="map-ripple">
         <div class="rr"></div><div class="rr"></div><div class="rr"></div>
       </div>
@@ -2397,10 +2382,13 @@ async function initPlanner() {
   // Stop the GPS FAB's clicks from bubbling to the map container, which would
   // otherwise also trigger the map's click handler and drop a pin under the
   // button when GPS fails (or before GPS resolves).
-  for (const id of ['gps-fab', 'live-fab']) {
-    const el = document.getElementById(id);
+  {
+    const el = document.getElementById('gps-fab');
     if (el) { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); }
   }
+  // Live "blue dot" is always on — start watching the user's position as soon
+  // as the map exists. No toggle; it quietly tracks them as they walk to a stop.
+  startLiveLocation();
 
   // ── Load stops.json (pre-built by GitHub Actions) ────────────────────────────
   try {
@@ -2770,7 +2758,7 @@ function useGPS(){
 // watchPosition with high accuracy. When the GPS reports a heading (course over
 // ground, available while moving) the marker shows a direction arrow rotated to
 // it; standing still, heading is null so it falls back to a plain dot.
-let _liveWatchId = null, _liveMarker = null, _liveCircle = null, _liveCentered = false;
+let _liveWatchId = null, _liveMarker = null, _liveCircle = null;
 
 function _liveIcon(heading) {
   const hasDir = heading != null && !isNaN(heading);
@@ -2779,12 +2767,11 @@ function _liveIcon(heading) {
   return L.divIcon({ className: '', html: '<div class="live-wrap" style="' + rot + '">' + beam + '<div class="live-dot"></div></div>', iconSize: [22,22], iconAnchor: [11,11] });
 }
 
-function toggleLiveLocation() {
-  if (_liveWatchId != null) { stopLiveLocation(); return; }
-  if (!navigator.geolocation) { alert('Konum desteği yok.'); return; }
-  document.getElementById('live-fab')?.classList.add('active');
-  setHint('Canlı konum açık.');
-  _liveCentered = false;
+// Always-on live location. Starts at map init and quietly tracks the user as a
+// blue dot (with a heading arrow when moving). It does NOT recenter the map —
+// that would hijack the view on every load; the GPS button is for centering.
+function startLiveLocation() {
+  if (_liveWatchId != null || !navigator.geolocation) return;
   _liveWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude: lat, longitude: lng, accuracy, heading } = pos.coords;
@@ -2795,18 +2782,10 @@ function toggleLiveLocation() {
         _liveMarker.setLatLng([lat, lng]).setIcon(_liveIcon(heading));
         _liveCircle.setLatLng([lat, lng]).setRadius(accuracy || 30);
       }
-      if (!_liveCentered) { window._map.setView([lat, lng], Math.max(window._map.getZoom(), 16)); _liveCentered = true; }
     },
-    () => { setHint('Canlı konum alınamadı.', true); stopLiveLocation(); },
+    () => {},  // ignore errors silently; the dot just won't appear
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
   );
-}
-
-function stopLiveLocation() {
-  if (_liveWatchId != null) { navigator.geolocation.clearWatch(_liveWatchId); _liveWatchId = null; }
-  if (_liveMarker) { window._map.removeLayer(_liveMarker); _liveMarker = null; }
-  if (_liveCircle) { window._map.removeLayer(_liveCircle); _liveCircle = null; }
-  document.getElementById('live-fab')?.classList.remove('active');
 }
 
 function applyPoint(lat,lng,which){

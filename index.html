@@ -970,7 +970,12 @@ const CACHE_KEY = 'canakkale_bus_v7';
 // every allowed zoom, so panning/zooming inside the box works fully offline.
 const MAP_BOUNDS   = [[39.95, 26.30], [40.25, 26.55]];   // [SW lat,lng], [NE lat,lng]
 const MAP_MIN_ZOOM = 13;
-const MAP_MAX_ZOOM = 16;
+// Interactive zoom goes to 19 so you can separate two stops that sit almost on
+// top of each other. Tiles are only fetched/cached up to MAP_NATIVE_MAX_ZOOM
+// (16) — beyond that Leaflet upscales the z16 tile, so offline stays intact and
+// the tile cache doesn't balloon.
+const MAP_MAX_ZOOM = 19;
+const MAP_NATIVE_MAX_ZOOM = 16;
 
 
 // ── Screen switching ──────────────────────────────────────────────────────────
@@ -1680,7 +1685,7 @@ function _tilesForBounds() {
   const urls = [];
   const [[sLat, wLng], [nLat, eLng]] = MAP_BOUNDS;
   const subs = ['a','b','c'];
-  for (let z = MAP_MIN_ZOOM; z <= MAP_MAX_ZOOM; z++) {
+  for (let z = MAP_MIN_ZOOM; z <= MAP_NATIVE_MAX_ZOOM; z++) {
     const x0 = _lng2tile(wLng, z), x1 = _lng2tile(eLng, z);
     const y0 = _lat2tile(nLat, z), y1 = _lat2tile(sLat, z);
     for (let x = Math.min(x0,x1); x <= Math.max(x0,x1); x++) {
@@ -2372,7 +2377,8 @@ async function initPlanner() {
     minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM,
   }).setView([40.152,26.41],13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© OpenStreetMap', minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM,
+    attribution:'© OpenStreetMap', minZoom: MAP_MIN_ZOOM,
+    maxZoom: MAP_MAX_ZOOM, maxNativeZoom: MAP_NATIVE_MAX_ZOOM,
   }).addTo(window._map);
   window._map.on('click',e=>{
     if(!allStops.size)return;
@@ -2891,16 +2897,43 @@ const MINS_PER_STOP = 1.5;
 const MAX_WAIT_MIN = 240;            // drop trips whose next bus is >4h out (schedule wrapped)
 const TRANSFER_WALK_MAX_M = 400;     // max straight-line walk for a transfer between two stops
 const TRANSFER_PENALTY_MIN = 10;     // a transfer must save >this vs a direct to rank above it
+const TRANSFER_ETA_TOLERANCE_MIN = 5; // (B) transfers within this of the fastest are "equally fast" — then shortest walk wins
+const TRANSFER_CROSS_ROAD_M = 60;    // (C) a transfer walk ≤ this is a "cross the road" hop, preferred outright
 const WALK_RELAX_MULT = 3;           // long-walk fallback radius = walkRadius × this
 const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
 const _tmMin = t => { const [h, m] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + m; };
 
+// Minutes from a trip's terminal departure until the bus reaches a stop, taken
+// from kentkart's GTFS arrival_offset (seconds). Falls back to a flat per-stop
+// estimate when the offset is missing/zero (some routes ship no offset data).
+function _travelToStopMins(stop) {
+  const arr = +(stop && stop.arrival_offset);
+  if (arr > 0) return arr / 60;
+  const seq = parseInt(stop && stop.seq) || 0;
+  return Math.max(0, seq - 1) * MINS_PER_STOP;
+}
+
+// Scheduled ride time (minutes) between two stop indices on a path: arrival at
+// the alight minus departure from the board, from GTFS offsets (seconds). Falls
+// back to flat per-stop when offsets are absent or non-monotonic. Index 0 is the
+// terminal, whose offsets are legitimately 0.
+function _rideMins(stops, boardIdx, alightIdx) {
+  const bd = stops[boardIdx], al = stops[alightIdx];
+  const arr = +(al && al.arrival_offset);
+  let dep = +(bd && bd.departure_offset);
+  if (!(dep > 0)) dep = +(bd && bd.arrival_offset) || 0;
+  if (arr > 0 && arr > dep && (dep > 0 || boardIdx === 0)) return (arr - dep) / 60;
+  return Math.max(0, alightIdx - boardIdx) * MINS_PER_STOP;
+}
+
 // Next-departure wait at a stop, evaluated from `fromMins`, using a path's
-// pre-sorted terminal-departure minutes. Returns minutes to wait (capped logic
-// in caller). 20 = schedule unknown but route is live; large = wrapped to tomorrow.
-function _waitFromTimes(times, boardSeq, fromMins) {
+// pre-sorted terminal-departure minutes. `travelToBoardMins` is how long after
+// the terminal departure the bus reaches the boarding stop (from GTFS offsets).
+// Returns minutes to wait. 20 = schedule unknown but route is live; large =
+// wrapped to tomorrow.
+function _waitFromTimes(times, travelToBoardMins, fromMins) {
   if (!times.length) return 20;
-  const travel = Math.max(0, boardSeq - 1) * MINS_PER_STOP;
+  const travel = travelToBoardMins;
   for (const t of times) { const a = t + travel; if (a >= fromMins) return Math.max(0, Math.round(a - fromMins)); }
   return Math.max(0, Math.round(times[0] + travel + 1440 - fromMins)); // first bus tomorrow
 }
@@ -2998,9 +3031,9 @@ async function planTrips(gen) {
       if (ai >= 0) { chosen = { bi: b.i, bw: b.w, ai, aw }; break; }
     }
     if (!chosen) continue;
-    const wait = _waitFromTimes(u.times, parseInt(u.st[chosen.bi].seq)||0, nowMins + walkMins(chosen.bw));
+    const wait = _waitFromTimes(u.times, _travelToStopMins(u.st[chosen.bi]), nowMins + walkMins(chosen.bw));
     if (wait >= MAX_WAIT_MIN) continue;
-    const eta = Math.round(walkMins(chosen.bw) + wait + (chosen.ai - chosen.bi)*MINS_PER_STOP + walkMins(chosen.aw));
+    const eta = Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
     candidates.push({
       isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
       board: u.st[chosen.bi], alight: u.st[chosen.ai],
@@ -3022,29 +3055,50 @@ async function planTrips(gen) {
 
   for (const A of originPaths) {
     const board = A.boards.reduce((a,b)=> b.w < a.w ? b : a); // closest board on A
-    const leg1Wait = _waitFromTimes(A.u.times, parseInt(board.s.seq)||0, nowMins + walkMins(board.w));
+    const leg1Wait = _waitFromTimes(A.u.times, _travelToStopMins(board.s), nowMins + walkMins(board.w));
     if (leg1Wait >= MAX_WAIT_MIN) continue;
     for (const B of destPaths) {
       if (B.u.code === A.u.code) continue;
       const alight = B.alights.reduce((a,b)=> b.w < a.w ? b : a); // closest alight on B
-      let best = null;
+      // Collect every viable transfer point for this route pair, then choose
+      // among them with the B+C rule below.
+      const boardToDest = haversine(+board.s.lat, +board.s.lng, D.lat, D.lng);
+      const xfers = [];
       for (let xi = board.i + 1; xi < A.u.st.length; xi++) {
         const X = A.u.st[xi];
+        // Leg 1 must make progress toward the destination — never ride past it
+        // to a far terminal and double back (e.g. home → İskele → faculty).
+        if (haversine(+X.lat, +X.lng, D.lat, D.lng) > boardToDest) continue;
         for (let yj = 0; yj < alight.i; yj++) {
           const Y = B.u.st[yj];
           const t = (X.stopId === Y.stopId) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
           if (t > TRANSFER_WALK_MAX_M) continue;
-          const ride1 = (xi - board.i) * MINS_PER_STOP;
+          const ride1 = _rideMins(A.u.st, board.i, xi);
           const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + ride1 + walkMins(t);
-          const leg2Wait = _waitFromTimes(B.u.times, parseInt(Y.seq)||0, arriveB2);
+          const leg2Wait = _waitFromTimes(B.u.times, _travelToStopMins(Y), arriveB2);
           if (leg2Wait >= MAX_WAIT_MIN) continue;
-          const ride2 = (alight.i - yj) * MINS_PER_STOP;
+          const ride2 = _rideMins(B.u.st, yj, alight.i);
           const eta = Math.round(walkMins(board.w) + leg1Wait + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(alight.w));
-          // Prefer the lowest-ETA transfer point; tie-break toward the shortest
-          // transfer walk (more robust, nicer to use).
-          if (!best || eta < best._eta || (eta === best._eta && t < best._t))
-            best = { X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta };
+          xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta });
         }
+      }
+      // (B) Among transfers within TRANSFER_ETA_TOLERANCE_MIN of the fastest,
+      //     time stops mattering — they're all "equally fast."
+      // (C) If any of those is a "cross the road" hop (≤ TRANSFER_CROSS_ROAD_M),
+      //     restrict to that tier. Within it, change buses as EARLY as possible
+      //     (smallest xi, closest to the origin) — a few metres of walk don't
+      //     matter, but transferring sooner (less committed to leg 1) does. This
+      //     prefers Beldemiz over a marginally-shorter İl Özel İdare further on.
+      //     Otherwise (no cross-road hop) fall back to the shortest walk.
+      // Lowest ETA breaks remaining ties.
+      let best = null;
+      if (xfers.length) {
+        const minEta = Math.min(...xfers.map(c => c.eta));
+        const pool = xfers.filter(c => c.eta <= minEta + TRANSFER_ETA_TOLERANCE_MIN);
+        const crossRoad = pool.filter(c => c.t <= TRANSFER_CROSS_ROAD_M);
+        best = crossRoad.length
+          ? crossRoad.reduce((a, b) => (b.xi < a.xi || (b.xi === a.xi && b.eta < a.eta)) ? b : a)
+          : pool.reduce((a, b) => (b.t < a.t || (b.t === a.t && b.eta < a.eta)) ? b : a);
       }
       if (best) candidates.push({
         isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w),
@@ -3173,7 +3227,7 @@ function renderPlannerResults(matches){
       const hex=(m.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
       const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||'aktif')+'</span>').join(''):'<span class="bus-chip muted">Aktif araç yok</span>';
       const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="Yürüme yarıçapından uzun">⚠️ uzun yürüyüş</span>' : '';
-      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+'</div>'
+      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+'<span class="p-route-eta">~'+m._eta+' dk</span></div>'
         +'<div class="p-route-meta">'+m.sc+' durak arası</div>'
         +'<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkB)+')</span></div>'
         +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>'
@@ -3935,7 +3989,9 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Time estimates
   const walkToMins   = Math.max(1, Math.round(m.walkB / SETTINGS.walkSpeedMpm));
   const walkFromMins = Math.max(1, Math.round(m.walkA / SETTINGS.walkSpeedMpm));
-  const rideMins     = Math.round(m.sc * MINS_PER_STOP);
+  const rideMins     = (boardIdx >= 0 && alightIdx >= 0)
+    ? Math.round(_rideMins(stops, boardIdx, alightIdx))
+    : Math.round(m.sc * MINS_PER_STOP);
 
   // Which buses are approaching the board stop (seq < boardSeq)
   const approaching = (m.buses || [])
@@ -3944,6 +4000,12 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     .sort((a, b) => a.stopsAway - b.stopsAway);
   const atStop  = (m.buses || []).filter(b => b.stopId === m.board.stopId);
   const onBoard = (m.buses || []).filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= boardSeq && s < alightSeq; });
+  // Only count a live bus as catchable if you can plausibly reach the stop
+  // before it arrives. Allow a small grace — people speed up when they see the
+  // bus coming — so a bus a couple minutes "too soon" still counts; only the
+  // genuinely unreachable ones are dropped (then we fall back to the schedule).
+  const REACH_GRACE_MIN = 3;
+  const reachable = approaching.filter(b => b.minsAway >= walkToMins - REACH_GRACE_MIN);
 
   // ── Schedule lookup ──────────────────────────────────────────────────────────
   // Schedule is keyed by full route name (e.g. "Ç11K KEPEZ ESENLER"), not by code.
@@ -3959,9 +4021,9 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // is 741 minutes away instead of finding the real next same-day departure.
   const allSchedTimes = schedTimesForPath(schedEntry, m.path).sort((a, b) => toMins(a) - toMins(b));
 
-  // For each terminal departure, calculate when the bus reaches the boarding stop.
-  const stopsFromTerminal = Math.max(0, boardSeq - 1);
-  const travelToBoard     = stopsFromTerminal * MINS_PER_STOP;
+  // For each terminal departure, calculate when the bus reaches the boarding stop
+  // (from GTFS offsets, flat per-stop fallback inside _travelToStopMins).
+  const travelToBoard = _travelToStopMins(boardIdx >= 0 ? stops[boardIdx] : m.board);
 
   let nextDep = null; // { time: "HH:MM", boardMins: number, tomorrow?: true }
   for (const t of allSchedTimes) {
@@ -3981,10 +4043,10 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     waitMins   = 0;
     waitLabel  = 'Otobüs durağa geldi';
     waitDetail = atStop[0].plateNumber || '';
-  } else if (!planOffset && approaching.length) {
-    waitMins   = approaching[0].minsAway;
+  } else if (!planOffset && reachable.length) {
+    waitMins   = reachable[0].minsAway;
     waitLabel  = 'Canlı konum';
-    waitDetail = (approaching[0].plateNumber || 'Otobüs') + ' · ' + approaching[0].stopsAway + ' durak uzakta';
+    waitDetail = (reachable[0].plateNumber || 'Otobüs') + ' · ' + reachable[0].stopsAway + ' durak uzakta';
   } else if (nextDep) {
     waitMins   = Math.max(0, Math.round(nextDep.boardMins - nowMins));
     waitLabel  = (nextDep.tomorrow ? 'Yarın ' : '') + nextDep.time + ' kalkışı';

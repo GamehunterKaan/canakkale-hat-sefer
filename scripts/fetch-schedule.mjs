@@ -355,9 +355,92 @@ async function parsePDF(buffer) {
   return { routes: result, numPages: pdf.numPages, skipped: false };
 }
 
+// ── Parse validation / drift guard ───────────────────────────────────────────
+// The municipality occasionally restructures a PDF; when that happens the parser
+// can silently yield empty/partial schedules. Without a guard, writeFileSync
+// would overwrite the last-good schedule.json with garbage and ship it to users.
+// These checks fail the run (exit 1) on a material regression so the last good
+// committed data is kept and the Actions run goes red instead.
+const MIN_REGULAR_ROUTES = 8;   // weekday/weekend PDFs serve far more than this
+const MIN_REGULAR_TIMES  = 40;  // …and far more departure times
+const DRIFT_DROP_RATIO   = 0.5; // new < 50% of last run's route count = drift
+const REGULAR_KINDS = new Set(['weekday', 'weekend', 'effective-weekday', 'effective-weekend']);
+
+function scheduleStats(s) {
+  const routes = Object.values(s.routes || {});
+  let totalTimes = 0, emptyRoutes = 0, badTimes = 0;
+  for (const r of routes) {
+    const n = (r.dir0?.times?.length || 0) + (r.dir1?.times?.length || 0);
+    totalTimes += n;
+    if (n === 0) emptyRoutes++;
+    for (const dir of ['dir0', 'dir1']) for (const t of r[dir]?.times || [])
+      if (!/^\d{1,2}:\d{2}$/.test(t)) badTimes++;
+  }
+  return { routeCount: routes.length, totalTimes, emptyRoutes, badTimes };
+}
+
+// Returns { fatal: string[], warn: string[] }. `links` are the filtered schedule
+// links advertised on the page; `prev` is the previous schedule.json (or null).
+function validateOutput(schedules, links, prev, quiet) {
+  const fatal = [], warn = [];
+  // (1) Every regular schedule the page advertised must have produced data.
+  const builtIds = new Set(schedules.map(s => s.id));
+  for (const l of links)
+    if (REGULAR_KINDS.has(l.kind) && !builtIds.has(l.id))
+      fatal.push(`regular schedule "${l.id}" (${l.label}) advertised but produced no data`);
+
+  // (2) Per-schedule sanity + drift vs the previous run (matched by id).
+  const prevById = new Map((prev?.schedules || []).map(s => [s.id, s]));
+  for (const s of schedules) {
+    const st = scheduleStats(s);
+    const tag = `[${s.kind}] ${s.id}`;
+    if (!quiet) console.log(`  ${tag}: ${st.routeCount} routes, ${st.totalTimes} times` + (st.emptyRoutes ? `, ${st.emptyRoutes} empty` : ''));
+    if (st.badTimes) fatal.push(`${tag}: ${st.badTimes} malformed time value(s)`);
+    if (REGULAR_KINDS.has(s.kind)) {
+      if (st.routeCount < MIN_REGULAR_ROUTES) fatal.push(`${tag}: only ${st.routeCount} routes (expected ≥ ${MIN_REGULAR_ROUTES})`);
+      if (st.totalTimes < MIN_REGULAR_TIMES)  fatal.push(`${tag}: only ${st.totalTimes} departure times (expected ≥ ${MIN_REGULAR_TIMES})`);
+    } else if (st.routeCount === 0) {
+      fatal.push(`${tag}: parsed 0 routes`);
+    }
+    if (st.routeCount && st.emptyRoutes / st.routeCount > 0.4)
+      warn.push(`${tag}: ${st.emptyRoutes}/${st.routeCount} routes have no times (column matching may be off)`);
+    const p = prevById.get(s.id);
+    if (p) {
+      const pc = scheduleStats(p).routeCount;
+      if (pc > 0 && st.routeCount < pc * DRIFT_DROP_RATIO)
+        fatal.push(`${tag}: route count dropped ${pc} → ${st.routeCount} vs last run (possible PDF format drift)`);
+    }
+  }
+  return { fatal, warn };
+}
+
+// ── Self-test (no network/PDF): node scripts/fetch-schedule.mjs --self-test ──
+function selfTest() {
+  let pass = 0, fail = 0;
+  const ck = (n, c) => { if (c) pass++; else { fail++; console.log('  ✗ ' + n); } };
+  const route = (t0, t1) => ({ name: 'X', dir0: { label: '', times: t0 }, dir1: { label: '', times: t1 } });
+  const manyRoutes = n => Object.fromEntries(Array.from({ length: n }, (_, i) => ['R' + i, route(['08:00','09:00','10:00','11:00','12:00','13:00'], ['08:30'])]));
+  const mk = (kind, routes) => ({ id: kind, kind, label: kind, routes });
+  const v = (s, l, p) => validateOutput(s, l, p, true);
+  const wlink = [{ kind: 'weekday', id: 'weekday', label: 'w' }];
+
+  ck('healthy weekday → no fatal',        v([mk('weekday', manyRoutes(12))], wlink, null).fatal.length === 0);
+  ck('thin weekday (few routes) → fatal', v([mk('weekday', manyRoutes(3))],  wlink, null).fatal.length > 0);
+  ck('advertised regular missing → fatal',v([], wlink, null).fatal.some(f => /produced no data/.test(f)));
+  ck('route-count drop vs prev → drift',  v([mk('weekday', manyRoutes(8))], wlink, { schedules: [mk('weekday', manyRoutes(20))] }).fatal.some(f => /drift/.test(f)));
+  ck('malformed time → fatal',            v([mk('weekday', { ...manyRoutes(12), BAD: route(['8:0am'], []) })], wlink, null).fatal.some(f => /malformed/.test(f)));
+  ck('small special schedule → ok',       v([mk('special', manyRoutes(2))], [{ kind: 'special', id: 'special', label: 's' }], null).fatal.length === 0);
+  ck('empty special → fatal',             v([mk('special', {})], [{ kind: 'special', id: 'special', label: 's' }], null).fatal.length > 0);
+  ck('many empty routes → warn',          v([mk('weekday', { ...manyRoutes(8), E1: route([], []), E2: route([], []), E3: route([], []), E4: route([], []), E5: route([], []), E6: route([], []) })], wlink, null).warn.length > 0);
+
+  console.log(`self-test: ${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (process.argv.includes('--self-test')) return selfTest();
   console.log('Fetching PDF URLs…');
   const all = await getPdfLinks();
   const links = all.filter(l => l.kind !== 'ignore' && l.kind !== 'unknown')
@@ -367,18 +450,21 @@ async function main() {
     console.log(`  [${l.kind}] ${l.id}  "${l.label}"  dates={${[...l.dates].join(',')}}  ${l.url}`);
   }
 
+  // Previous run's output — used for both fast-skip and the drift guard.
+  let prev = null;
+  try { prev = JSON.parse(readFileSync('data/schedule.json', 'utf8')); } catch {}
+
   // Fast-skip: if the sorted URL list matches the previous run, nothing changed.
   // Compare against both the schedules we kept AND the small PDFs we skipped, so
   // a page-skipped PDF (e.g. the library shuttle) doesn't force a re-parse forever.
   const urlList = links.map(l => l.url).sort();
-  try {
-    const prev = JSON.parse(readFileSync('data/schedule.json', 'utf8'));
+  if (prev) {
     const prevUrls = [...(prev.schedules || []).map(s => s.url), ...(prev.skippedUrls || [])].sort();
     if (prevUrls.length === urlList.length && prevUrls.every((u, i) => u === urlList[i])) {
       console.log('PDF URL list unchanged since last run — skipping parse.');
       return;
     }
-  } catch {}
+  }
 
   console.log('Downloading & parsing each PDF…');
   const schedules = [];
@@ -402,6 +488,21 @@ async function main() {
     } catch (e) {
       console.warn(`    skipped: ${e.message}`);
     }
+  }
+
+  // ── Validate before overwriting the last-good data ──────────────────────────
+  console.log('Validating parsed output…');
+  const { fatal, warn } = validateOutput(schedules, links, prev);
+  for (const w of warn) console.warn('  ⚠ ' + w);
+  if (fatal.length) {
+    console.error('\n❌ Validation failed — keeping the last good schedule.json:');
+    for (const f of fatal) console.error('   • ' + f);
+    if (!process.argv.includes('--force')) {
+      console.error('\n   The municipality PDF layout likely changed. Inspect the parse, fix it,');
+      console.error('   or re-run with --force if this reduction is genuinely correct.');
+      process.exit(1);
+    }
+    console.warn('⚠ --force given: writing despite validation failures.');
   }
 
   // Fetch kentkart route list for colors (used by Seferler tab badges)

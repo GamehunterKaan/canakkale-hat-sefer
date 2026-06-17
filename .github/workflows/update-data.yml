@@ -25,6 +25,9 @@ jobs:
         run: npm install
         working-directory: scripts
 
+      - name: Validate parser logic (self-test)
+        run: node scripts/fetch-schedule.mjs --self-test
+
       - name: Fetch schedule data (PDFs → JSON)
         run: node scripts/fetch-schedule.mjs
 

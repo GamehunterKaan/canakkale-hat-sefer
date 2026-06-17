@@ -369,6 +369,18 @@
       font-size: .62rem; font-weight: 700; white-space: nowrap;
     }
     html[data-theme="light"] .p-longwalk-badge { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+    .p-live-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      background: #2a0f12; color: #f87171; border: 1px solid #5b1f25;
+      font-size: .62rem; font-weight: 700; white-space: nowrap;
+    }
+    html[data-theme="light"] .p-live-badge { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+    .p-lastbus-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      background: #3a2606; color: #fbbf24; border: 1px solid #5b3f0a;
+      font-size: .62rem; font-weight: 700; white-space: nowrap;
+    }
+    html[data-theme="light"] .p-lastbus-badge { background: #fef3c7; color: #b45309; border-color: #fbbf24; }
     html[data-theme="light"] .p-leg-arrow { color: #9ca3af; }
     html[data-theme="light"] .p-route-eta { color: #1a1d2e; }
     .p-taxi-card { display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -561,7 +573,14 @@
     }
     .ob-icon  { font-size: 2.4rem; margin-bottom: 12px; }
     .ob-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 8px; }
-    .ob-sub   { color: #6b7a99; font-size: .82rem; line-height: 1.6; margin-bottom: 28px; }
+    .ob-sub   { color: #6b7a99; font-size: .82rem; line-height: 1.6; margin-bottom: 18px; }
+    .ob-langs { display: flex; gap: 8px; margin-bottom: 18px; }
+    .lang-btn { flex: 1; padding: 9px 4px; border-radius: 9px; background: #1a1d2e; border: 1px solid #252d40; color: #6b7a99; font-size: .8rem; font-weight: 700; cursor: pointer; }
+    .lang-btn.active { background: #1a3660; border-color: #4a90d9; color: #a8d4ff; }
+    /* Inline SVG flags — Windows has no flag emoji, so 🇹🇷/🇬🇧 would render as "TR"/"GB". */
+    .flag { display: inline-block; width: 20px; height: 14px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; background-size: cover; background-position: center; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+    .flag-tr { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 800'%3E%3Crect width='1200' height='800' fill='%23e30a17'/%3E%3Ccircle cx='425' cy='400' r='200' fill='%23fff'/%3E%3Ccircle cx='475' cy='400' r='160' fill='%23e30a17'/%3E%3Cpath fill='%23fff' d='m583.334 400 188.142 61.141-116.292-160.082v197.882l116.292-160.082z'/%3E%3C/svg%3E"); }
+    .flag-gb { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 30'%3E%3CclipPath id='t'%3E%3Cpath d='M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z'/%3E%3C/clipPath%3E%3Crect width='60' height='30' fill='%23012169'/%3E%3Cpath d='M0,0 60,30 M60,0 0,30' stroke='%23fff' stroke-width='6'/%3E%3Cpath d='M0,0 60,30 M60,0 0,30' clip-path='url(%23t)' stroke='%23C8102E' stroke-width='4'/%3E%3Cpath d='M30,0 v30 M0,15 h60' stroke='%23fff' stroke-width='10'/%3E%3Cpath d='M30,0 v30 M0,15 h60' stroke='%23C8102E' stroke-width='6'/%3E%3C/svg%3E"); }
     .ob-btns  { display: flex; gap: 10px; }
     .ob-btn   { flex: 1; padding: 14px 6px; border-radius: 10px; border: none; font-size: .84rem; font-weight: 700; cursor: pointer; line-height: 1.3; }
     .ob-btn.sched   { background: #1a3660; color: #a8d4ff; }
@@ -785,7 +804,7 @@
   <h1>Çanakkale Hat & Sefer</h1>
   <div style="display:flex;gap:6px;align-items:center">
     <span id="offline-badge" title="İnternet bağlantısı yok — canlı veriler güncellenmiyor">Çevrimdışı</span>
-    <button id="bm-toggle-btn" onclick="toggleBmDropdown()">⭐ <span id="bm-toggle-label">Yerlerim</span> ▾</button>
+    <button id="bm-toggle-btn" onclick="toggleBmDropdown()">⭐ <span id="bm-toggle-label" data-i18n="savedPlaces">Yerlerim</span> ▾</button>
     <button id="gear-btn" onclick="showScreen('settings')" title="Ayarlar">⚙️</button>
   </div>
 </header>
@@ -802,10 +821,14 @@
   <div id="onboarding-card">
     <div class="ob-icon"><img src="icons/web-app-manifest-192x192.png" alt="Çanakkale Hat & Sefer" style="width:72px;height:72px;border-radius:18px"></div>
     <div class="ob-title">Çanakkale Hat & Sefer</div>
-    <div class="ob-sub">Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.</div>
+    <div class="ob-sub" data-i18n="obSub">Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.</div>
+    <div class="ob-langs">
+      <button class="lang-btn" data-lang-opt="tr" onclick="setLang('tr')"><span class="flag flag-tr"></span>Türkçe</button>
+      <button class="lang-btn" data-lang-opt="en" onclick="setLang('en')"><span class="flag flag-gb"></span>English</button>
+    </div>
     <div class="ob-btns">
-      <button class="ob-btn sched"   onclick="dismissOnboarding('schedule')">📅 Saatlere<br>Bak</button>
-      <button class="ob-btn planner" onclick="dismissOnboarding('planner')">🗺 Rota<br>Bul</button>
+      <button class="ob-btn sched"   onclick="dismissOnboarding('schedule')" data-i18n-html="obSched">📅 Saatlere<br>Bak</button>
+      <button class="ob-btn planner" onclick="dismissOnboarding('planner')" data-i18n-html="obPlan">🗺 Rota<br>Bul</button>
     </div>
   </div>
 </div>
@@ -817,7 +840,7 @@
     <div id="schedTabs" class="s-tabs"></div>
     <div id="schedLoading">
       <div id="schedProgress"><div id="schedProgressBar"></div></div>
-      <div id="schedMsg">Seferler yükleniyor…</div>
+      <div id="schedMsg" data-i18n="schedLoading">Seferler yükleniyor…</div>
     </div>
     <div id="schedPanels"></div>
   </div>
@@ -826,39 +849,39 @@
   <div id="scr-planner" class="screen active">
     <div class="p-top">
       <div id="loadBar"></div>
-      <div id="loadStatus">Harita bekleniyor…</div>
+      <div id="loadStatus" data-i18n="waitingMap">Harita bekleniyor…</div>
       <div class="btn-row">
-        <button class="btn active" id="btnOrigin" onclick="setMode('origin')" disabled>📍 Konum</button>
-        <button class="btn green"  id="btnDest"   onclick="setMode('dest')"   disabled>🏁 Hedef</button>
-        <button class="btn" id="btnPlanTime" onclick="togglePlanTime()" disabled>⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">Planla</span></button>
+        <button class="btn active" id="btnOrigin" onclick="setMode('origin')" disabled data-i18n="btnOrigin">📍 Konum</button>
+        <button class="btn green"  id="btnDest"   onclick="setMode('dest')"   disabled data-i18n="btnDest">🏁 Hedef</button>
+        <button class="btn" id="btnPlanTime" onclick="togglePlanTime()" disabled>⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8" data-i18n="btnPlan">Planla</span></button>
         <button class="btn" id="btnReset" onclick="resetPlanner()" disabled style="border-color:#7f1d1d;color:#4a5568">✕</button>
       </div>
       <div class="plan-time-row" id="plan-time-row" style="display:none">
-        <button class="plan-time-btn active" data-offset="0"  onclick="setPlanOffset(0)">Şimdi</button>
-        <button class="plan-time-btn"        data-offset="30" onclick="setPlanOffset(30)">+30 dk</button>
-        <button class="plan-time-btn"        data-offset="60" onclick="setPlanOffset(60)">+1 sa</button>
-        <button class="plan-time-btn" id="btn-custom-time"    onclick="openCustomTime()">🕐 Özel</button>
+        <button class="plan-time-btn active" data-offset="0"  onclick="setPlanOffset(0)" data-i18n="tNow">Şimdi</button>
+        <button class="plan-time-btn"        data-offset="30" onclick="setPlanOffset(30)" data-i18n="tPlus30">+30 dk</button>
+        <button class="plan-time-btn"        data-offset="60" onclick="setPlanOffset(60)" data-i18n="tPlus1h">+1 sa</button>
+        <button class="plan-time-btn" id="btn-custom-time"    onclick="openCustomTime()" data-i18n="tCustom">🕐 Özel</button>
       </div>
       <div id="custom-time-row" style="display:none;padding:5px 9px 0">
         <input type="time" id="custom-time-input" onchange="applyCustomTime()">
       </div>
       <div id="recent-dests" class="chip-row" style="display:none"></div>
       <div id="swap-row" style="display:none;padding:6px 9px 0;">
-        <button id="btnSwap" class="swap-btn" onclick="swapOD()" title="Başlangıç ve hedefi değiştir">⇄ Yön değiştir</button>
+        <button id="btnSwap" class="swap-btn" onclick="swapOD()" data-i18n="swapDir" data-i18n-title="swapDirTitle" title="Başlangıç ve hedefi değiştir">⇄ Yön değiştir</button>
       </div>
       <div id="hint" style="display:none"></div>
       <div id="originCard" style="display:none" class="stop-card">
         <div class="label" style="display:flex;align-items:center;justify-content:space-between">
-          <span>Konum — En yakın durak</span>
-          <button class="bm-save-btn" title="Kaydet" onclick="saveLocationBookmark('origin')">☆ Kaydet</button>
+          <span data-i18n="cardOrigin">Konum — En yakın durak</span>
+          <button class="bm-save-btn" data-i18n-title="saveBtnTitle" data-i18n-html="saveBtn" title="Kaydet" onclick="saveLocationBookmark('origin')">☆ Kaydet</button>
         </div>
         <div class="name" id="originName"></div>
         <div class="dist" id="originDist"></div>
       </div>
       <div id="destCard" style="display:none" class="stop-card green">
         <div class="label" style="display:flex;align-items:center;justify-content:space-between">
-          <span>Hedef — En yakın durak</span>
-          <button class="bm-save-btn" title="Kaydet" onclick="saveLocationBookmark('dest')">☆ Kaydet</button>
+          <span data-i18n="cardDest">Hedef — En yakın durak</span>
+          <button class="bm-save-btn" data-i18n-title="saveBtnTitle" data-i18n-html="saveBtn" title="Kaydet" onclick="saveLocationBookmark('dest')">☆ Kaydet</button>
         </div>
         <div class="name" id="destName"></div>
         <div class="dist" id="destDist"></div>
@@ -880,7 +903,7 @@
 
   <!-- DURAKLAR SCREEN -->
   <div id="scr-stops" class="screen">
-    <input id="stop-search-input" type="search" placeholder="Durak adı ara…" autocomplete="off" oninput="renderStopsList()" />
+    <input id="stop-search-input" type="search" placeholder="Durak adı ara…" data-i18n-ph="stopSearchPh" autocomplete="off" oninput="renderStopsList()" />
     <div id="stop-content">
       <div id="stops-list-view">
         <div id="stops-section-search" class="stops-section" style="display:none"></div>
@@ -895,56 +918,64 @@
   <div id="scr-settings" class="screen">
     <div class="settings-wrap">
       <div class="settings-header">
-        <button class="settings-back" onclick="showScreen('planner')">← Geri</button>
-        <h2>Ayarlar</h2>
+        <button class="settings-back" onclick="showScreen('planner')" data-i18n="setBack">← Geri</button>
+        <h2 data-i18n="setTitle">Ayarlar</h2>
       </div>
 
       <div class="settings-group">
-        <div class="settings-label">Görünüm</div>
+        <div class="settings-label" data-i18n="setLangLabel">Dil / Language</div>
         <div class="theme-row">
-          <button class="theme-btn" data-theme-opt="dark"   onclick="setTheme('dark')">🌙 Karanlık</button>
-          <button class="theme-btn" data-theme-opt="light"  onclick="setTheme('light')">☀️ Aydınlık</button>
-          <button class="theme-btn" data-theme-opt="system" onclick="setTheme('system')">📱 Sistem</button>
+          <button class="theme-btn" data-lang-opt="tr" onclick="setLang('tr')"><span class="flag flag-tr"></span>Türkçe</button>
+          <button class="theme-btn" data-lang-opt="en" onclick="setLang('en')"><span class="flag flag-gb"></span>English</button>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-label" data-i18n="setAppearance">Görünüm</div>
+        <div class="theme-row">
+          <button class="theme-btn" data-theme-opt="dark"   onclick="setTheme('dark')" data-i18n="themeDark">🌙 Karanlık</button>
+          <button class="theme-btn" data-theme-opt="light"  onclick="setTheme('light')" data-i18n="themeLight">☀️ Aydınlık</button>
+          <button class="theme-btn" data-theme-opt="system" onclick="setTheme('system')" data-i18n="themeSystem">📱 Sistem</button>
         </div>
       </div>
 
       <div class="settings-group">
         <div class="settings-label">
-          Maksimum yürüme mesafesi: <span id="walkRadiusVal" class="settings-val"></span>
+          <span data-i18n="setWalkRadius">Maksimum yürüme mesafesi:</span> <span id="walkRadiusVal" class="settings-val"></span>
           <button class="slider-reset" onclick="resetWalkRadius()" title="Varsayılana sıfırla">↺</button>
         </div>
         <input type="range" class="settings-range" id="walkRadiusSlider" min="300" max="2000" step="100">
-        <div class="settings-hint">Yürünebilir mesafe sınırı. Daha uzaksa o durak için rota önerilmez.</div>
+        <div class="settings-hint" data-i18n="setWalkRadiusHint">Yürünebilir mesafe sınırı. Daha uzaksa o durak için rota önerilmez.</div>
       </div>
 
       <div class="settings-group">
         <div class="settings-label">
-          Yürüme hızı: <span id="walkSpeedVal" class="settings-val"></span>
+          <span data-i18n="setWalkSpeed">Yürüme hızı:</span> <span id="walkSpeedVal" class="settings-val"></span>
           <button class="slider-reset" onclick="resetWalkSpeed()" title="Varsayılana sıfırla">↺</button>
         </div>
         <input type="range" class="settings-range" id="walkSpeedSlider" min="50" max="100" step="2">
-        <div class="settings-hint">ETA hesaplaması için kullanılır. Varsayılan 72 m/dk (≈4.3 km/sa).</div>
+        <div class="settings-hint" data-i18n="setWalkSpeedHint">ETA hesaplaması için kullanılır. Varsayılan 72 m/dk (≈4.3 km/sa).</div>
       </div>
 
       <div class="settings-group">
-        <div class="settings-label">Çevrimdışı harita</div>
-        <button id="mapCacheBtn" class="settings-action" onclick="downloadOfflineMap()">Haritayı offline indir</button>
-        <div id="mapCacheHint" class="settings-hint">Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır.</div>
+        <div class="settings-label" data-i18n="setOffline">Çevrimdışı harita</div>
+        <button id="mapCacheBtn" class="settings-action" onclick="downloadOfflineMap()" data-i18n="setOfflineBtn">Haritayı offline indir</button>
+        <div id="mapCacheHint" class="settings-hint" data-i18n="setOfflineHint">Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır.</div>
         <div id="mapCacheStatus" class="settings-hint" style="margin-top:4px"></div>
       </div>
 
       <div class="settings-group">
-        <div class="settings-label">Veri</div>
-        <button class="settings-action" onclick="clearBookmarksData()">Kaydedilen yerleri temizle</button>
-        <button class="settings-action" onclick="clearRecentsData()">Son hedefleri temizle</button>
-        <button class="settings-action" onclick="resetOnboarding()">Tanıtımı tekrar göster</button>
+        <div class="settings-label" data-i18n="setData">Veri</div>
+        <button class="settings-action" onclick="clearBookmarksData()" data-i18n="setClearBookmarks">Kaydedilen yerleri temizle</button>
+        <button class="settings-action" onclick="clearRecentsData()" data-i18n="setClearRecents">Son hedefleri temizle</button>
+        <button class="settings-action" onclick="resetOnboarding()" data-i18n="setReshowOnboarding">Tanıtımı tekrar göster</button>
       </div>
 
       <div class="settings-group">
-        <div class="settings-label">Hakkında</div>
-        <a class="settings-link" href="https://kaangultekin.net/" target="_blank" rel="noopener">🌐 Geliştirici sitesi</a>
-        <a class="settings-link" href="https://github.com/GamehunterKaan" target="_blank" rel="noopener">💻 GitHub</a>
-        <a class="settings-link" href="mailto:kaan@kaangultekin.net?subject=Çanakkale%20Hat%20%26%20Sefer">✉️ İletişim — kaan@kaangultekin.net</a>
+        <div class="settings-label" data-i18n="setAbout">Hakkında</div>
+        <a class="settings-link" href="https://kaangultekin.net/" target="_blank" rel="noopener" data-i18n="setDevSite">🌐 Geliştirici sitesi</a>
+        <a class="settings-link" href="https://github.com/GamehunterKaan" target="_blank" rel="noopener" data-i18n="setGitHub">💻 GitHub</a>
+        <a class="settings-link" href="mailto:kaan@kaangultekin.net?subject=Çanakkale%20Hat%20%26%20Sefer" data-i18n="setContact">✉️ İletişim — kaan@kaangultekin.net</a>
       </div>
 
       <div class="settings-footer">Çanakkale Hat &amp; Sefer · Kaan Gültekin</div>
@@ -954,9 +985,9 @@
 </div>
 
 <nav id="bottomNav">
-  <button class="nb"        data-s="schedule" onclick="showScreen('schedule')"><span>📅</span>Seferler</button>
-  <button class="nb active" data-s="planner"  onclick="showScreen('planner')"><span>🗺</span>Rota &amp; Harita</button>
-  <button class="nb"        data-s="stops"    onclick="showScreen('stops')"><span>🚏</span>Duraklar</button>
+  <button class="nb"        data-s="schedule" onclick="showScreen('schedule')" data-i18n-html="navSched"><span>📅</span>Seferler</button>
+  <button class="nb active" data-s="planner"  onclick="showScreen('planner')" data-i18n-html="navPlanner"><span>🗺</span>Rota &amp; Harita</button>
+  <button class="nb"        data-s="stops"    onclick="showScreen('stops')" data-i18n-html="navStops"><span>🚏</span>Duraklar</button>
 </nav>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -981,7 +1012,7 @@ const MAP_NATIVE_MAX_ZOOM = 16;
 // ── Screen switching ──────────────────────────────────────────────────────────
 let plannerReady = false;
 // Planner is the default screen — init immediately
-window.addEventListener('DOMContentLoaded', () => { applyTheme(SETTINGS.theme || 'dark'); showOnboarding(); plannerReady = true; initPlanner(); initOfflineIndicator(); });
+window.addEventListener('DOMContentLoaded', () => { applyTheme(SETTINGS.theme || 'dark'); applyStaticI18n(); showOnboarding(); plannerReady = true; initPlanner(); initOfflineIndicator(); });
 
 // ── Offline indicator ───────────────────────────────────────────────────────
 // navigator.onLine and the 'offline' event are unreliable across platforms
@@ -1192,7 +1223,7 @@ async function loadScheduleData(forceRefresh) {
     }
     applyScheduleData(data);
     try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
-    setSchedProgress(100, 'Tamamlandı.');
+    setSchedProgress(100, t('schedDone'));
     return;
   }
 
@@ -1210,17 +1241,17 @@ async function loadScheduleData(forceRefresh) {
 
   // No usable cache → SW-served fetch (works offline). The old-shape branch
   // (after an app upgrade) forces a fresh fetch.
-  setSchedProgress(10, 'Seferler yükleniyor…');
+  setSchedProgress(10, t('schedLoading'));
   let r = await fetch('./data/schedule.json');
   if (!r.ok) throw new Error('schedule.json alınamadı');
   let data = await r.json();
   if (!Array.isArray(data.schedules)) {
-    setSchedProgress(40, 'Veriler güncelleniyor…');
+    setSchedProgress(40, t('schedUpdating'));
     data = await fetchScheduleFresh();
   }
   applyScheduleData(data);
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
-  setSchedProgress(100, 'Tamamlandı.');
+  setSchedProgress(100, t('schedDone'));
   // The SW may have served a stale copy — verify against the network.
   refreshScheduleInBackground(data.fetchedAt);
 }
@@ -1255,7 +1286,7 @@ function setSchedProgress(pct, msg, isError) {
 // ── Render schedule ───────────────────────────────────────────────────────────
 function renderSchedule() {
   if (!scheduleData?.schedules?.length) {
-    setSchedProgress(100, 'Veri alınamadı. Sayfayı yenileyin.', true);
+    setSchedProgress(100, t('schedNoData'), true);
     return;
   }
 
@@ -1272,7 +1303,7 @@ function renderSchedule() {
     const btn = document.createElement('button');
     btn.className   = 's-tab-btn';
     btn.dataset.sid = s.id;
-    btn.textContent = s.label || s.id;
+    btn.textContent = schedDayLabel(s.label) || s.id;
     btn.onclick     = () => switchSchedTab(s.id);
     tabRow.appendChild(btn);
 
@@ -1310,7 +1341,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
     let body = '';
     // Direction 0
     if (d0.length) {
-      const lbl = dir0.label ? esc(dir0.label) + ' →' : 'Gidiş →';
+      const lbl = dir0.label ? esc(dir0.label) + ' →' : t('dirOut');
       body += '<div class="dir-section"><div class="dir-lbl">' + lbl + '</div>'
         + '<div class="times-grid">'
         + d0.map(t => '<span class="time-chip" data-time="' + t + '">' + t + '</span>').join('')
@@ -1318,7 +1349,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
     }
     // Direction 1
     if (d1.length) {
-      const lbl = dir1.label ? esc(dir1.label) + ' →' : 'Dönüş →';
+      const lbl = dir1.label ? esc(dir1.label) + ' →' : t('dirIn');
       body += '<div class="dir-section"><div class="dir-lbl">' + lbl + '</div>'
         + '<div class="times-grid">'
         + d1.map(t => '<span class="time-chip" data-time="' + t + '">' + t + '</span>').join('')
@@ -1327,8 +1358,8 @@ function renderRouteCards(routeMap, panelId, isToday) {
     if (!body) continue;
 
     const metaText = isToday
-      ? (remaining > 0 ? remaining + ' sefer kaldı' : 'Sefer kalmadı')
-      : (d0.length + d1.length) + ' sefer';
+      ? (remaining > 0 ? t('schedRemaining',{n:remaining}) : t('schedNoneLeft'))
+      : t('schedTotal',{n:(d0.length + d1.length)});
 
     // Look up kentkart display name and color using the route code prefix.
     // Express PDF entries ("… EKSPRES") map to the kentkart "-E" variant.
@@ -1362,7 +1393,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
         '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:6px">' +
           '<span class="rc-meta">' + metaText + '</span>' +
           '<button class="sched-track-btn" onclick="event.stopPropagation();trackRoute(\''+esc(displayCode)+'\')">' +
-            '<span style="font-size:.8rem;line-height:1">🚌</span>Canlı' +
+            '<span style="font-size:.8rem;line-height:1">🚌</span>'+t('canli') +
           '</button>' +
           '<span class="rc-chevron">▼</span>' +
         '</div>' +
@@ -1374,7 +1405,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
 
   if (!shown)
     cont.innerHTML = '<p style="color:#4a5568;padding:20px;font-size:.85rem">' +
-      (isToday ? 'Bugün için sefer kalmadı.' : 'Bu gün tipi için sefer bulunamadı.') + '</p>';
+      (isToday ? t('schedNoneTodayLong') : t('schedNoneForDay')) + '</p>';
 }
 
 function highlightNextTimes() {
@@ -1402,7 +1433,7 @@ async function refreshSchedule() {
     await loadScheduleData(true);
     renderSchedule();
   } catch(e) {
-    setSchedProgress(100, 'Hata: ' + e.message, true);
+    setSchedProgress(100, t('schedError',{err:e.message}), true);
     if (scheduleData) renderSchedule();
   }
 }
@@ -1413,7 +1444,7 @@ async function refreshSchedule() {
     renderSchedule();
     applyDeepLink();
   } catch(e) {
-    setSchedProgress(100, 'Yüklenemedi: ' + e.message, true);
+    setSchedProgress(100, t('schedLoadFail',{err:e.message}), true);
   }
 })();
 
@@ -1451,6 +1482,345 @@ let SETTINGS = (() => {
   catch { return { ...SETTINGS_DEFAULTS }; }
 })();
 function saveSettings() { try { localStorage.setItem('bm_settings_v1', JSON.stringify(SETTINGS)); } catch {} }
+
+// ══════════════════════════════════════════════════════════════
+// i18n — Turkish / English. Data-sourced text (municipality day/Bayram labels,
+// kentkart stop & route names) stays Turkish; everything user-facing in the UI
+// goes through t(). Language is resolved once: saved pref → browser → Turkish.
+// ══════════════════════════════════════════════════════════════
+if (!SETTINGS.lang) { SETTINGS.lang = /^tr/i.test(navigator.language || '') ? 'tr' : 'en'; saveSettings(); }
+const STR = {
+  tr: {
+    // ── App / onboarding ──
+    appName: 'Çanakkale Hat & Sefer',
+    obSub: 'Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.',
+    obSched: '📅 Saatlere<br>Bak',
+    obPlan: '🗺 Rota<br>Bul',
+    // ── Planner controls ──
+    btnOrigin: '📍 Konum', btnDest: '🏁 Hedef', btnPlan: 'Planla',
+    swapDir: '⇄ Yön değiştir', swapDirTitle: 'Başlangıç ve hedefi değiştir',
+    tNow: 'Şimdi', tPlus30: '+30 dk', tPlus1h: '+1 sa', tCustom: '🕐 Özel',
+    waitingMap: 'Harita bekleniyor…',
+    // ── Planner results / hints ──
+    calcRoutes: 'Rotalar hesaplanıyor…',
+    noConnection: 'Bağlantı bulunamadı.',
+    noConnectionLong: 'Bu konum ve hedef için hat bulunamadı.',
+    resultsDirect: 'Bağlantılı Hatlar',
+    resultsTransfer: 'Aktarmalı Hatlar',
+    foundN: '{n} hat bulundu. Detay için bir hatta tıklayın.',
+    foundNMulti: '{n} seçenek bulundu (aktarmalı dahil).',
+    walksTooLong: 'Yürüme mesafeleri ayarınızdan uzun.',
+    longWalk: '⚠️ uzun yürüyüş', longWalkTitle: 'Yürüme yarıçapından uzun',
+    live: '🔴 canlı', liveTitle: 'Canlı otobüs konumuna göre',
+    lastBus: '⚠️ Son sefer', lastBusTitle: 'Bugünün son seferi',
+    lastSeferNote: 'Bugünün son seferi',
+    oneTransfer: '🔁 1 aktarma',
+    min: 'dk',
+    metaMulti: '{a} + {b} durak · {ride} dk yolculuk',
+    metaDirect: '{n} durak arası',
+    transferWalkParen: '({dist} aktarma yürüyüşü)',
+    sameStopParen: '(aynı durakta)',
+    noActiveBus: 'Aktif araç yok', activeShort: 'aktif',
+    taxiTitle: 'Taksi', taxiSub: '{km} km · ~{min} dk',
+    tipYou: 'Konumunuz', tipDest: 'Hedefiniz', nearest: '(en yakın)',
+    outOfBounds: 'Bu konum Çanakkale sınırlarının dışında. Lütfen haritadan bir nokta seçin.',
+    // ── Trip detail ──
+    backToLines: '← Hatlar',
+    mlTitle: 'Aktarmalı Yolculuk · Tahmini {eta} dk',
+    walkStep: '{mins} dk yürüyüş',
+    walkToStop: '{dist} · {stop} durağına',
+    walkToDest: '{dist} · Hedefe',
+    legRide: '{sc} durak · {ride} dk',
+    nextDepIn: 'Sıradaki kalkış ~{mins} dk içinde',
+    xferWalkText: '{mins} dk · {dist} aktarma yürüyüşü',
+    sameStopXfer: 'Aynı durakta aktarma',
+    xferTitle: 'Aktarma · {stop}',
+    xferDetail: "{xfer} · {code} sıradaki kalkışı {clock} (~{wait} dk bekleme)",
+    walkBoardDetail: '{dist} · {mins} dk yürüyüş · Biniş noktası',
+    walkAlightDetail: '{dist} · {mins} dk yürüyüş · İniş noktası',
+    journeySummary: 'Yolculuk Özeti',
+    stepWalk: 'yürüyüş', boardingPoint: 'Biniş noktası', alightPoint: 'İniş noktası',
+    waitBusArrived: 'Otobüs durağa geldi', waitLive: 'Canlı konum',
+    waitDepart: '{time} kalkışı', waitDepartTomorrow: 'Yarın {time} kalkışı',
+    arrivesAt: 'Durağa ~{time}\'de gelir', arrivesAtTomorrow: 'Durağa ~{time}\'de gelir (yarın)',
+    schedUnknown: 'Program bilinmiyor', noLive: 'Canlı konum yok',
+    nowWord: 'Şimdi',
+    rideStep: '{code} ile {sc} durak', ridePath: '{from} → {to}',
+    totalEst: 'Toplam tahmini süre',
+    incomingBuses: 'Biniş Noktasına Gelen Otobüsler',
+    busArrivedExcl: 'Durağa geldi!',
+    stopsAwayText: '{n} durak uzakta',
+    schedTimes: 'Programlı Seferler', schedApprox: '(yaklaşık)',
+    activeOnRoute: 'Güzergahta Aktif Otobüsler', stopsLeft: '{n} durak kaldı',
+    routeStops: 'Güzergah Durakları',
+    nextRun: 'Sıradaki sefer: {time}',
+    busAwayDetail: '{plate} · {n} durak uzakta',
+    notifyOn: '🔔 Açık', notifyOff: '🔕 Bildir',
+    mlWalk: '{mins} dk · {dist} yürüyüş',
+    mlBoard: 'Biniş: {stop}',
+    mlLeg1Main: '{wait} dk bekleme + {ride} dk yolculuk',
+    mlLegDetail: '{sc} durak · {from} → {to}',
+    sameStopShort: ' (aynı durak)',
+    mlXferWalk: '{mins} dk yürüme · {dist} · ',
+    mlWaitMin: '{wait} dk bekleme',
+    mlRideOnly: '{ride} dk yolculuk',
+    mlAlight: 'İniş: {stop} → hedef',
+    tlBoard: 'Biniş', tlAlight: 'İniş',
+    // ── Stops / Duraklar / bars / guide / GPS / tracker / push ──
+    stopSearchPh: 'Durak adı ara…',
+    savedPlaces: 'Yerlerim', savedPlacesN: 'Yerlerim ({n})',
+    favsTitle: 'Favoriler', recentOpenedTitle: 'Son açılanlar', nearbyTitle: 'Yakındaki duraklar',
+    nearbyDenied: 'Konum izni verilmedi. Yakındaki durakları göstermek için izin verin.',
+    nearbyLoading: 'Yakındaki duraklar yükleniyor…',
+    favAdd: 'Favorilere ekle', favRemove: 'Favoriden çıkar',
+    guideStartHeadline: 'Başlangıç noktanızı seçin', guideDestHeadline: 'Hedef noktanızı seçin',
+    guideDestSub: 'Gitmek istediğiniz yere haritada dokunun<br>ya da ⭐ Yerlerim\'den seçin',
+    hintClickStart: 'Haritaya tıklayın → başlangıç seçin.', hintRouteRefresh: 'Rota yenileniyor…',
+    planningFor: '{label} için planlanıyor.',
+    phMap: '🗺 Haritayı Gör', phLines: '☰ Hatları Göster',
+    hintNearbyStops: 'Haritaya tıklayın → yakın durakları görün.',
+    geoUnsupported: 'Konum desteği yok.', gettingGPS: 'GPS alınıyor…', gpsFailed: 'Konum alınamadı.',
+    pickLocFirst: 'Önce haritada bir konum seçin.', locNamePrompt: 'Konum adı:',
+    stopDataFailed: 'Durak verisi yüklenemedi: {err}',
+    popupNow: 'Şu an:', popupNext: 'Sıradaki:',
+    routeDataLoading: 'Hat verileri yükleniyor…', routeDataFailed: 'Hat verileri yüklenemedi.',
+    routeNotFound: '{code} hattı bulunamadı.', dirN: 'Yön {n}', busesLoading: 'Otobüsler yükleniyor…',
+    updatedJustNow: 'Güncellendi: az önce · 15s aralıklarla otomatik', noActiveBuses: 'Aktif otobüs bulunamadı.',
+    locUnknown: 'Konum bilinmiyor', busWord: 'Otobüs',
+    nearbyStopsTitle: 'Yakındaki Duraklar', openInDuraklar: '🚏 Duraklar\'da aç', loadingShort: 'Yükleniyor…',
+    noLinesFound: 'Hat bulunamadı.', atStopShort: 'Durağa geldi', noRunsToday: 'Bugün sefer kalmadı', nextShort: 'Sıradaki: {time}',
+    nearbyCount: '{name} yakınında {n} durak.',
+    clearBookmarksConfirm: 'Tüm kaydedilen yerler silinecek. Devam edilsin mi?', cleared: 'Temizlendi.',
+    unitMpm: 'm/dk',
+    offlineHintSize: 'Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır. ~{count} karo, ~{size} MB.',
+    pushWorkerNotSet: 'Worker URL ayarlanmamış. Kurulum talimatlarını takip edin.',
+    pushUnsupported: 'Bu tarayıcı Web Push desteklemiyor.',
+    pushPermDenied: 'Bildirim izni reddedildi. Tarayıcı ayarlarından izin verin.',
+    pushSwNotReady: 'Servis çalışanı hazır değil.',
+    pushBrave: 'Brave tarayıcısında masaüstünde Google push servisi varsayılan olarak devre dışıdır.',
+    pushNoPerm: 'Tarayıcınız push bildirimlerine izin vermiyor.',
+    pushSubFailed: 'Bildirim aboneliği oluşturulamadı.\n\n{reason}',
+    pushWorkerConnFail: 'Worker\'a bağlanılamadı: {err}',
+    tomorrowParen: ' (yarın)',
+    stopDataLoadingShort: 'Durak verisi yükleniyor…', noMatchStop: 'Eşleşen durak yok.', resultsTitle: 'Sonuçlar',
+    favHint: 'Bir durağa ★ basarak favorilere ekleyin.',
+    shareText: '{name} — Çanakkale Hat & Sefer', linkCopied: 'Bağlantı kopyalandı.', copyLinkPrompt: 'Bağlantıyı kopyalayın:',
+    stopNotFound: 'Durak bulunamadı.', noRoutesThisStop: 'Bu duraktan geçen hat bulunamadı.',
+    shareStopTitle: 'Durağı paylaş', showOnMapCta: '📍 Haritada göster', routesHere: 'Buradan geçen hatlar',
+    statusArrived: '🟢 Durağa geldi ({n})', statusApproaching: '🚌 {n} durak uzaklıkta · {a} aktif', statusActiveFwd: '{n} aktif araç (yön: ileri)',
+    guideGps: '🛰&nbsp; GPS Konumumu Kullan', guideOr: 'veya haritaya dokunun',
+    clearRecentsConfirm: 'Son hedefler geçmişi silinecek. Devam edilsin mi?',
+    onboardingReset: 'Tanıtım sıfırlandı. Bir sonraki açılışta tekrar görünecek.',
+    cancelled: 'İptal edildi.', cancelBtn: 'İptal et',
+    offlineDone: 'Tamamlandı: {ok} / {total} karo önbelleğe alındı.',
+    bmEmpty: 'Henüz kayıtlı yer yok.<br>Haritada bir nokta seçip <b style="color:#c0d0ea">+ Ekle</b>\'ye tıklayın.',
+    bmStart: 'Başlangıç', bmDest: 'Hedef', bmDelete: 'Sil', tileErrors: 'hata', retryBtn: 'Tekrar dene',
+    distAwayM: '{d} m uzakta', distAwayKm: '{d} km uzakta', routesCount: '{n} hat', noData: 'Veri yok', locWord: 'Konum',
+    cardOrigin: 'Konum — En yakın durak', cardDest: 'Hedef — En yakın durak', saveBtn: '☆ Kaydet', saveBtnTitle: 'Kaydet', savedBtn: '★ Kaydedildi',
+    searchLoading: 'Durak verisi yükleniyor…',
+    // ── Settings ──
+    setTitle: 'Ayarlar', setBack: '← Geri',
+    setAppearance: 'Görünüm', themeDark: '🌙 Karanlık', themeLight: '☀️ Aydınlık', themeSystem: '📱 Sistem',
+    setLangLabel: 'Dil / Language',
+    setWalkRadius: 'Maksimum yürüme mesafesi:', setWalkRadiusHint: 'Yürünebilir mesafe sınırı. Daha uzaksa o durak için rota önerilmez.',
+    setWalkSpeed: 'Yürüme hızı:', setWalkSpeedHint: 'ETA hesaplaması için kullanılır. Varsayılan 72 m/dk (≈4.3 km/sa).',
+    setOffline: 'Çevrimdışı harita', setOfflineBtn: 'Haritayı offline indir',
+    setOfflineHint: 'Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır.',
+    setData: 'Veri', setClearBookmarks: 'Kaydedilen yerleri temizle', setClearRecents: 'Son hedefleri temizle', setReshowOnboarding: 'Tanıtımı tekrar göster',
+    setAbout: 'Hakkında', setDevSite: '🌐 Geliştirici sitesi', setGitHub: '💻 GitHub', setContact: '✉️ İletişim — kaan@kaangultekin.net',
+    // ── Schedule ──
+    schedLoading: 'Seferler yükleniyor…',
+    dirOut: 'Gidiş →', dirIn: 'Dönüş →', liveBtn: '🚌 Canlı', canli: 'Canlı',
+    schedNoData: 'Veri alınamadı. Sayfayı yenileyin.',
+    schedDone: 'Tamamlandı.', schedUpdating: 'Veriler güncelleniyor…',
+    schedError: 'Hata: {err}', schedLoadFail: 'Yüklenemedi: {err}', stopsLoaded: '{n} durak',
+    schedRemaining: '{n} sefer kaldı', schedNoneLeft: 'Sefer kalmadı', schedTotal: '{n} sefer',
+    schedNoneTodayLong: 'Bugün için sefer kalmadı.', schedNoneForDay: 'Bu gün tipi için sefer bulunamadı.',
+    navSched: '<span>📅</span>Seferler', navPlanner: '<span>🗺</span>Rota &amp; Harita', navStops: '<span>🚏</span>Duraklar',
+  },
+  en: {
+    appName: 'Çanakkale Hat & Sefer',
+    obSub: 'Track Çanakkale buses in real time, plan routes, and get notified before your bus arrives.',
+    obSched: '📅 View<br>Schedules',
+    obPlan: '🗺 Plan a<br>Route',
+    btnOrigin: '📍 From', btnDest: '🏁 To', btnPlan: 'Plan',
+    swapDir: '⇄ Swap', swapDirTitle: 'Swap origin and destination',
+    tNow: 'Now', tPlus30: '+30 min', tPlus1h: '+1 hr', tCustom: '🕐 Custom',
+    waitingMap: 'Waiting for map…',
+    calcRoutes: 'Finding routes…',
+    noConnection: 'No connection found.',
+    noConnectionLong: 'No route found for this origin and destination.',
+    resultsDirect: 'Connecting Lines',
+    resultsTransfer: 'Lines with Transfer',
+    foundN: '{n} lines found. Tap one for details.',
+    foundNMulti: '{n} options found (incl. transfers).',
+    walksTooLong: 'Walking distances are longer than your setting.',
+    longWalk: '⚠️ long walk', longWalkTitle: 'Longer than your walking radius',
+    live: '🔴 live', liveTitle: 'Based on live bus position',
+    lastBus: '⚠️ Last bus', lastBusTitle: "Today's last departure",
+    lastSeferNote: "Today's last departure",
+    oneTransfer: '🔁 1 transfer',
+    min: 'min',
+    metaMulti: '{a} + {b} stops · {ride} min ride',
+    metaDirect: '{n} stops',
+    transferWalkParen: '({dist} transfer walk)',
+    sameStopParen: '(same stop)',
+    noActiveBus: 'No active bus', activeShort: 'active',
+    taxiTitle: 'Taxi', taxiSub: '{km} km · ~{min} min',
+    tipYou: 'Your location', tipDest: 'Your destination', nearest: '(nearest)',
+    outOfBounds: 'This location is outside Çanakkale. Please pick a point on the map.',
+    // ── Trip detail ──
+    backToLines: '← Lines',
+    mlTitle: 'Transfer trip · est. {eta} min',
+    walkStep: '{mins} min walk',
+    walkToStop: '{dist} · to {stop}',
+    walkToDest: '{dist} · to destination',
+    legRide: '{sc} stops · {ride} min',
+    nextDepIn: 'Next departure in ~{mins} min',
+    xferWalkText: '{mins} min · {dist} transfer walk',
+    sameStopXfer: 'Transfer at the same stop',
+    xferTitle: 'Transfer · {stop}',
+    xferDetail: '{xfer} · next {code} at {clock} (~{wait} min wait)',
+    walkBoardDetail: '{dist} · {mins} min walk · Boarding point',
+    walkAlightDetail: '{dist} · {mins} min walk · Drop-off point',
+    journeySummary: 'Journey Summary',
+    stepWalk: 'walk', boardingPoint: 'Boarding point', alightPoint: 'Drop-off point',
+    waitBusArrived: 'Bus has arrived', waitLive: 'Live position',
+    waitDepart: '{time} departure', waitDepartTomorrow: 'Tomorrow {time} departure',
+    arrivesAt: 'Arrives at stop ~{time}', arrivesAtTomorrow: 'Arrives at stop ~{time} (tomorrow)',
+    schedUnknown: 'Schedule unknown', noLive: 'No live position',
+    nowWord: 'Now',
+    rideStep: '{sc} stops on {code}', ridePath: '{from} → {to}',
+    totalEst: 'Total estimated time',
+    incomingBuses: 'Buses Approaching the Boarding Stop',
+    busArrivedExcl: 'At the stop!',
+    stopsAwayText: '{n} stops away',
+    schedTimes: 'Scheduled Departures', schedApprox: '(approx.)',
+    activeOnRoute: 'Active Buses on the Route', stopsLeft: '{n} stops left',
+    routeStops: 'Route Stops',
+    nextRun: 'Next run: {time}',
+    busAwayDetail: '{plate} · {n} stops away',
+    notifyOn: '🔔 On', notifyOff: '🔕 Notify',
+    mlWalk: '{mins} min · {dist} walk',
+    mlBoard: 'Board: {stop}',
+    mlLeg1Main: '{wait} min wait + {ride} min ride',
+    mlLegDetail: '{sc} stops · {from} → {to}',
+    sameStopShort: ' (same stop)',
+    mlXferWalk: '{mins} min walk · {dist} · ',
+    mlWaitMin: '{wait} min wait',
+    mlRideOnly: '{ride} min ride',
+    mlAlight: 'Drop-off: {stop} → destination',
+    tlBoard: 'Board', tlAlight: 'Drop-off',
+    // ── Stops / Duraklar / bars / guide / GPS / tracker / push ──
+    stopSearchPh: 'Search stop name…',
+    savedPlaces: 'My Places', savedPlacesN: 'My Places ({n})',
+    favsTitle: 'Favorites', recentOpenedTitle: 'Recently opened', nearbyTitle: 'Nearby stops',
+    nearbyDenied: 'Location permission denied. Allow it to show nearby stops.',
+    nearbyLoading: 'Loading nearby stops…',
+    favAdd: 'Add to favorites', favRemove: 'Remove from favorites',
+    guideStartHeadline: 'Choose your starting point', guideDestHeadline: 'Choose your destination',
+    guideDestSub: 'Tap where you want to go on the map<br>or pick from ⭐ My Places',
+    hintClickStart: 'Tap the map → choose start.', hintRouteRefresh: 'Refreshing route…',
+    planningFor: 'Planning for {label}.',
+    phMap: '🗺 View Map', phLines: '☰ Show Lines',
+    hintNearbyStops: 'Tap the map → see nearby stops.',
+    geoUnsupported: 'Location not supported.', gettingGPS: 'Getting GPS…', gpsFailed: 'Could not get location.',
+    pickLocFirst: 'Pick a location on the map first.', locNamePrompt: 'Location name:',
+    stopDataFailed: 'Could not load stop data: {err}',
+    popupNow: 'Now:', popupNext: 'Next:',
+    routeDataLoading: 'Loading line data…', routeDataFailed: 'Could not load line data.',
+    routeNotFound: 'Line {code} not found.', dirN: 'Dir {n}', busesLoading: 'Loading buses…',
+    updatedJustNow: 'Updated: just now · auto every 15s', noActiveBuses: 'No active buses found.',
+    locUnknown: 'Location unknown', busWord: 'Bus',
+    nearbyStopsTitle: 'Nearby Stops', openInDuraklar: '🚏 Open in Stops', loadingShort: 'Loading…',
+    noLinesFound: 'No lines found.', atStopShort: 'At the stop', noRunsToday: 'No runs left today', nextShort: 'Next: {time}',
+    nearbyCount: '{n} stops near {name}.',
+    clearBookmarksConfirm: 'All saved places will be deleted. Continue?', cleared: 'Cleared.',
+    unitMpm: 'm/min',
+    offlineHintSize: 'Map tiles for the Çanakkale region are downloaded to your device. Panning/zooming works in this area even offline. ~{count} tiles, ~{size} MB.',
+    pushWorkerNotSet: 'Worker URL is not configured. Follow the setup instructions.',
+    pushUnsupported: 'This browser does not support Web Push.',
+    pushPermDenied: 'Notification permission denied. Allow it in your browser settings.',
+    pushSwNotReady: 'Service worker not ready.',
+    pushBrave: 'On Brave desktop, the Google push service is disabled by default.',
+    pushNoPerm: 'Your browser does not allow push notifications.',
+    pushSubFailed: 'Could not create notification subscription.\n\n{reason}',
+    pushWorkerConnFail: 'Could not connect to the worker: {err}',
+    tomorrowParen: ' (tomorrow)',
+    stopDataLoadingShort: 'Loading stop data…', noMatchStop: 'No matching stops.', resultsTitle: 'Results',
+    favHint: 'Tap ★ on a stop to add it to favorites.',
+    shareText: '{name} — Çanakkale Hat & Sefer', linkCopied: 'Link copied.', copyLinkPrompt: 'Copy the link:',
+    stopNotFound: 'Stop not found.', noRoutesThisStop: 'No lines serve this stop.',
+    shareStopTitle: 'Share stop', showOnMapCta: '📍 Show on map', routesHere: 'Lines serving this stop',
+    statusArrived: '🟢 At the stop ({n})', statusApproaching: '🚌 {n} stops away · {a} active', statusActiveFwd: '{n} active buses (direction: forward)',
+    guideGps: '🛰&nbsp; Use My GPS Location', guideOr: 'or tap the map',
+    clearRecentsConfirm: 'Recent destinations history will be cleared. Continue?',
+    onboardingReset: 'Intro reset. It will show again next time you open the app.',
+    cancelled: 'Cancelled.', cancelBtn: 'Cancel',
+    offlineDone: 'Done: {ok} / {total} tiles cached.',
+    bmEmpty: 'No saved places yet.<br>Pick a point on the map and tap <b style="color:#c0d0ea">+ Add</b>.',
+    bmStart: 'Start', bmDest: 'Destination', bmDelete: 'Delete', tileErrors: 'errors', retryBtn: 'Try again',
+    distAwayM: '{d} m away', distAwayKm: '{d} km away', routesCount: '{n} lines', noData: 'No data', locWord: 'Location',
+    cardOrigin: 'From — Nearest stop', cardDest: 'To — Nearest stop', saveBtn: '☆ Save', saveBtnTitle: 'Save', savedBtn: '★ Saved',
+    searchLoading: 'Loading stop data…',
+    setTitle: 'Settings', setBack: '← Back',
+    setAppearance: 'Appearance', themeDark: '🌙 Dark', themeLight: '☀️ Light', themeSystem: '📱 System',
+    setLangLabel: 'Language / Dil',
+    setWalkRadius: 'Maximum walking distance:', setWalkRadiusHint: 'Walkable distance limit. Stops farther than this are not suggested.',
+    setWalkSpeed: 'Walking speed:', setWalkSpeedHint: 'Used for ETA math. Default 72 m/min (≈4.3 km/h).',
+    setOffline: 'Offline map', setOfflineBtn: 'Download map offline',
+    setOfflineHint: 'Map tiles for the Çanakkale region are downloaded to your device. Panning/zooming works in this area even without internet.',
+    setData: 'Data', setClearBookmarks: 'Clear saved places', setClearRecents: 'Clear recent destinations', setReshowOnboarding: 'Show the intro again',
+    setAbout: 'About', setDevSite: '🌐 Developer site', setGitHub: '💻 GitHub', setContact: '✉️ Contact — kaan@kaangultekin.net',
+    schedLoading: 'Loading schedules…',
+    dirOut: 'Outbound →', dirIn: 'Inbound →', liveBtn: '🚌 Live', canli: 'Live',
+    schedNoData: 'Could not load data. Refresh the page.',
+    schedDone: 'Done.', schedUpdating: 'Updating data…',
+    schedError: 'Error: {err}', schedLoadFail: 'Could not load: {err}', stopsLoaded: '{n} stops',
+    schedRemaining: '{n} runs left', schedNoneLeft: 'No runs left', schedTotal: '{n} runs',
+    schedNoneTodayLong: 'No more runs today.', schedNoneForDay: 'No runs found for this day type.',
+    navSched: '<span>📅</span>Schedules', navPlanner: '<span>🗺</span>Route &amp; Map', navStops: '<span>🚏</span>Stops',
+  },
+};
+// Common municipality day labels → English (data otherwise stays Turkish).
+const SCHED_DAY_LABELS_EN = { 'Hafta İçi': 'Weekday', 'Hafta Sonu': 'Weekend', 'Cumartesi': 'Saturday', 'Pazar': 'Sunday' };
+function schedDayLabel(label) {
+  if (lang() === 'en' && label && SCHED_DAY_LABELS_EN[label.trim()]) return SCHED_DAY_LABELS_EN[label.trim()];
+  return label;
+}
+// Active UI language. NOT named `L` — that's Leaflet's global.
+function lang() { return SETTINGS.lang === 'en' ? 'en' : 'tr'; }
+function t(key, vars) {
+  const dict = STR[lang()] || STR.tr;
+  let s = dict[key]; if (s == null) s = STR.tr[key]; if (s == null) return key;
+  if (vars) for (const k in vars) s = s.split('{' + k + '}').join(vars[k]);
+  return s;
+}
+// Translate static markup tagged with data-i18n* attributes.
+function applyStaticI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.documentElement.lang = lang();
+  document.querySelectorAll('[data-lang-opt]').forEach(b => b.classList.toggle('active', b.dataset.langOpt === lang()));
+}
+// Re-render whatever is on screen so a language switch takes effect immediately.
+function refreshActiveI18n() {
+  try { if (typeof scheduleData !== 'undefined' && scheduleData) renderSchedule(); } catch {}
+  try { if (currentMatches && currentMatches.length) renderPlannerResults(currentMatches); } catch {}
+  try { if (tripMatch) showTripDetail(tripMatch, false, true); } catch {}
+  // Planner guide (shown before any plan): re-render it for the current pick mode.
+  try { if (document.getElementById('planner-guide') && (mode === 'origin' || mode === 'dest')) showPlannerGuide(mode); } catch {}
+  try { renderBookmarksBar(); renderRecentDests(); } catch {}
+  try { if (document.getElementById('scr-stops')?.classList.contains('active')) renderStopsList(); } catch {}
+}
+function setLang(l) {
+  SETTINGS.lang = (l === 'en' ? 'en' : 'tr');
+  saveSettings();
+  applyStaticI18n();
+  refreshActiveI18n();
+}
 
 // ── Push notification config (fill in after running generate-keys.js + deploying worker) ──
 const VAPID_PUBLIC_KEY = 'BHVCtR1I7eXOv825k0yVg3E6y59A0p7wlgO3rUD90sEOXIec97qg4z5ybGlGjcltgQQxytPw6LD9Q202YxZeC7s';
@@ -1605,7 +1975,7 @@ function initSettingsScreen() {
   rSlider.value = SETTINGS.walkRadius;
   sSlider.value = SETTINGS.walkSpeedMpm;
   rVal.textContent = SETTINGS.walkRadius + ' m';
-  sVal.textContent = SETTINGS.walkSpeedMpm + ' m/dk';
+  sVal.textContent = SETTINGS.walkSpeedMpm + ' ' + t('unitMpm');
   updateSliderFill(rSlider);
   updateSliderFill(sSlider);
 
@@ -1613,7 +1983,7 @@ function initSettingsScreen() {
     SETTINGS.walkRadius   = parseInt(rSlider.value, 10);
     SETTINGS.walkSpeedMpm = parseInt(sSlider.value, 10);
     rVal.textContent = SETTINGS.walkRadius + ' m';
-    sVal.textContent = SETTINGS.walkSpeedMpm + ' m/dk';
+    sVal.textContent = SETTINGS.walkSpeedMpm + ' ' + t('unitMpm');
     updateSliderFill(rSlider);
     updateSliderFill(sSlider);
     clearTimeout(_settingsRefreshTimer);
@@ -1633,7 +2003,7 @@ function initSettingsScreen() {
   if (hint) {
     const count = _tilesForBounds().length;
     const sizeMB = Math.max(1, Math.round(count * 12 / 1024));  // ~12 KB / tile average
-    hint.textContent = 'Çanakkale bölgesindeki harita karoları cihaza indirilir. İnternet yokken bile bu alanda kaydırma/yakınlaştırma çalışır. ~' + count + ' karo, ~' + sizeMB + ' MB.';
+    hint.textContent = t('offlineHintSize', { count, size: sizeMB });
   }
 }
 
@@ -1648,27 +2018,27 @@ function resetWalkSpeed() {
   SETTINGS.walkSpeedMpm = SETTINGS_DEFAULTS.walkSpeedMpm;
   saveSettings();
   const s = document.getElementById('walkSpeedSlider');
-  if (s) { s.value = SETTINGS.walkSpeedMpm; updateSliderFill(s); document.getElementById('walkSpeedVal').textContent = SETTINGS.walkSpeedMpm + ' m/dk'; }
+  if (s) { s.value = SETTINGS.walkSpeedMpm; updateSliderFill(s); document.getElementById('walkSpeedVal').textContent = SETTINGS.walkSpeedMpm + ' ' + t('unitMpm'); }
   if (originClick && destClick) findRoutes();
 }
 
 function clearBookmarksData() {
-  if (!confirm('Tüm kaydedilen yerler silinecek. Devam edilsin mi?')) return;
+  if (!confirm(t('clearBookmarksConfirm'))) return;
   bookmarks = [];
   saveBookmarks();
   renderBookmarksBar();
-  alert('Temizlendi.');
+  alert(t('cleared'));
 }
 function clearRecentsData() {
-  if (!confirm('Son hedefler geçmişi silinecek. Devam edilsin mi?')) return;
+  if (!confirm(t('clearRecentsConfirm'))) return;
   recentDests = [];
   saveRecentDests();
   renderRecentDests();
-  alert('Temizlendi.');
+  alert(t('cleared'));
 }
 function resetOnboarding() {
   localStorage.removeItem('onboarded_v2');
-  alert('Tanıtım sıfırlandı. Bir sonraki açılışta tekrar görünecek.');
+  alert(t('onboardingReset'));
 }
 
 // ── Offline map tile pre-cache ─────────────────────────────────────────────
@@ -1704,12 +2074,12 @@ async function downloadOfflineMap() {
   const btn = document.getElementById('mapCacheBtn');
   const status = document.getElementById('mapCacheStatus');
   if (!btn || !status) return;
-  if (_tileDownloadAbort) { _tileDownloadAbort.abort(); _tileDownloadAbort = null; btn.textContent = 'Haritayı offline indir'; status.textContent = 'İptal edildi.'; return; }
+  if (_tileDownloadAbort) { _tileDownloadAbort.abort(); _tileDownloadAbort = null; btn.textContent = t('setOfflineBtn'); status.textContent = t('cancelled'); return; }
   _tileDownloadAbort = new AbortController();
   const signal = _tileDownloadAbort.signal;
-  btn.textContent = 'İptal et';
+  btn.textContent = t('cancelBtn');
   let done = 0, failed = 0;
-  const update = () => { status.textContent = done + ' / ' + total + (failed ? ' (' + failed + ' hata)' : ''); };
+  const update = () => { status.textContent = done + ' / ' + total + (failed ? ' (' + failed + ' ' + t('tileErrors') + ')' : ''); };
   update();
   let idx = 0;
   async function worker() {
@@ -1725,9 +2095,9 @@ async function downloadOfflineMap() {
   }
   await Promise.all(Array.from({length: 4}, worker));
   _tileDownloadAbort = null;
-  btn.textContent = 'Haritayı offline indir';
+  btn.textContent = t('setOfflineBtn');
   if (signal.aborted) return;
-  status.textContent = 'Tamamlandı: ' + (done - failed) + ' / ' + total + ' karo önbelleğe alındı.';
+  status.textContent = t('offlineDone', { ok: (done - failed), total });
   try { localStorage.setItem('bm_map_cached_v1', String(Date.now())); } catch {}
 }
 
@@ -1736,9 +2106,9 @@ function renderBookmarksBar() {
   if (!list) return;
   // Update header button label with count
   const lbl = document.getElementById('bm-toggle-label');
-  if (lbl) lbl.textContent = bookmarks.length ? 'Yerlerim (' + bookmarks.length + ')' : 'Yerlerim';
+  if (lbl) lbl.textContent = bookmarks.length ? t('savedPlacesN',{n:bookmarks.length}) : t('savedPlaces');
   if (!bookmarks.length) {
-    list.innerHTML = '<div class="bm-dd-empty">Henüz kayıtlı yer yok.<br>Haritada bir nokta seçip <b style="color:#c0d0ea">+ Ekle</b>\'ye tıklayın.</div>';
+    list.innerHTML = '<div class="bm-dd-empty">'+t('bmEmpty')+'</div>';
     return;
   }
   list.innerHTML = bookmarks.map((bm, i) =>
@@ -1746,9 +2116,9 @@ function renderBookmarksBar() {
       '<span class="bm-icon">⭐</span>' +
       '<span class="bm-name" title="' + esc(bm.name) + '">' + esc(bm.name) + '</span>' +
       '<div class="bm-actions">' +
-        '<button class="bm-btn origin" onclick="useBookmark('+i+',\'origin\')" title="Başlangıç">📍</button>' +
-        '<button class="bm-btn dest"   onclick="useBookmark('+i+',\'dest\')"   title="Hedef">🏁</button>' +
-        '<button class="bm-btn del"    onclick="deleteBookmark('+i+')"         title="Sil">✕</button>' +
+        '<button class="bm-btn origin" onclick="useBookmark('+i+',\'origin\')" title="'+t('bmStart')+'">📍</button>' +
+        '<button class="bm-btn dest"   onclick="useBookmark('+i+',\'dest\')"   title="'+t('bmDest')+'">🏁</button>' +
+        '<button class="bm-btn del"    onclick="deleteBookmark('+i+')"         title="'+t('bmDelete')+'">✕</button>' +
       '</div>' +
     '</div>'
   ).join('');
@@ -1808,7 +2178,7 @@ function _stopItemHtml(stopId, stopName, distMeters) {
        +   '</div>'
        +   '<button class="ss-fav' + (fav ? ' on' : '') + '" '
        +          'onclick="event.stopPropagation();toggleFavStop(\'' + stopId + '\')" '
-       +          'title="' + (fav ? 'Favoriden çıkar' : 'Favorilere ekle') + '">'
+       +          'title="' + (fav ? t('favRemove') : t('favAdd')) + '">'
        +     (fav ? '★' : '☆')
        +   '</button>'
        + '</div>';
@@ -1849,7 +2219,7 @@ function renderStopsList() {
   document.getElementById('stops-detail-view').style.display = 'none';
 
   if (!allStops?.size) {
-    _renderSection('stops-section-search', '', '<div class="ss-empty">Durak verisi yükleniyor…</div>');
+    _renderSection('stops-section-search', '', '<div class="ss-empty">'+t('searchLoading')+'</div>');
     _renderSection('stops-section-favs',   '', '');
     _renderSection('stops-section-recent', '', '');
     _renderSection('stops-section-nearby', '', '');
@@ -1863,8 +2233,8 @@ function renderStopsList() {
     const results = _searchStops(q, 30);
     const html = results.length
       ? results.map(s => _stopItemHtml(s.stopId, s.stopName)).join('')
-      : '<div class="ss-empty">Eşleşen durak yok.</div>';
-    _renderSection('stops-section-search', 'Sonuçlar', html);
+      : '<div class="ss-empty">'+t('noMatchStop')+'</div>';
+    _renderSection('stops-section-search', t('resultsTitle'), html);
     _renderSection('stops-section-favs',   '', '');
     _renderSection('stops-section-recent', '', '');
     _renderSection('stops-section-nearby', '', '');
@@ -1878,15 +2248,15 @@ function renderStopsList() {
   // realise the ★ button does something.
   const favItems = favStops.map(id => allStops.get(id)).filter(Boolean);
   _renderSection('stops-section-favs',
-    'Favoriler',
+    t('favsTitle'),
     favItems.length
       ? favItems.map(s => _stopItemHtml(s.stopId, s.stopName)).join('')
-      : '<div class="ss-empty">Bir durağa ★ basarak favorilere ekleyin.</div>');
+      : '<div class="ss-empty">'+t('favHint')+'</div>');
 
   // Recent (drop any stale stopIds)
   const recItems = recentStops.map(r => allStops.get(r.stopId)).filter(Boolean);
   _renderSection('stops-section-recent',
-    'Son açılanlar',
+    t('recentOpenedTitle'),
     recItems.length ? recItems.map(s => _stopItemHtml(s.stopId, s.stopName)).join('') : '');
 
   // Nearby
@@ -1896,17 +2266,17 @@ function renderStopsList() {
       .sort((a, b) => a.d - b.d)
       .slice(0, 8);
     _renderSection('stops-section-nearby',
-      'Yakındaki duraklar',
+      t('nearbyTitle'),
       ranked.map(({ s, d }) => _stopItemHtml(s.stopId, s.stopName, d)).join(''));
   } else if (nearbyDenied) {
     _renderSection('stops-section-nearby',
-      'Yakındaki duraklar',
-      '<div class="ss-empty">Konum izni verilmedi. Yakındaki durakları göstermek için izin verin.'
-      + '<br><button class="ss-action" onclick="requestNearbyOnce(true)">Tekrar dene</button></div>');
+      t('nearbyTitle'),
+      '<div class="ss-empty">'+t('nearbyDenied')
+      + '<br><button class="ss-action" onclick="requestNearbyOnce(true)">'+t('retryBtn')+'</button></div>');
   } else {
     _renderSection('stops-section-nearby',
-      'Yakındaki duraklar',
-      '<div class="ss-empty">Yakındaki duraklar yükleniyor…</div>');
+      t('nearbyTitle'),
+      '<div class="ss-empty">'+t('nearbyLoading')+'</div>');
     requestNearbyOnce();
   }
 }
@@ -1952,14 +2322,14 @@ function shareStop(stopId) {
   const stop = allStops.get(stopId); if (!stop) return;
   const url = window.location.origin + window.location.pathname + '?stop=' + encodeURIComponent(stopId);
   if (navigator.share) {
-    navigator.share({ title: stop.stopName, text: stop.stopName + ' — Çanakkale Hat & Sefer', url }).catch(() => {});
+    navigator.share({ title: stop.stopName, text: t('shareText',{name:stop.stopName}), url }).catch(() => {});
   } else if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(url).then(
-      () => setHint('Bağlantı kopyalandı.'),
-      () => prompt('Bağlantıyı kopyalayın:', url)
+      () => setHint(t('linkCopied')),
+      () => prompt(t('copyLinkPrompt'), url)
     );
   } else {
-    prompt('Bağlantıyı kopyalayın:', url);
+    prompt(t('copyLinkPrompt'), url);
   }
 }
 
@@ -1968,8 +2338,8 @@ function renderStopDetail() {
   if (!wrap) return;
   const stop = allStops.get(stopDetailId);
   if (!stop) {
-    wrap.innerHTML = '<button class="sd-back" onclick="closeStopDetail()">← Geri</button>'
-                   + '<div class="ss-empty">Durak bulunamadı.</div>';
+    wrap.innerHTML = '<button class="sd-back" onclick="closeStopDetail()">'+t('setBack')+'</button>'
+                   + '<div class="ss-empty">'+t('stopNotFound')+'</div>';
     return;
   }
   const fav = favStops.includes(stop.stopId);
@@ -1996,40 +2366,40 @@ function renderStopDetail() {
              +   '<span class="sd-route-badge" style="background:#' + hex + ';color:' + fg + '">' + esc(r.routeCode) + '</span>'
              +   '<div class="sd-route-info">'
              +     '<div class="sd-route-name">' + esc(head) + '</div>'
-             +     '<div class="sd-route-status">Yükleniyor…</div>'
+             +     '<div class="sd-route-status">'+t('loadingShort')+'</div>'
              +   '</div>'
-             +   '<button class="sd-route-live" onclick="trackRoute(\'' + esc(r.routeCode) + '\')">🚌 Canlı</button>'
+             +   '<button class="sd-route-live" onclick="trackRoute(\'' + esc(r.routeCode) + '\')">'+t('liveBtn')+'</button>'
              + '</div>';
       }).join('')
-    : '<div class="ss-empty">Bu duraktan geçen hat bulunamadı.</div>';
+    : '<div class="ss-empty">'+t('noRoutesThisStop')+'</div>';
 
   const distHtml = lastUserPos
     ? '<span class="sd-meta-item">' + (() => {
         const d = haversine(lastUserPos.lat, lastUserPos.lng, stop.lat, stop.lng);
-        return d < 1000 ? Math.round(d) + ' m uzakta' : (d/1000).toFixed(1) + ' km uzakta';
+        return d < 1000 ? t('distAwayM',{d:Math.round(d)}) : t('distAwayKm',{d:(d/1000).toFixed(1)});
       })() + '</span>'
     : '';
 
   wrap.innerHTML =
-    '<button class="sd-back" onclick="closeStopDetail()">← Geri</button>'
+    '<button class="sd-back" onclick="closeStopDetail()">'+t('setBack')+'</button>'
   + '<div class="sd-title-row">'
   +   '<div class="sd-title-text">'
   +     '<div class="sd-title">' + esc(stop.stopName) + '</div>'
   +     '<div class="sd-meta">'
   +       '<span class="sd-meta-item">#' + esc(stop.stopId) + '</span>'
-  +       '<span class="sd-meta-item">' + routeCount + ' hat</span>'
+  +       '<span class="sd-meta-item">' + t('routesCount',{n:routeCount}) + '</span>'
   +       distHtml
   +     '</div>'
   +   '</div>'
-  +   '<button class="ss-share" onclick="shareStop(\'' + stop.stopId + '\')" title="Durağı paylaş">🔗</button>'
+  +   '<button class="ss-share" onclick="shareStop(\'' + stop.stopId + '\')" title="'+t('shareStopTitle')+'">🔗</button>'
   +   '<button class="ss-fav' + (fav ? ' on' : '') + '" '
   +          'onclick="toggleFavStop(\'' + stop.stopId + '\')" '
-  +          'title="' + (fav ? 'Favoriden çıkar' : 'Favorilere ekle') + '">'
+  +          'title="' + (fav ? t('favRemove') : t('favAdd')) + '">'
   +     (fav ? '★' : '☆')
   +   '</button>'
   + '</div>'
-  + '<button class="sd-cta" onclick="showStopOnPlanner(\'' + stop.stopId + '\')">📍 Haritada göster</button>'
-  + '<div class="sd-routes-title">Buradan geçen hatlar</div>'
+  + '<button class="sd-cta" onclick="showStopOnPlanner(\'' + stop.stopId + '\')">'+t('showOnMapCta')+'</button>'
+  + '<div class="sd-routes-title">'+t('routesHere')+'</div>'
   + routesHtml;
 
   // Fetch live buses for this stop and update each row's status
@@ -2052,7 +2422,7 @@ async function loadStopDetailBuses(stopId, uniqRoutes) {
       if (!statusEl) { meta.push({ row, sortKey: 99999 }); continue; }
       let status, klass = '', sortKey = 99999;
       if (!fp) {
-        status = 'Veri yok';
+        status = t('noData');
       } else {
         const seqOf = {};
         for (const s of (fp.busStopList || [])) seqOf[s.stopId] = parseInt(s.seq) || 0;
@@ -2064,23 +2434,23 @@ async function loadStopDetailBuses(stopId, uniqRoutes) {
           .sort((a, b) => a.stopsAway - b.stopsAway);
         const atStop = buses.filter(b => b.stopId === stopId);
         if (atStop.length) {
-          status = '🟢 Durağa geldi (' + atStop.length + ')';
+          status = t('statusArrived',{n:atStop.length});
           klass  = 'live-at';
           sortKey = 0;
         } else if (approaching.length) {
           const n = approaching[0].stopsAway;
-          status = '🚌 ' + n + ' durak uzaklıkta · ' + approaching.length + ' aktif';
+          status = t('statusApproaching',{n,a:approaching.length});
           klass  = n <= 2 ? 'live-near' : n <= 5 ? 'live-mid' : 'live-far';
           sortKey = n;
         } else if (buses.length) {
-          status = buses.length + ' aktif araç (yön: ileri)';
+          status = t('statusActiveFwd',{n:buses.length});
           klass  = 'live-far';
           sortKey = 9000; // active, but past this stop — below all approaching
         } else {
           const nx = getNextDeparture(uniqRoutes[i].routeCode);
-          status = nx === undefined ? 'Aktif araç yok'
-                 : nx === null ? 'Bugün sefer kalmadı'
-                 : 'Sıradaki: ' + nx;
+          status = nx === undefined ? t('noActiveBus')
+                 : nx === null ? t('noRunsToday')
+                 : t('nextShort',{time:nx});
           sortKey = 99999; // inactive — keep at bottom in original order
         }
       }
@@ -2116,27 +2486,27 @@ function saveLocationBookmark(which) {
   if (!which) {
     if (originClick) which = 'origin';
     else if (destClick) which = 'dest';
-    else { setHint('Önce haritada bir konum seçin.'); return; }
+    else { setHint(t('pickLocFirst')); return; }
   }
   let lat, lng, defaultName;
   if (which === 'origin' && originClick) {
     ({ lat, lng } = originClick);
-    defaultName = document.getElementById('originName').textContent || 'Konum';
+    defaultName = document.getElementById('originName').textContent || t('locWord');
   } else if (which === 'dest' && destClick) {
     ({ lat, lng } = destClick);
-    defaultName = document.getElementById('destName').textContent || 'Hedef';
+    defaultName = document.getElementById('destName').textContent || t('bmDest');
   } else {
-    setHint('Önce haritada bir konum seçin.');
+    setHint(t('pickLocFirst'));
     return;
   }
-  const name = window.prompt('Konum adı:', defaultName);
+  const name = window.prompt(t('locNamePrompt'), defaultName);
   if (!name) return;
   bookmarks.push({ name: name.trim(), lat, lng });
   saveBookmarks();
   renderBookmarksBar();
   // Flash the save button to confirm
   const btn = document.querySelector('#' + (which === 'origin' ? 'originCard' : 'destCard') + ' .bm-save-btn');
-  if (btn) { btn.textContent = '★ Kaydedildi'; setTimeout(() => { btn.textContent = '☆ Kaydet'; }, 1500); }
+  if (btn) { btn.textContent = t('savedBtn'); setTimeout(() => { btn.textContent = t('saveBtn'); }, 1500); }
 }
 
 function deleteBookmark(idx) {
@@ -2365,7 +2735,7 @@ function getNextDeparture(code) {
   if (!all.length) return null;
   const now  = new Date().getHours() * 60 + new Date().getMinutes();
   const next = all.find(t => toM(t) >= now);
-  return next || (all[0] ? all[0] + ' (yarın)' : null);
+  return next || (all[0] ? all[0] + t('tomorrowParen') : null);
 }
 
 async function initPlanner() {
@@ -2415,7 +2785,7 @@ async function initPlanner() {
     }
     try { localStorage.setItem('kentkart_routes', JSON.stringify([...kentkartRouteMap])); } catch {}
   } catch (e) {
-    setHint('Durak verisi yüklenemedi: ' + e.message, true);
+    setHint(t('stopDataFailed',{err:e.message}), true);
     return;
   }
 
@@ -2454,7 +2824,7 @@ async function initPlanner() {
   window._updateStopVis();
 
   document.getElementById('loadBar').style.width='100%';
-  document.getElementById('loadStatus').textContent = allStops.size+' durak';
+  document.getElementById('loadStatus').textContent = t('stopsLoaded',{n:allStops.size});
   ['btnOrigin','btnDest','btnPlanTime'].forEach(id=>document.getElementById(id).disabled=false);
   setMode('origin');
   renderBookmarksBar();
@@ -2576,7 +2946,7 @@ function resetPlanner() {
   document.getElementById('btnReset').style.color = '#4a5568';
   document.getElementById('swap-row').style.display = 'none';
   setMode('origin');
-  setHint('Haritaya tıklayın → başlangıç seçin.');
+  setHint(t('hintClickStart'));
 }
 
 function setPlanOffset(mins) {
@@ -2591,7 +2961,7 @@ function setPlanOffset(mins) {
   const offsetLabel = mins > 0 ? '+' + (mins < 60 ? mins + 'dk' : (mins/60) + 'sa') : 'Planla';
   if (clockBtn) clockBtn.innerHTML = '⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">' + offsetLabel + '</span>';
   const label = mins === 0 ? '' : (mins < 60 ? mins + ' dk sonra' : (mins/60) + ' sa sonra');
-  setHint(label ? label + ' için planlanıyor.' : (originStop && destStop ? 'Rota yenileniyor…' : 'Haritaya tıklayın → başlangıç seçin.'));
+  setHint(label ? t('planningFor',{label}) : (originStop && destStop ? t('hintRouteRefresh') : t('hintClickStart')));
   if (originStop && destStop) findRoutes();
 }
 
@@ -2605,14 +2975,14 @@ function expandPanel(count) {
   const handle = document.getElementById('panel-handle');
   handle.classList.add('visible');
   document.getElementById('ph-label').textContent = count ? count + ' hat bulundu' : '';
-  document.getElementById('ph-btn').textContent = '🗺 Haritayı Gör';
+  document.getElementById('ph-btn').textContent = t('phMap');
 }
 
 function collapsePanel() {
   panelExpanded = false;
   document.querySelector('.p-top').classList.remove('panel-full');
   document.getElementById('map').classList.remove('panel-full');
-  document.getElementById('ph-btn').textContent = '☰ Hatları Göster';
+  document.getElementById('ph-btn').textContent = t('phLines');
   if (window._map) setTimeout(() => window._map.invalidateSize(), 260);
 }
 
@@ -2647,16 +3017,16 @@ function showPlannerGuide(step) {
   if (step === 'origin') {
     results.innerHTML =
       '<div id="planner-guide">' +
-        '<div class="guide-headline">Başlangıç noktanızı seçin</div>' +
-        '<button class="guide-gps" onclick="useGPS()">🛰&nbsp; GPS Konumumu Kullan</button>' +
-        '<span class="guide-or">veya haritaya dokunun</span>' +
+        '<div class="guide-headline">'+t('guideStartHeadline')+'</div>' +
+        '<button class="guide-gps" onclick="useGPS()">'+t('guideGps')+'</button>' +
+        '<span class="guide-or">'+t('guideOr')+'</span>' +
       '</div>';
     if (ripple) ripple.classList.add('active');
   } else if (step === 'dest') {
     results.innerHTML =
       '<div id="planner-guide">' +
-        '<div class="guide-headline">Hedef noktanızı seçin</div>' +
-        '<div class="guide-sub">Gitmek istediğiniz yere haritada dokunun<br>ya da ⭐ Yerlerim\'den seçin</div>' +
+        '<div class="guide-headline">'+t('guideDestHeadline')+'</div>' +
+        '<div class="guide-sub">'+t('guideDestSub')+'</div>' +
       '</div>';
     if (ripple) ripple.classList.add('active');
   } else {
@@ -2704,8 +3074,8 @@ function applyCustomTime() {
   // Update clock button label
   const clockBtn = document.getElementById('btnPlanTime');
   if (clockBtn) clockBtn.innerHTML = '⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">' + val + '</span>';
-  const hint = offset === 0 ? '' : val + ' için planlanıyor.';
-  setHint(hint || (originStop && destStop ? 'Rota yenileniyor…' : 'Haritaya tıklayın → başlangıç seçin.'));
+  const hint = offset === 0 ? '' : t('planningFor',{label:val});
+  setHint(hint || (originStop && destStop ? t('hintRouteRefresh') : t('hintClickStart')));
   if (originStop && destStop) findRoutes();
 }
 
@@ -2733,15 +3103,15 @@ function setMode(m){
     setHint('');
     if(!currentMatches.length && !tripMatch) showPlannerGuide('dest');
   } else {
-    setHint('Haritaya tıklayın → yakın durakları görün.');
+    setHint(t('hintNearbyStops'));
     hidePlannerGuide();
     document.getElementById('stopPanel').innerHTML='';
   }
 }
 
 function useGPS(){
-  if(!navigator.geolocation){alert('Konum desteği yok.');return;}
-  setHint('GPS alınıyor…');
+  if(!navigator.geolocation){alert(t('geoUnsupported'));return;}
+  setHint(t('gettingGPS'));
   const onPos = pos => {
     const{latitude:lat,longitude:lng}=pos.coords;
     window._map.setView([lat,lng],16);
@@ -2754,7 +3124,7 @@ function useGPS(){
   // hardware fix is what made this take ~10s on phones.
   navigator.geolocation.getCurrentPosition(
     onPos,
-    () => setHint('Konum alınamadı.', true),
+    () => setHint(t('gpsFailed'), true),
     { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 }
   );
 }
@@ -2800,24 +3170,24 @@ function applyPoint(lat,lng,which){
   // by maxBounds so they never trigger this.
   const [[sLat, wLng], [nLat, eLng]] = MAP_BOUNDS;
   if (lat < sLat || lat > nLat || lng < wLng || lng > eLng) {
-    setHint('Bu konum Çanakkale sınırlarının dışında. Lütfen haritadan bir nokta seçin.', true);
+    setHint(t('outOfBounds'), true);
     return;
   }
   const{stop,meters}=nearestStop(lat,lng);if(!stop)return;
   if(which==='origin'){
     originClick={lat,lng};originStop={...stop,meters};
     if(originMarker)window._map.removeLayer(originMarker);if(originPin)window._map.removeLayer(originPin);
-    originMarker=L.marker([lat,lng],{icon:mkPinIcon('#2563eb'),zIndexOffset:1100}).bindTooltip('Konumunuz').addTo(window._map);
+    originMarker=L.marker([lat,lng],{icon:mkPinIcon('#2563eb'),zIndexOffset:1100}).bindTooltip(t('tipYou')).addTo(window._map);
     document.getElementById('originName').textContent=stop.stopName;
-    document.getElementById('originDist').textContent=fmtDist(meters)+' (en yakın)';
+    document.getElementById('originDist').textContent=fmtDist(meters)+' '+t('nearest');
     const rb=document.getElementById('btnReset');rb.disabled=false;rb.style.color='#ef4444';rb.style.borderColor='#7f1d1d';
     setMode('dest');
   }else{
     destClick={lat,lng};destStop={...stop,meters};
     if(destMarker)window._map.removeLayer(destMarker);if(destPin)window._map.removeLayer(destPin);
-    destMarker=L.marker([lat,lng],{icon:mkPinIcon('#16a34a'),zIndexOffset:1100}).bindTooltip('Hedefiniz').addTo(window._map);
+    destMarker=L.marker([lat,lng],{icon:mkPinIcon('#16a34a'),zIndexOffset:1100}).bindTooltip(t('tipDest')).addTo(window._map);
     document.getElementById('destName').textContent=stop.stopName;
-    document.getElementById('destDist').textContent=fmtDist(meters)+' (en yakın)';
+    document.getElementById('destDist').textContent=fmtDist(meters)+' '+t('nearest');
     pushRecentDest(stop);
   }
   document.getElementById('swap-row').style.display = (originStop && destStop) ? '' : 'none';
@@ -2834,13 +3204,13 @@ function swapOD() {
   if (originMarker) { window._map.removeLayer(originMarker); originMarker = null; }
   if (destMarker)   { window._map.removeLayer(destMarker);   destMarker   = null; }
   // Re-create with swapped roles
-  originMarker = L.marker([originClick.lat, originClick.lng], { icon: mkPinIcon('#2563eb'), zIndexOffset: 1100 }).bindTooltip('Konumunuz').addTo(window._map);
-  destMarker   = L.marker([destClick.lat,   destClick.lng],   { icon: mkPinIcon('#16a34a'), zIndexOffset: 1100 }).bindTooltip('Hedefiniz').addTo(window._map);
+  originMarker = L.marker([originClick.lat, originClick.lng], { icon: mkPinIcon('#2563eb'), zIndexOffset: 1100 }).bindTooltip(t('tipYou')).addTo(window._map);
+  destMarker   = L.marker([destClick.lat,   destClick.lng],   { icon: mkPinIcon('#16a34a'), zIndexOffset: 1100 }).bindTooltip(t('tipDest')).addTo(window._map);
   // Update card labels
   document.getElementById('originName').textContent = originStop.stopName;
-  document.getElementById('originDist').textContent = fmtDist(originStop.meters) + ' (en yakın)';
+  document.getElementById('originDist').textContent = fmtDist(originStop.meters) + ' ' + t('nearest');
   document.getElementById('destName').textContent   = destStop.stopName;
-  document.getElementById('destDist').textContent   = fmtDist(destStop.meters) + ' (en yakın)';
+  document.getElementById('destDist').textContent   = fmtDist(destStop.meters) + ' ' + t('nearest');
   findRoutes();
 }
 
@@ -2861,8 +3231,8 @@ const _nextPaint = () => new Promise(r => requestAnimationFrame(() => requestAni
 async function findRoutes(){
   const gen = ++_findGen;
   clearDrawn();clearBuses();showNetworkStops();
-  _showPlannerSpinner('Rotalar hesaplanıyor…');
-  setHint('Rotalar hesaplanıyor…');
+  _showPlannerSpinner(t('calcRoutes'));
+  setHint(t('calcRoutes'));
   await _nextPaint();
   if (gen !== _findGen) return;
 
@@ -2878,8 +3248,8 @@ async function findRoutes(){
   currentMatches = trips.list; tripMatch = null;
   hidePlannerGuide();
   const hasMulti = trips.list.some(m => m.isMultiLeg);
-  const base = trips.list.length + (hasMulti ? ' seçenek bulundu (aktarmalı dahil).' : ' hat bulundu. Detay için bir hatta tıklayın.');
-  setHint(trips.relaxed ? base + ' Yürüme mesafeleri ayarınızdan uzun.' : base, trips.relaxed);
+  const base = hasMulti ? t('foundNMulti',{n:trips.list.length}) : t('foundN',{n:trips.list.length});
+  setHint(trips.relaxed ? base + ' ' + t('walksTooLong') : base, trips.relaxed);
   renderPlannerResults(trips.list); selectPlannerMatch(trips.list[0]);
   expandPanel(trips.list.length);
   if (refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(refreshBuses, 30000);
@@ -2901,6 +3271,8 @@ const TRANSFER_ETA_TOLERANCE_MIN = 5; // (B) transfers within this of the fastes
 const TRANSFER_CROSS_ROAD_M = 60;    // (C) a transfer walk ≤ this is a "cross the road" hop, preferred outright
 const WALK_RELAX_MULT = 3;           // long-walk fallback radius = walkRadius × this
 const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
+const REACH_GRACE_MIN = 3;           // a live bus this many mins "too soon" still counts (people speed up)
+const LIVE_RANK_MAX_FETCH = 12;      // cap on distinct route+dir live fetches per plan
 const _tmMin = t => { const [h, m] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + m; };
 
 // Minutes from a trip's terminal departure until the bus reaches a stop, taken
@@ -2936,6 +3308,48 @@ function _waitFromTimes(times, travelToBoardMins, fromMins) {
   const travel = travelToBoardMins;
   for (const t of times) { const a = t + travel; if (a >= fromMins) return Math.max(0, Math.round(a - fromMins)); }
   return Math.max(0, Math.round(times[0] + travel + 1440 - fromMins)); // first bus tomorrow
+}
+
+// True when the next catchable departure is the LAST of the operating day (no
+// later same-day departure). `times` are pre-sorted terminal-departure minutes.
+function _isLastSefer(times, travelToBoardMins, fromMins) {
+  if (!times.length) return false;
+  for (let i = 0; i < times.length; i++)
+    if (times[i] + travelToBoardMins >= fromMins) return i === times.length - 1;
+  return false; // all gone / wrapped to tomorrow — that trip is already dropped
+}
+
+// Wait (minutes, from when you reach the stop) for the soonest LIVE bus that is
+// approaching the board stop AND that you can still catch — a bus arriving up to
+// REACH_GRACE_MIN before you get there still counts (people hurry). Returns
+// Infinity when no live bus is catchable, so callers take min(schedule, live):
+// live can only lower a wait, never raise it.
+function _liveBoardWaitMins(stops, boardIdx, buses, nowMins, arriveAtStopMins) {
+  if (!buses || !buses.length || boardIdx < 0) return Infinity;
+  const idxOf = new Map(stops.map((s, i) => [s.stopId, i]));
+  let best = Infinity;
+  for (const b of buses) {
+    const bi = idxOf.get(b.stopId);
+    if (bi == null || bi >= boardIdx) continue;            // not approaching this stop
+    const arrival = nowMins + _rideMins(stops, bi, boardIdx);
+    if (arrival >= arriveAtStopMins - REACH_GRACE_MIN)     // catchable (with grace)
+      best = Math.min(best, arrival);
+  }
+  return best === Infinity ? Infinity : Math.max(0, best - arriveAtStopMins);
+}
+
+// Best-effort live bus positions for one route+direction. Returns the busList or
+// [] on any failure/timeout — never throws, so the planner degrades to schedule.
+async function _fetchLiveBuses(code, dir) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(API + 'web/pathInfo?' + QS + '&displayRouteCode=' + encodeURIComponent(code) + '&direction=' + dir, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return d.pathList?.[0]?.busList || [];
+  } catch { return []; }
 }
 
 // Real walking distance (meters) from one point to a set of stops, via Valhalla
@@ -3031,7 +3445,8 @@ async function planTrips(gen) {
       if (ai >= 0) { chosen = { bi: b.i, bw: b.w, ai, aw }; break; }
     }
     if (!chosen) continue;
-    const wait = _waitFromTimes(u.times, _travelToStopMins(u.st[chosen.bi]), nowMins + walkMins(chosen.bw));
+    const boardArr = nowMins + walkMins(chosen.bw);
+    const wait = _waitFromTimes(u.times, _travelToStopMins(u.st[chosen.bi]), boardArr);
     if (wait >= MAX_WAIT_MIN) continue;
     const eta = Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
     candidates.push({
@@ -3039,6 +3454,8 @@ async function planTrips(gen) {
       board: u.st[chosen.bi], alight: u.st[chosen.ai],
       walkB: Math.round(chosen.bw), walkA: Math.round(chosen.aw),
       sc: chosen.ai - chosen.bi, _wait: wait, _eta: eta, _maxWalk: Math.max(chosen.bw, chosen.aw),
+      _lastBus: _isLastSefer(u.times, _travelToStopMins(u.st[chosen.bi]), boardArr),
+      _bi: chosen.bi, _bw: chosen.bw, // transient: board index + walk metres, for the live pass
     });
   }
 
@@ -3100,12 +3517,17 @@ async function planTrips(gen) {
           ? crossRoad.reduce((a, b) => (b.xi < a.xi || (b.xi === a.xi && b.eta < a.eta)) ? b : a)
           : pool.reduce((a, b) => (b.t < a.t || (b.t === a.t && b.eta < a.eta)) ? b : a);
       }
-      if (best) candidates.push({
-        isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w),
+      if (best) {
+      const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + best.ride1 + walkMins(best.t);
+      const lastBus = _isLastSefer(A.u.times, _travelToStopMins(board.s), nowMins + walkMins(board.w))
+                   || _isLastSefer(B.u.times, _travelToStopMins(best.Y), arriveB2);
+      candidates.push({
+        isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w), _lastBus: lastBus,
         leg1: {
           path: A.u.p, route: A.u.route, board: board.s, alight: best.X,
           walkB: Math.round(board.w), sc: best.xi - board.i, wait: leg1Wait,
           ride: Math.round(best.ride1), buses: A.u.buses,
+          _bi: board.i, _bw: board.w, // transient: board index + walk metres, for the live pass
         },
         leg2: {
           path: B.u.p, route: B.u.route, board: best.Y, alight: alight.s,
@@ -3114,17 +3536,54 @@ async function planTrips(gen) {
           transferWalkM: Math.round(best.t), transferWalkMins: Math.max(0, Math.round(walkMins(best.t))),
         },
       });
+      }
     }
   }
 
   if (!candidates.length) {
     currentMatches = []; tripMatch = null; selectedMatch = null;
     clearDrawn(); clearBuses();
-    setHint('Bağlantı bulunamadı.', true);
+    setHint(t('noConnection'), true);
     document.getElementById('results').innerHTML =
-      '<p style="color:#4a5568;font-size:.8rem;padding:6px 0">Bu konum ve hedef için hat bulunamadı.</p>';
+      '<p style="color:#4a5568;font-size:.8rem;padding:6px 0">'+t('noConnectionLong')+'</p>';
     hidePanelHandle();
     return null;
+  }
+
+  // ── Live refinement (b) ──────────────────────────────────────────────────────
+  // Fold real-time bus positions into the BOARDING wait: it becomes
+  // min(scheduleWait, soonest catchable live bus). Live can only LOWER a wait, so
+  // if it's missing / slow / fails — or we're planning ahead — the outcome is the
+  // schedule-only result, unchanged. Leg-2 stays schedule (it boards in the
+  // future, where current positions don't help). Bounded to the distinct routes
+  // of the top candidates so we fire at most LIVE_RANK_MAX_FETCH kentkart calls.
+  if (!planOffset) {
+    const want = new Map(); // "code|dir" → { code, dir }
+    for (const c of [...candidates].sort((a, b) => a._eta - b._eta)) {
+      const p = c.isMultiLeg ? c.leg1.path : c.path;
+      const key = p.displayRouteCode + '|' + p.direction;
+      if (!want.has(key)) want.set(key, { code: p.displayRouteCode, dir: p.direction });
+      if (want.size >= LIVE_RANK_MAX_FETCH) break;
+    }
+    const keys = [...want.keys()];
+    const lists = await Promise.all(keys.map(k => _fetchLiveBuses(want.get(k).code, want.get(k).dir)));
+    if (gen !== _findGen) return null;
+    const liveMap = new Map(keys.map((k, i) => [k, lists[i]]));
+    for (const c of candidates) {
+      const leg = c.isMultiLeg ? c.leg1 : c;
+      const p = leg.path;
+      const buses = liveMap.get(p.displayRouteCode + '|' + p.direction);
+      if (!buses || !buses.length) continue;
+      leg.buses = buses; // surface live buses on the card (chips / detail) so it isn't "Aktif araç yok"
+      const arriveAtStop = nowMins + walkMins(leg._bw);
+      const liveWait = _liveBoardWaitMins(p.busStopList || [], leg._bi, buses, nowMins, arriveAtStop);
+      const schedWait = c.isMultiLeg ? c.leg1.wait : c._wait;
+      if (liveWait < schedWait) {
+        c._eta -= (schedWait - liveWait);
+        if (c.isMultiLeg) { c.leg1.wait = liveWait; c.leg1._live = true; }
+        else { c._wait = liveWait; c._live = true; }
+      }
+    }
   }
 
   // Redundant-transfer filter: if a single bus already makes the whole trip
@@ -3200,35 +3659,40 @@ async function _walkMatrix(sources, targets) {
 function renderPlannerResults(matches){
   const cont=document.getElementById('results');
   const isMulti = matches.length && matches[0].isMultiLeg;
-  cont.innerHTML='<div class="result-header">' + (isMulti ? 'Aktarmalı Hatlar' : 'Bağlantılı Hatlar') + '</div>';
+  cont.innerHTML='<div class="result-header">' + (isMulti ? t('resultsTransfer') : t('resultsDirect')) + '</div>';
   for(const m of matches){
     const c=document.createElement('div');c.className='p-route-card';
     if (m.isMultiLeg) {
       const h1=(m.leg1.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
       const h2=(m.leg2.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
       const totalRide = m.leg1.ride + m.leg1.wait + m.leg2.ride + m.leg2.wait;
-      const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="Yürüme yarıçapından uzun">⚠️ uzun yürüyüş</span>' : '';
+      const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="'+t('longWalkTitle')+'">'+t('longWalk')+'</span>' : '';
+      const liveChip = m.leg1._live ? '<span class="p-live-badge" title="'+t('liveTitle')+'">'+t('live')+'</span>' : '';
+      const lastBusChip = m._lastBus ? '<span class="p-lastbus-badge" title="'+t('lastBusTitle')+'">'+t('lastBus')+'</span>' : '';
       c.innerHTML =
         '<div class="p-route-top">'
-        + '<span class="p-multileg-badge">🔁 1 aktarma</span>'
-        + longWalkChip
+        + '<span class="p-multileg-badge">'+t('oneTransfer')+'</span>'
+        + longWalkChip + lastBusChip
         + '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
         + '<span class="p-leg-arrow">→</span>'
         + '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
-        + '<span class="p-route-eta">~'+m._eta+' dk</span>'
+        + liveChip
+        + '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>'
-        + '<div class="p-route-meta">'+m.leg1.sc+' + '+m.leg2.sc+' durak · '+totalRide+' dk yolculuk</div>'
+        + '<div class="p-route-meta">'+t('metaMulti',{a:m.leg1.sc,b:m.leg2.sc,ride:totalRide})+'</div>'
         + '<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.leg1.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.leg1.walkB)+')</span></div>'
         + '<div style="font-size:.7rem;color:#f59e0b">🔁 <b>'+esc(m.leg1.alight.stopName)+'</b>'
-        + (m.leg2.transferWalkM > 0 ? ' <span style="color:#4a5568">('+fmtDist(m.leg2.transferWalkM)+' aktarma yürüyüşü)</span>' : ' <span style="color:#4a5568">(aynı durakta)</span>')
+        + (m.leg2.transferWalkM > 0 ? ' <span style="color:#4a5568">'+t('transferWalkParen',{dist:fmtDist(m.leg2.transferWalkM)})+'</span>' : ' <span style="color:#4a5568">'+t('sameStopParen')+'</span>')
         + '</div>'
         + '<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.leg2.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.leg2.walkA)+')</span></div>';
     } else {
       const hex=(m.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
-      const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||'aktif')+'</span>').join(''):'<span class="bus-chip muted">Aktif araç yok</span>';
-      const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="Yürüme yarıçapından uzun">⚠️ uzun yürüyüş</span>' : '';
-      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+'<span class="p-route-eta">~'+m._eta+' dk</span></div>'
-        +'<div class="p-route-meta">'+m.sc+' durak arası</div>'
+      const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||t('activeShort'))+'</span>').join(''):'<span class="bus-chip muted">'+t('noActiveBus')+'</span>';
+      const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="'+t('longWalkTitle')+'">'+t('longWalk')+'</span>' : '';
+      const liveChip = m._live ? '<span class="p-live-badge" title="'+t('liveTitle')+'">'+t('live')+'</span>' : '';
+      const lastBusChip = m._lastBus ? '<span class="p-lastbus-badge" title="'+t('lastBusTitle')+'">'+t('lastBus')+'</span>' : '';
+      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+lastBusChip+liveChip+'<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span></div>'
+        +'<div class="p-route-meta">'+t('metaDirect',{n:m.sc})+'</div>'
         +'<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkB)+')</span></div>'
         +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>'
         +'<div style="margin-top:4px">'+bh+'</div>';
@@ -3244,17 +3708,17 @@ function _appendTaxiCard() {
   if (!currentTaxi) return;
   const cont = document.getElementById('results');
   if (!cont || cont.querySelector('.p-taxi-card')) return;
-  const t = currentTaxi;
+  const tx = currentTaxi;
   const c = document.createElement('div');
   c.className = 'p-taxi-card';
-  if (t.coords && t.coords.length) c.style.cursor = 'pointer';
+  if (tx.coords && tx.coords.length) c.style.cursor = 'pointer';
   c.innerHTML =
     '<div class="p-taxi-left"><span class="p-taxi-ico">🚕</span><div>'
-    + '<div class="p-taxi-title">Taksi</div>'
-    + '<div class="p-taxi-sub">'+t.km.toFixed(1)+' km · ~'+t.min+' dk</div>'
+    + '<div class="p-taxi-title">'+t('taxiTitle')+'</div>'
+    + '<div class="p-taxi-sub">'+t('taxiSub',{km:tx.km.toFixed(1),min:tx.min})+'</div>'
     + '</div></div>'
-    + '<div class="p-taxi-fare">≈'+t.tl+' ₺</div>';
-  if (t.coords && t.coords.length) c.onclick = showTaxiRoute;
+    + '<div class="p-taxi-fare">≈'+tx.tl+' ₺</div>';
+  if (tx.coords && tx.coords.length) c.onclick = showTaxiRoute;
   cont.appendChild(c);
 }
 
@@ -3460,8 +3924,8 @@ function drawBuses(buses,hex,code,stops,noClear){
     let popup = '<b>'+esc(code||'')+'</b>';
     if (b.busLabel) popup += ' · '+esc(b.busLabel);
     if (b.plateNumber) popup += '<br>'+esc(b.plateNumber);
-    if (cur)  popup += '<br><span style="color:#7eb3f7">Şu an:</span> '+esc(cur.stopName);
-    if (next) popup += '<br><span style="color:#22c55e">Sıradaki:</span> '+esc(next.stopName);
+    if (cur)  popup += '<br><span style="color:#7eb3f7">'+t('popupNow')+'</span> '+esc(cur.stopName);
+    if (next) popup += '<br><span style="color:#22c55e">'+t('popupNext')+'</span> '+esc(next.stopName);
     busMarkers.push(L.marker([bla,blo],{icon:mkBusIcon(hex,brg,label),zIndexOffset:2000}).bindPopup(popup).addTo(window._map));
   }
 }
@@ -3530,7 +3994,7 @@ async function trackRoute(displayRouteCode) {
     const results = document.getElementById('results');
     results.style.display = '';
     document.getElementById('stopPanel').style.display = 'none';
-    results.innerHTML = '<div style="padding:16px 4px;color:#4a5568;font-size:.82rem">Hat verileri yükleniyor…</div>';
+    results.innerHTML = '<div style="padding:16px 4px;color:#4a5568;font-size:.82rem">'+t('routeDataLoading')+'</div>';
     const ok = await new Promise(resolve => {
       const deadline = Date.now() + 60000;
       const iv = setInterval(() => {
@@ -3540,7 +4004,7 @@ async function trackRoute(displayRouteCode) {
     });
     if (!ok) {
       document.getElementById('results').innerHTML =
-        '<div style="padding:16px 4px;color:#ef4444;font-size:.82rem">Hat verileri yüklenemedi.</div>';
+        '<div style="padding:16px 4px;color:#ef4444;font-size:.82rem">'+t('routeDataFailed')+'</div>';
       return;
     }
   }
@@ -3553,7 +4017,7 @@ async function trackRoute(displayRouteCode) {
   );
   if (!trackedPaths.length) {
     document.getElementById('results').innerHTML =
-      '<div style="padding:16px 4px;color:#ef4444;font-size:.82rem">' + esc(displayRouteCode) + ' hattı bulunamadı.</div>';
+      '<div style="padding:16px 4px;color:#ef4444;font-size:.82rem">' + t('routeNotFound',{code:esc(displayRouteCode)}) + '</div>';
     return;
   }
 
@@ -3593,12 +4057,12 @@ function showTrackPanel() {
   trackedPaths.forEach((p, i) => {
     html += '<button class="track-dir-btn'+(i===trackedPathIdx?' active':'')+'" '
           + 'onclick="selectTrackPath('+i+')" id="tdb-'+i+'">'
-          + esc(p.path.headSign || ('Yön '+(i+1)))
+          + esc(p.path.headSign || t('dirN',{n:(i+1)}))
           + '</button>';
   });
   html += '</div>';
 
-  html += '<div class="track-bus-list" id="track-bus-list"><div style="color:#4a5568;font-size:.75rem;padding:4px 0">Otobüsler yükleniyor…</div></div>';
+  html += '<div class="track-bus-list" id="track-bus-list"><div style="color:#4a5568;font-size:.75rem;padding:4px 0">'+t('busesLoading')+'</div></div>';
   html += '<div class="track-refresh" id="track-refresh"></div>';
   html += '</div>';
   cont.innerHTML = html;
@@ -3658,14 +4122,14 @@ async function selectTrackPath(idx, refreshOnly = false) {
 
   trackLastRefresh = Date.now();
   const el = document.getElementById('track-refresh');
-  if (el) el.textContent = 'Güncellendi: az önce · 15s aralıklarla otomatik';
+  if (el) el.textContent = t('updatedJustNow');
 }
 
 function renderTrackBuses(buses, pe, hex) {
   const list = document.getElementById('track-bus-list');
   if (!list) return;
   if (!buses || !buses.length) {
-    list.innerHTML = '<div style="color:#4a5568;font-size:.75rem;padding:4px 0">Aktif otobüs bulunamadı.</div>';
+    list.innerHTML = '<div style="color:#4a5568;font-size:.75rem;padding:4px 0">'+t('noActiveBuses')+'</div>';
     return;
   }
   const stops = pe.path.busStopList || [];
@@ -3680,15 +4144,15 @@ function renderTrackBuses(buses, pe, hex) {
     const seq  = seqOf[b.stopId] ?? -1;
     const rem  = seq >= 0 ? lastSeq - seq : null;
     const col  = rem === null ? '#f59e0b' : rem <= 3 ? '#ef4444' : rem <= 8 ? '#22c55e' : '#7eb3f7';
-    const remTxt = rem !== null ? rem + ' durak kaldı' : 'Konum bilinmiyor';
+    const remTxt = rem !== null ? t('stopsLeft',{n:rem}) : t('locUnknown');
     html += '<div class="track-bus-row">'
           + '<div class="bus-dot" style="background:#'+hex+';width:10px;height:10px;border-radius:50%;flex-shrink:0"></div>'
-          + '<div style="flex:1"><b>' + esc(b.plateNumber || b.busLabel || 'Otobüs') + '</b>'
+          + '<div style="flex:1"><b>' + esc(b.plateNumber || b.busLabel || t('busWord')) + '</b>'
           + '<div style="font-size:.68rem;color:#4a5568">' + esc(b.stopName || stops.find(s=>s.stopId===b.stopId)?.stopName || '') + '</div></div>'
           + '<span style="font-size:.72rem;font-weight:700;color:'+col+'">' + remTxt + '</span>'
           + '</div>';
   }
-  list.innerHTML = html || '<div style="color:#4a5568;font-size:.75rem;padding:4px 0">Aktif otobüs bulunamadı.</div>';
+  list.innerHTML = html || '<div style="color:#4a5568;font-size:.75rem;padding:4px 0">'+t('noActiveBuses')+'</div>';
 }
 
 function closeTrackPanel() {
@@ -3696,7 +4160,7 @@ function closeTrackPanel() {
   trackedPaths = [];
   clearDrawn(); clearBuses(); showNetworkStops();
   document.getElementById('results').innerHTML = '';
-  setHint('Haritaya tıklayın → başlangıç seçin.');
+  setHint(t('hintClickStart'));
 }
 
 // ── Bus arrival notifications (Cloudflare Worker + Web Push) ─────────────────
@@ -3708,16 +4172,16 @@ async function toggleBusNotify() {
   if (notifyMatch && tripMatch && !tripMatch.isMultiLeg && notifyMatch.path.path_code === tripMatch.path.path_code) {
     await stopBusNotify();
     const btn = document.getElementById('notify-btn');
-    if (btn) { btn.textContent = '🔕 Bildir'; btn.classList.remove('active'); }
+    if (btn) { btn.textContent = t('notifyOff'); btn.classList.remove('active'); }
     return;
   }
 
   if (WORKER_URL === 'REPLACE_WITH_YOUR_WORKER_URL') {
-    alert('Worker URL ayarlanmamış. Kurulum talimatlarını takip edin.');
+    alert(t('pushWorkerNotSet'));
     return;
   }
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    alert('Bu tarayıcı Web Push desteklemiyor.');
+    alert(t('pushUnsupported'));
     return;
   }
 
@@ -3725,14 +4189,14 @@ async function toggleBusNotify() {
   const perm = Notification.permission === 'granted'
     ? 'granted' : await Notification.requestPermission();
   if (perm !== 'granted') {
-    alert('Bildirim izni reddedildi. Tarayıcı ayarlarından izin verin.');
+    alert(t('pushPermDenied'));
     return;
   }
 
   // Get or create push subscription
   let reg;
   try { reg = await navigator.serviceWorker.ready; } catch {
-    alert('Servis çalışanı hazır değil.'); return;
+    alert(t('pushSwNotReady')); return;
   }
 
   // Always unsubscribe first — stale subscriptions from previous VAPID keys
@@ -3750,10 +4214,8 @@ async function toggleBusNotify() {
     });
   } catch (e) {
     const isBrave = (navigator.brave && await navigator.brave.isBrave().catch(()=>false)) || false;
-    const reason  = isBrave
-      ? 'Brave tarayıcısında masaüstünde Google push servisi varsayılan olarak devre dışıdır.'
-      : 'Tarayıcınız push bildirimlerine izin vermiyor.';
-    alert('Bildirim aboneliği oluşturulamadı.\n\n' + reason);
+    const reason  = isBrave ? t('pushBrave') : t('pushNoPerm');
+    alert(t('pushSubFailed',{reason}));
     return;
   }
 
@@ -3809,9 +4271,9 @@ async function toggleBusNotify() {
     notifySubId  = id;
     notifyMatch  = m;
     const btn = document.getElementById('notify-btn');
-    if (btn) { btn.textContent = '🔔 Açık'; btn.classList.add('active'); }
+    if (btn) { btn.textContent = t('notifyOn'); btn.classList.add('active'); }
   } catch (e) {
-    alert('Worker\'a bağlanılamadı: ' + e.message);
+    alert(t('pushWorkerConnFail',{err:e.message}));
   }
 }
 
@@ -3866,86 +4328,6 @@ if ('serviceWorker' in navigator) {
 // ── Trip detail ───────────────────────────────────────────────────────────────
 // (MINS_PER_STOP, MAX_WAIT_MIN, TRANSFER_PENALTY_MIN are declared with the planner above.)
 
-// Render the trip-detail panel for a 2-leg (1-transfer) match. Mirrors the
-// single-leg layout but adds an explicit Aktarma step between the two rides.
-function _showMultiLegTripDetail(m) {
-  const h1 = (m.leg1.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
-  const h2 = (m.leg2.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
-  const walkToBoardMins  = Math.max(1, Math.round(m.leg1.walkB / SETTINGS.walkSpeedMpm));
-  const walkFromAlightMins = Math.max(1, Math.round(m.leg2.walkA / SETTINGS.walkSpeedMpm));
-  const totalEta = m._eta;
-
-  // Predicted arrival time at the transfer stop (minutes-into-day)
-  const nowMins = new Date().getHours()*60 + new Date().getMinutes() + planOffset;
-  const arriveAtTransferMins = nowMins + walkToBoardMins + m.leg1.wait + m.leg1.ride + (m.leg2.transferWalkMins || 0);
-  const fmtClock = mins => {
-    const wrapped = ((mins % 1440) + 1440) % 1440;
-    const h = Math.floor(wrapped / 60).toString().padStart(2, '0');
-    const mn = Math.floor(wrapped % 60).toString().padStart(2, '0');
-    return h + ':' + mn;
-  };
-
-  let html = '';
-  html += '<div class="trip-section">';
-  html += '<div class="trip-section-title">Aktarmalı Yolculuk · Tahmini ' + totalEta + ' dk</div>';
-
-  // Step 1: walk to first board
-  html += '<div class="journey-step">'
-       + '<div class="journey-num">1</div>'
-       + '<div class="journey-text">'
-       +   '<div class="journey-main">' + walkToBoardMins + ' dk yürüyüş</div>'
-       +   '<div class="journey-detail">' + fmtDist(m.leg1.walkB) + ' · ' + esc(m.leg1.board.stopName) + '\'na</div>'
-       + '</div></div>';
-
-  // Step 2: leg 1 ride
-  html += '<div class="journey-step">'
-       + '<div class="journey-num">2</div>'
-       + '<div class="journey-text">'
-       +   '<div class="journey-main">'
-       +     '<span class="sched-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
-       +     ' · ' + m.leg1.sc + ' durak · ' + m.leg1.ride + ' dk'
-       +   '</div>'
-       +   '<div class="journey-detail">Sıradaki kalkış ~' + m.leg1.wait + ' dk içinde</div>'
-       + '</div></div>';
-
-  // Step 3: transfer
-  const xferText = m.leg2.transferWalkM > 0
-    ? m.leg2.transferWalkMins + ' dk · ' + fmtDist(m.leg2.transferWalkM) + ' aktarma yürüyüşü'
-    : 'Aynı durakta aktarma';
-  html += '<div class="journey-step">'
-       + '<div class="journey-num">🔁</div>'
-       + '<div class="journey-text">'
-       +   '<div class="journey-main">Aktarma · ' + esc(m.leg1.alight.stopName) + '</div>'
-       +   '<div class="journey-detail">' + xferText + ' · ' + esc(m.leg2.path.displayRouteCode) + '\'in sıradaki kalkışı '+fmtClock(arriveAtTransferMins + m.leg2.wait)+' (~' + m.leg2.wait + ' dk bekleme)</div>'
-       + '</div></div>';
-
-  // Step 4: leg 2 ride
-  html += '<div class="journey-step">'
-       + '<div class="journey-num">3</div>'
-       + '<div class="journey-text">'
-       +   '<div class="journey-main">'
-       +     '<span class="sched-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
-       +     ' · ' + m.leg2.sc + ' durak · ' + m.leg2.ride + ' dk'
-       +   '</div>'
-       +   '<div class="journey-detail">' + esc(m.leg2.board.stopName) + ' → ' + esc(m.leg2.alight.stopName) + '</div>'
-       + '</div></div>';
-
-  // Step 5: walk to destination
-  html += '<div class="journey-step">'
-       + '<div class="journey-num">4</div>'
-       + '<div class="journey-text">'
-       +   '<div class="journey-main">' + walkFromAlightMins + ' dk yürüyüş</div>'
-       +   '<div class="journey-detail">' + fmtDist(m.leg2.walkA) + ' · Hedefe</div>'
-       + '</div></div>';
-
-  html += '</div>';
-
-  const cont = document.getElementById('results');
-  cont.innerHTML = '<div style="padding:12px 2px;overflow-y:auto;height:100%">' + html + '</div>';
-  document.getElementById('stopPanel').style.display = 'none';
-  cont.style.display = '';
-}
-
 // Patches walk distance/time on an open trip-detail card once OSRM resolves
 // with the real on-road distance for either the board or alight leg. The
 // initial render uses straight-line haversine because findRoutes is sync;
@@ -3956,20 +4338,20 @@ function _updateTripWalk(slot, meters) {
   const mins = Math.max(1, Math.round(meters / SETTINGS.walkSpeedMpm));
   if (slot === 'board') {
     w.walkBMins = mins;
-    const t = document.getElementById('trip-walk-board-time');
-    if (t) t.textContent = '~' + mins + ' dk';
+    const el = document.getElementById('trip-walk-board-time');
+    if (el) el.textContent = '~' + mins + ' ' + t('min');
     const d = document.getElementById('trip-walk-board-detail');
-    if (d) d.textContent = fmtDist(meters) + ' · ' + mins + ' dk yürüyüş · Biniş noktası';
+    if (d) d.textContent = t('walkBoardDetail',{dist:fmtDist(meters),mins});
   } else if (slot === 'alight') {
     w.walkAMins = mins;
-    const t = document.getElementById('trip-walk-alight-time');
-    if (t) t.textContent = '~' + mins + ' dk';
+    const el = document.getElementById('trip-walk-alight-time');
+    if (el) el.textContent = '~' + mins + ' ' + t('min');
     const d = document.getElementById('trip-walk-alight-detail');
-    if (d) d.textContent = fmtDist(meters) + ' · ' + mins + ' dk yürüyüş · İniş noktası';
+    if (d) d.textContent = t('walkAlightDetail',{dist:fmtDist(meters),mins});
   } else return;
   const total = w.walkBMins + w.waitMins + w.rideMins + w.walkAMins;
   const tot = document.getElementById('trip-total-value');
-  if (tot) tot.textContent = '~' + total + ' dk';
+  if (tot) tot.textContent = '~' + total + ' ' + t('min');
 }
 
 function showTripDetail(m, fitMap = true, skipMap = false) {
@@ -3978,8 +4360,8 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   if (m.isMultiLeg) { _showMultiLegTripDetail(m); return; }
 
   const stops   = m.path.busStopList || [];
-  const seqOf   = {};
-  stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
+  const seqOf   = {}, idxOf = {};
+  stops.forEach((s, i) => { seqOf[s.stopId] = parseInt(s.seq) || 0; idxOf[s.stopId] = i; });
   const boardSeq  = seqOf[m.board.stopId]  ?? 0;
   const alightSeq = seqOf[m.alight.stopId] ?? 0;
   const boardIdx  = stops.findIndex(s => s.stopId === m.board.stopId);
@@ -3996,16 +4378,17 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Which buses are approaching the board stop (seq < boardSeq)
   const approaching = (m.buses || [])
     .filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= 0 && s < boardSeq; })
-    .map(b    => ({ ...b, stopsAway: boardSeq - seqOf[b.stopId], minsAway: Math.round((boardSeq - seqOf[b.stopId]) * MINS_PER_STOP) }))
+    .map(b    => ({ ...b, stopsAway: boardSeq - seqOf[b.stopId], minsAway: Math.round(_rideMins(stops, idxOf[b.stopId], boardIdx)) }))
     .sort((a, b) => a.stopsAway - b.stopsAway);
   const atStop  = (m.buses || []).filter(b => b.stopId === m.board.stopId);
   const onBoard = (m.buses || []).filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= boardSeq && s < alightSeq; });
   // Only count a live bus as catchable if you can plausibly reach the stop
-  // before it arrives. Allow a small grace — people speed up when they see the
-  // bus coming — so a bus a couple minutes "too soon" still counts; only the
-  // genuinely unreachable ones are dropped (then we fall back to the schedule).
-  const REACH_GRACE_MIN = 3;
+  // before it arrives. The small REACH_GRACE_MIN tolerance means a bus a couple
+  // minutes "too soon" still counts; genuinely unreachable ones are dropped (we
+  // then fall back to the schedule). An at-stop bus is catchable only if you're
+  // basically already there (walk ≤ grace).
   const reachable = approaching.filter(b => b.minsAway >= walkToMins - REACH_GRACE_MIN);
+  const atStopReachable = atStop.length && walkToMins <= REACH_GRACE_MIN;
 
   // ── Schedule lookup ──────────────────────────────────────────────────────────
   // Schedule is keyed by full route name (e.g. "Ç11K KEPEZ ESENLER"), not by code.
@@ -4039,26 +4422,29 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // ── Wait time ────────────────────────────────────────────────────────────────
   // Live data is only relevant when planning for now; skip it when planOffset > 0
   let waitMins = 0, waitLabel = '', waitDetail = '';
-  if (!planOffset && atStop.length) {
+  if (!planOffset && atStopReachable) {
     waitMins   = 0;
-    waitLabel  = 'Otobüs durağa geldi';
+    waitLabel  = t('waitBusArrived');
     waitDetail = atStop[0].plateNumber || '';
   } else if (!planOffset && reachable.length) {
     waitMins   = reachable[0].minsAway;
-    waitLabel  = 'Canlı konum';
-    waitDetail = (reachable[0].plateNumber || 'Otobüs') + ' · ' + reachable[0].stopsAway + ' durak uzakta';
+    waitLabel  = t('waitLive');
+    waitDetail = t('busAwayDetail',{plate:(reachable[0].plateNumber || t('activeShort')),n:reachable[0].stopsAway});
   } else if (nextDep) {
     waitMins   = Math.max(0, Math.round(nextDep.boardMins - nowMins));
-    waitLabel  = (nextDep.tomorrow ? 'Yarın ' : '') + nextDep.time + ' kalkışı';
+    waitLabel  = nextDep.tomorrow ? t('waitDepartTomorrow',{time:nextDep.time}) : t('waitDepart',{time:nextDep.time});
     const arrRaw = nextDep.boardMins % 1440;
     const arrH = Math.floor(arrRaw / 60).toString().padStart(2,'0');
     const arrM = Math.floor(arrRaw % 60).toString().padStart(2,'0');
-    waitDetail = 'Durağa ~' + arrH + ':' + arrM + '\'de gelir' + (nextDep.tomorrow ? ' (yarın)' : '');
+    waitDetail = nextDep.tomorrow ? t('arrivesAtTomorrow',{time:arrH+':'+arrM}) : t('arrivesAt',{time:arrH+':'+arrM});
   } else {
     waitMins   = 999;
-    waitLabel  = 'Program bilinmiyor';
-    waitDetail = 'Canlı konum yok';
+    waitLabel  = t('schedUnknown');
+    waitDetail = t('noLive');
   }
+  // Last-bus notice: when the caught departure is the day's final one.
+  const isLastSeferDetail = !!(nextDep && !nextDep.tomorrow && allSchedTimes.length
+    && nextDep.time === allSchedTimes[allSchedTimes.length - 1]);
 
   const totalMins = walkToMins + waitMins + rideMins + walkFromMins;
   // Snapshot for async OSRM correction — _updateTripWalk patches this card
@@ -4083,25 +4469,25 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Back button + route header
   const isNotifying = notifyMatch && notifyMatch.path.path_code === m.path.path_code;
   html += '<div style="display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #252d40;margin-bottom:10px">'
-        +   '<button class="trip-back" onclick="closeTripDetail()">← Hatlar</button>'
+        +   '<button class="trip-back" onclick="closeTripDetail()">'+t('backToLines')+'</button>'
         +   '<span class="p-route-badge" style="background:#'+hex+';color:'+txt+'">'+m.path.displayRouteCode+'</span>'
         +   '<span style="font-size:.78rem;font-weight:600;flex:1">'+esc(m.path.headSign)+'</span>'
         +   '<button class="notify-btn'+(isNotifying?' active':'')+'" id="notify-btn" '
         +     'onclick="toggleBusNotify()">'
-        +     (isNotifying ? '🔔 Açık' : '🔕 Bildir')
+        +     (isNotifying ? t('notifyOn') : t('notifyOff'))
         +   '</button>'
         + '</div>';
 
   // ── Journey summary ──────────────────────────────────────────────────────
   html += '<div class="trip-section">';
-  html += '<div class="trip-section-title">Yolculuk Özeti</div>';
+  html += '<div class="trip-section-title">'+t('journeySummary')+'</div>';
 
   // Walk to board
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🚶</span>'
-        +   '<span class="journey-time" id="trip-walk-board-time">~'+walkToMins+' dk</span>'
+        +   '<span class="journey-time" id="trip-walk-board-time">~'+walkToMins+' '+t('min')+'</span>'
         +   '<div><span class="journey-stop-name">'+esc(m.board.stopName)+'</span> <span class="journey-stop-id">#'+m.board.stopId+'</span>'
-        +   '<div class="journey-detail" id="trip-walk-board-detail">'+fmtDist(m.walkB)+' · '+walkToMins+' dk yürüyüş · Biniş noktası</div>'
+        +   '<div class="journey-detail" id="trip-walk-board-detail">'+t('walkBoardDetail',{dist:fmtDist(m.walkB),mins:walkToMins})+'</div>'
         +   '</div>'
         + '</div>';
 
@@ -4109,17 +4495,18 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   const waitCol = atStop.length ? '#3b82f6' : approaching.length ? '#22c55e' : '#f59e0b';
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">⏱</span>'
-        +   '<span class="journey-time" style="color:'+waitCol+'">'+(waitMins === 0 ? 'Şimdi' : '~'+waitMins+' dk')+'</span>'
+        +   '<span class="journey-time" style="color:'+waitCol+'">'+(waitMins === 0 ? t('nowWord') : '~'+waitMins+' '+t('min'))+'</span>'
         +   '<div><span class="journey-main">'+esc(waitLabel)+'</span>'
         +   '<div class="journey-detail">'+esc(waitDetail)+'</div>'
+        +   (isLastSeferDetail ? '<div class="journey-detail" style="color:#fbbf24;font-weight:700">⚠️ '+t('lastSeferNote')+'</div>' : '')
         +   '</div>'
         + '</div>';
 
   // Ride
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🚌</span>'
-        +   '<span class="journey-time">~'+rideMins+' dk</span>'
-        +   '<div><span class="journey-main">'+m.sc+' durak</span>'
+        +   '<span class="journey-time">~'+rideMins+' '+t('min')+'</span>'
+        +   '<div><span class="journey-main">'+t('metaDirect',{n:m.sc})+'</span>'
         +   '<div class="journey-detail">'+esc(m.path.headSign)+'</div>'
         +   '</div>'
         + '</div>';
@@ -4127,61 +4514,61 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Alight + walk to dest
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🏁</span>'
-        +   '<span class="journey-time" id="trip-walk-alight-time">~'+walkFromMins+' dk</span>'
+        +   '<span class="journey-time" id="trip-walk-alight-time">~'+walkFromMins+' '+t('min')+'</span>'
         +   '<div><span class="journey-stop-name">'+esc(m.alight.stopName)+'</span> <span class="journey-stop-id">#'+m.alight.stopId+'</span>'
-        +   '<div class="journey-detail" id="trip-walk-alight-detail">'+fmtDist(m.walkA)+' · '+walkFromMins+' dk yürüyüş · İniş noktası</div>'
+        +   '<div class="journey-detail" id="trip-walk-alight-detail">'+t('walkAlightDetail',{dist:fmtDist(m.walkA),mins:walkFromMins})+'</div>'
         +   '</div>'
         + '</div>';
 
   html += '<div class="total-box">'
-        +   '<span class="total-box-label">Toplam tahmini süre</span>'
-        +   '<span class="total-box-value" id="trip-total-value">~'+totalMins+' dk</span>'
+        +   '<span class="total-box-label">'+t('totalEst')+'</span>'
+        +   '<span class="total-box-value" id="trip-total-value">~'+totalMins+' '+t('min')+'</span>'
         + '</div>';
   html += '</div>';
 
   // ── Incoming buses ───────────────────────────────────────────────────────
-  html += '<div class="trip-section">';
-  html += '<div class="trip-section-title">Biniş Noktasına Gelen Otobüsler</div>';
-
-  if (atStop.length) {
-    html += '<div class="live-row"><div class="bus-dot dot-blue" style="width:10px;height:10px"></div>'
-          + '<div style="flex:1"><b>'+esc(atStop[0].plateNumber||'Otobüs')+'</b></div>'
-          + '<span class="live-eta" style="color:#3b82f6">Durağa geldi!</span></div>';
+  // Only shown when there's real-time data (a bus at the stop or approaching).
+  // With no live buses this used to just echo the next scheduled time, which the
+  // "Programlı Seferler" section below already shows better — so we hide it.
+  if (atStopReachable || approaching.length) {
+    html += '<div class="trip-section">';
+    html += '<div class="trip-section-title">'+t('incomingBuses')+'</div>';
+    if (atStopReachable) {
+      html += '<div class="live-row"><div class="bus-dot dot-blue" style="width:10px;height:10px"></div>'
+            + '<div style="flex:1"><b>'+esc(atStop[0].plateNumber||t('activeShort'))+'</b></div>'
+            + '<span class="live-eta" style="color:#3b82f6">'+t('busArrivedExcl')+'</span></div>';
+    }
+    if (approaching.length) {
+      approaching.forEach(b => {
+        const dot = b.stopsAway <= 2 ? 'dot-blue' : b.stopsAway <= 5 ? 'dot-green' : 'dot-yellow';
+        const col = b.stopsAway <= 2 ? '#3b82f6' : b.stopsAway <= 5 ? '#22c55e' : '#f59e0b';
+        html += '<div class="live-row"><div class="bus-dot '+dot+'" style="width:10px;height:10px"></div>'
+              + '<div style="flex:1"><b>'+esc(b.plateNumber||t('activeShort'))+'</b><div style="font-size:.68rem;color:#4a5568">'+t('stopsAwayText',{n:b.stopsAway})+'</div></div>'
+              + '<span class="live-eta" style="color:'+col+'">~'+b.minsAway+' '+t('min')+'</span></div>';
+      });
+    }
+    html += '</div>';
   }
-  if (approaching.length) {
-    approaching.forEach(b => {
-      const dot = b.stopsAway <= 2 ? 'dot-blue' : b.stopsAway <= 5 ? 'dot-green' : 'dot-yellow';
-      const col = b.stopsAway <= 2 ? '#3b82f6' : b.stopsAway <= 5 ? '#22c55e' : '#f59e0b';
-      html += '<div class="live-row"><div class="bus-dot '+dot+'" style="width:10px;height:10px"></div>'
-            + '<div style="flex:1"><b>'+esc(b.plateNumber||'Otobüs')+'</b><div style="font-size:.68rem;color:#4a5568">'+b.stopsAway+' durak uzakta</div></div>'
-            + '<span class="live-eta" style="color:'+col+'">~'+b.minsAway+' dk</span></div>';
-    });
-  }
-  if (!atStop.length && !approaching.length) {
-    const eta = nextTimes[0] ? 'Sıradaki sefer: '+nextTimes[0] : 'Aktif araç yok';
-    html += '<div style="color:#4a5568;font-size:.78rem;padding:3px 0">'+eta+'</div>';
-  }
-  html += '</div>';
 
   // ── Scheduled times ──────────────────────────────────────────────────────
   if (nextTimes.length) {
     html += '<div class="trip-section">';
-    html += '<div class="trip-section-title">Programlı Seferler <span style="font-weight:400;opacity:.6">(yaklaşık)</span></div>';
+    html += '<div class="trip-section-title">'+t('schedTimes')+' <span style="font-weight:400;opacity:.6">'+t('schedApprox')+'</span></div>';
     html += '<div class="dep-chips">';
-    nextTimes.forEach((t, i) => { html += '<span class="dep-chip'+(i===0?' next':'')+'">'+t+'</span>'; });
+    nextTimes.forEach((tm, i) => { html += '<span class="dep-chip'+(i===0?' next':'')+'">'+tm+'</span>'; });
     html += '</div></div>';
   }
 
   // ── Buses riding the route (between board and alight) ────────────────────
   if (onBoard.length) {
     html += '<div class="trip-section">';
-    html += '<div class="trip-section-title">Güzergahta Aktif Otobüsler</div>';
+    html += '<div class="trip-section-title">'+t('activeOnRoute')+'</div>';
     onBoard.forEach(b => {
       const rem = alightSeq - (seqOf[b.stopId] ?? alightSeq);
       html += '<div class="live-row"><div class="bus-dot dot-orange" style="width:10px;height:10px"></div>'
-            + '<div style="flex:1"><b>'+esc(b.plateNumber||'Otobüs')+'</b>'
-            + '<div style="font-size:.68rem;color:#4a5568">'+rem+' durak kaldı</div></div>'
-            + '<span class="live-eta" style="color:#ef4444">~'+Math.round(rem*MINS_PER_STOP)+' dk</span></div>';
+            + '<div style="flex:1"><b>'+esc(b.plateNumber||t('activeShort'))+'</b>'
+            + '<div style="font-size:.68rem;color:#4a5568">'+t('stopsLeft',{n:rem})+'</div></div>'
+            + '<span class="live-eta" style="color:#ef4444">~'+Math.round(rem*MINS_PER_STOP)+' '+t('min')+'</span></div>';
     });
     html += '</div>';
   }
@@ -4189,7 +4576,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // ── Stop timeline ────────────────────────────────────────────────────────────
   if (tripStops.length > 1) {
     html += '<div class="trip-section">';
-    html += '<div class="trip-section-title">Güzergah Durakları</div>';
+    html += '<div class="trip-section-title">'+t('routeStops')+'</div>';
     html += '<div class="tl"><div class="tl-line"></div>';
     tripStops.forEach(s => {
       const isBoard  = s.stopId === m.board.stopId;
@@ -4200,8 +4587,8 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
             +   '<div class="tl-dot '+dotCls+'"></div>'
             +   '<span class="tl-name">'+esc(s.stopName)+'</span>'
             +   '<span class="tl-id">#'+s.stopId+'</span>';
-      if (isBoard)  html += ' <span class="tl-badge board">Biniş</span>';
-      if (isAlight) html += ' <span class="tl-badge alight">İniş</span>';
+      if (isBoard)  html += ' <span class="tl-badge board">'+t('tlBoard')+'</span>';
+      if (isAlight) html += ' <span class="tl-badge alight">'+t('tlAlight')+'</span>';
       if (hasBus && !isBoard && !isAlight) html += ' <span class="tl-badge bus">🚌</span>';
       html += '</div>';
     });
@@ -4233,25 +4620,25 @@ function _showMultiLegTripDetail(m) {
   let html = '';
   // Header
   html += '<div style="display:flex;align-items:center;gap:6px;padding-bottom:8px;border-bottom:1px solid #252d40;margin-bottom:10px;flex-wrap:wrap">'
-        +   '<button class="trip-back" onclick="closeTripDetail()">← Hatlar</button>'
-        +   '<span class="p-multileg-badge">🔁 1 aktarma</span>'
+        +   '<button class="trip-back" onclick="closeTripDetail()">'+t('backToLines')+'</button>'
+        +   '<span class="p-multileg-badge">'+t('oneTransfer')+'</span>'
         +   '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
         +   '<span class="p-leg-arrow">→</span>'
         +   '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
         +   '<span style="flex:1"></span>'
-        +   '<span class="p-route-eta">~'+m._eta+' dk</span>'
+        +   '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>';
 
   // Journey summary
   html += '<div class="trip-section">';
-  html += '<div class="trip-section-title">Yolculuk Özeti</div>';
+  html += '<div class="trip-section-title">'+t('journeySummary')+'</div>';
 
   // 1. Walk to board
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🚶</span>'
         +   '<div style="flex:1">'
-        +     '<div class="journey-main" id="ml-leg1-board-main">'+walkBMins+' dk · '+fmtDist(m.leg1.walkB)+' yürüyüş</div>'
-        +     '<div class="journey-detail">Biniş: '+esc(m.leg1.board.stopName)+'</div>'
+        +     '<div class="journey-main" id="ml-leg1-board-main">'+t('mlWalk',{mins:walkBMins,dist:fmtDist(m.leg1.walkB)})+'</div>'
+        +     '<div class="journey-detail">'+t('mlBoard',{stop:esc(m.leg1.board.stopName)})+'</div>'
         +   '</div>'
         + '</div>';
 
@@ -4259,8 +4646,8 @@ function _showMultiLegTripDetail(m) {
   html += '<div class="journey-step">'
         +   '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
         +   '<div style="flex:1">'
-        +     '<div class="journey-main">'+m.leg1.wait+' dk bekleme + '+m.leg1.ride+' dk yolculuk</div>'
-        +     '<div class="journey-detail">'+m.leg1.sc+' durak · '+esc(m.leg1.board.stopName)+' → '+esc(m.leg1.alight.stopName)+'</div>'
+        +     '<div class="journey-main">'+t('mlLeg1Main',{wait:m.leg1.wait,ride:m.leg1.ride})+'</div>'
+        +     '<div class="journey-detail">'+t('mlLegDetail',{sc:m.leg1.sc,from:esc(m.leg1.board.stopName),to:esc(m.leg1.alight.stopName)})+'</div>'
         +   '</div>'
         + '</div>';
 
@@ -4268,13 +4655,13 @@ function _showMultiLegTripDetail(m) {
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🔁</span>'
         +   '<div style="flex:1">'
-        +     '<div class="journey-main">Aktarma · '+esc(m.leg1.alight.stopName)
-        +       (m.leg2.transferWalkM > 0 ? '' : ' (aynı durak)')+'</div>'
+        +     '<div class="journey-main">'+t('xferTitle',{stop:esc(m.leg1.alight.stopName)})
+        +       (m.leg2.transferWalkM > 0 ? '' : t('sameStopShort'))+'</div>'
         +     '<div class="journey-detail" id="ml-transfer-detail">'
         +       (m.leg2.transferWalkM > 0
-                  ? xferMins+' dk yürüme · '+fmtDist(m.leg2.transferWalkM)+' · '
+                  ? t('mlXferWalk',{mins:xferMins,dist:fmtDist(m.leg2.transferWalkM)})
                   : '')
-        +       m.leg2.wait+' dk bekleme'
+        +       t('mlWaitMin',{wait:m.leg2.wait})
         +     '</div>'
         +   '</div>'
         + '</div>';
@@ -4283,8 +4670,8 @@ function _showMultiLegTripDetail(m) {
   html += '<div class="journey-step">'
         +   '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
         +   '<div style="flex:1">'
-        +     '<div class="journey-main">'+m.leg2.ride+' dk yolculuk</div>'
-        +     '<div class="journey-detail">'+m.leg2.sc+' durak · '+esc(m.leg2.board.stopName)+' → '+esc(m.leg2.alight.stopName)+'</div>'
+        +     '<div class="journey-main">'+t('mlRideOnly',{ride:m.leg2.ride})+'</div>'
+        +     '<div class="journey-detail">'+t('mlLegDetail',{sc:m.leg2.sc,from:esc(m.leg2.board.stopName),to:esc(m.leg2.alight.stopName)})+'</div>'
         +   '</div>'
         + '</div>';
 
@@ -4292,8 +4679,8 @@ function _showMultiLegTripDetail(m) {
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">🚶</span>'
         +   '<div style="flex:1">'
-        +     '<div class="journey-main" id="ml-leg2-alight-main">'+walkAMins+' dk · '+fmtDist(m.leg2.walkA)+' yürüyüş</div>'
-        +     '<div class="journey-detail">İniş: '+esc(m.leg2.alight.stopName)+' → hedef</div>'
+        +     '<div class="journey-main" id="ml-leg2-alight-main">'+t('mlWalk',{mins:walkAMins,dist:fmtDist(m.leg2.walkA)})+'</div>'
+        +     '<div class="journey-detail">'+t('mlAlight',{stop:esc(m.leg2.alight.stopName)})+'</div>'
         +   '</div>'
         + '</div>';
 
@@ -4347,12 +4734,12 @@ function showNearbyStops(lat,lng){
   clearSingleStopMarker();
   if(stopRefreshTimer)clearInterval(stopRefreshTimer);openStopId=null;
   const nearby=[...allStops.values()].map(s=>({...s,meters:Math.round(haversine(lat,lng,s.lat,s.lng))})).sort((a,b)=>a.meters-b.meters).slice(0,5);
-  setHint((nearby[0]?.stopName||'?')+' yakınında '+nearby.length+' durak.');
+  setHint(t('nearbyCount',{name:(nearby[0]?.stopName||'?'),n:nearby.length}));
   renderNearbyList(nearby);if(nearby[0])openStop(nearby[0].stopId);
   stopRefreshTimer=setInterval(()=>{if(openStopId)openStop(openStopId,true);},30000);
 }
 function renderNearbyList(stops){
-  const panel=document.getElementById('stopPanel');panel.innerHTML='<div class="result-header">Yakındaki Duraklar</div>';
+  const panel=document.getElementById('stopPanel');panel.innerHTML='<div class="result-header">'+t('nearbyStopsTitle')+'</div>';
   for(const s of stops){
     const routes=stopToRoutes.get(s.stopId)||[];
     const rn=[...new Set(routes.map(r=>r.routeCode))].join(', ')||'—';
@@ -4360,9 +4747,9 @@ function renderNearbyList(stops){
     div.innerHTML='<div class="ns-header"><span class="ns-dist">'+s.meters+'m</span><div><div class="ns-name">'+esc(s.stopName)+' <span style="color:#374151;font-size:.62rem">#'+s.stopId+'</span></div><div class="ns-tags">'+rn+'</div></div></div>'
       +'<div class="ns-body" id="sb-'+s.stopId+'">'
       +  '<div class="ns-actions">'
-      +    '<button class="ns-view-btn" onclick="event.stopPropagation();viewStopInDuraklar(\''+s.stopId+'\')">🚏 Duraklar\'da aç</button>'
+      +    '<button class="ns-view-btn" onclick="event.stopPropagation();viewStopInDuraklar(\''+s.stopId+'\')">'+t('openInDuraklar')+'</button>'
       +  '</div>'
-      +  '<div class="ns-buses"><span class="loading-spin"></span>Yükleniyor…</div>'
+      +  '<div class="ns-buses"><span class="loading-spin"></span>'+t('loadingShort')+'</div>'
       +'</div>';
     div.onclick=()=>openStop(s.stopId);panel.appendChild(div);
   }
@@ -4380,7 +4767,7 @@ function openStop(stopId,silent){
       .bindTooltip(s.stopName,{permanent:true,direction:'top',offset:[0,-10]})
       .addTo(window._map);
   }
-  if(!silent){const b=document.querySelector('#sb-'+stopId+' .ns-buses');if(b)b.innerHTML='<span class="loading-spin"></span>Yükleniyor…';}
+  if(!silent){const b=document.querySelector('#sb-'+stopId+' .ns-buses');if(b)b.innerHTML='<span class="loading-spin"></span>'+t('loadingShort');}
   fetchStopBuses(stopId);
 }
 function viewStopInDuraklar(stopId){
@@ -4406,14 +4793,14 @@ async function fetchStopBuses(stopId){
 }
 function renderStopBuses(stopId,rows){
   const body=document.querySelector('#sb-'+stopId+' .ns-buses');if(!body)return;
-  if(!rows.length){body.innerHTML='<div class="no-bus">Hat bulunamadı.</div>';return;}
+  if(!rows.length){body.innerHTML='<div class="no-bus">'+t('noLinesFound')+'</div>';return;}
   body.innerHTML=rows.map(({entry:e,approaching,atStop})=>{
     const hex=e.routeColor.replace('#','').padStart(6,'0');
     const badge='<span class="bus-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+e.routeCode+'</span>';
     let dot,away;
-    if(atStop.length){dot='dot-blue';away='Durağa geldi';}
-    else if(approaching.length){const n=approaching[0].stopsAway;dot=n<=2?'dot-blue':n<=5?'dot-green':n<=10?'dot-yellow':'dot-orange';away=n+' durak kaldı';}
-    else{dot='dot-grey';const nx=getNextDeparture(e.routeCode);away=nx===undefined?'Aktif araç yok':nx===null?'Bugün sefer kalmadı':'Sıradaki: '+nx;}
+    if(atStop.length){dot='dot-blue';away=t('atStopShort');}
+    else if(approaching.length){const n=approaching[0].stopsAway;dot=n<=2?'dot-blue':n<=5?'dot-green':n<=10?'dot-yellow':'dot-orange';away=t('stopsLeft',{n});}
+    else{dot='dot-grey';const nx=getNextDeparture(e.routeCode);away=nx===undefined?t('noActiveBus'):nx===null?t('noRunsToday'):t('nextShort',{time:nx});}
     const plate=atStop[0]?.plateNumber||approaching[0]?.plateNumber||'';
     return '<div class="bus-row">'+badge+'<div class="bus-info"><div>'+esc(e.headSign)+'</div><div class="bus-dir">'+plate+'</div></div><div class="bus-dot '+dot+'"></div><span class="bus-away">'+away+'</span></div>';
   }).join('');

@@ -2574,22 +2574,15 @@ function _taxiEstimate(distM, durSec) {
 // 13.4 km time-optimal vs 7.0 km shortest). Shortest matches the real fare.
 async function fetchDrivingRoute(a, b) {
   if (!a || !b) return null;
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), WALK_ROUTE_TIMEOUT_MS);
-    const r = await fetch('https://valhalla1.openstreetmap.de/route', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locations: [{ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }], costing: 'auto', costing_options: { auto: { shortest: true } }, units: 'kilometers' }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (!r.ok) return null;
-    const trip = (await r.json()).trip;
-    if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
-    let coords = [];
-    for (const leg of trip.legs) if (leg.shape) coords = coords.concat(_decodePolyline6(leg.shape));
-    return { distance: trip.summary.length * 1000, duration: trip.summary.time, coords };
-  } catch { return null; }
+  const d = await _valhallaPost('/route', {
+    locations: [{ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }],
+    costing: 'auto', costing_options: { auto: { shortest: true } }, units: 'kilometers',
+  });
+  const trip = d && d.trip;
+  if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
+  let coords = [];
+  for (const leg of trip.legs) if (leg.shape) coords = coords.concat(_decodePolyline6(leg.shape));
+  return { distance: trip.summary.length * 1000, duration: trip.summary.time, coords };
 }
 
 // ── Walking-route directions (Valhalla pedestrian routing) ─────────────────
@@ -2602,7 +2595,126 @@ async function fetchDrivingRoute(a, b) {
 // gives honest walking distances (crosses roads, uses footpaths). Returns null
 // on any failure so callers fall back to a straight line + haversine.
 const _walkRouteCache = new Map();
-const WALK_ROUTE_TIMEOUT_MS = 7000;
+const WALK_ROUTE_TIMEOUT_MS = 5000;
+
+// ── Valhalla client + circuit breaker ───────────────────────────────────────
+// Every spatial call (walk matrix, walk route, taxi drive route) goes through
+// ONE free public host with no SLA. Without memory of failure, a dead/slow host
+// costs a full timeout on every call, on every plan, for the whole session. The
+// breaker fixes that: after VALHALLA_FAIL_THRESHOLD consecutive failures it
+// short-circuits to null (no network) for VALHALLA_COOLDOWN_MS, so callers fall
+// straight to their haversine fallback instead of stalling.
+const VALHALLA_HOST = 'https://valhalla1.openstreetmap.de';
+const VALHALLA_FAIL_THRESHOLD = 2;       // consecutive failures before tripping
+const VALHALLA_COOLDOWN_MS = 60_000;     // skip the host for this long once tripped
+const _vbreak = { fails: 0, downUntil: 0 };
+
+// Single POST path for every Valhalla endpoint. Returns parsed JSON, or null on
+// timeout/failure. While the breaker is tripped it returns null *without touching
+// the network*, so a dead/slow host stops costing a timeout on every call.
+async function _valhallaPost(path, body, timeoutMs = WALK_ROUTE_TIMEOUT_MS) {
+  if (Date.now() < _vbreak.downUntil) return null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const r = await fetch(VALHALLA_HOST + path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) throw 0;
+    _vbreak.fails = 0;                    // success resets the breaker
+    return await r.json();
+  } catch {
+    if (++_vbreak.fails >= VALHALLA_FAIL_THRESHOLD)
+      _vbreak.downUntil = Date.now() + VALHALLA_COOLDOWN_MS;
+    return null;
+  }
+}
+
+// ── Persistent walk caches (localStorage) ───────────────────────────────────
+// Both Valhalla walk results are coordinate-keyed and effectively immutable, so
+// we memoise them across reloads — cutting matrix size and request volume (and
+// thus rate-limit pressure) for repeat planning. Keys round to 5 decimals (~1 m);
+// a stop that moves in updated data just yields a new key, so no stale hazard.
+const WALK_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const WALK_ROUTE_CACHE_MAX = 400;        // max persisted walk-route polylines
+const WALK_DIST_CACHE_MAX = 4000;        // max persisted point→stop distances
+const _r5 = n => n.toFixed(5);
+function _evictOldest(store, max) {       // drop oldest-by-ts keys to stay ≤ max
+  const keys = Object.keys(store);
+  if (keys.length <= max) return;
+  keys.sort((a, b) => (store[a].ts || 0) - (store[b].ts || 0));
+  for (let i = 0; i < keys.length - max; i++) delete store[keys[i]];
+}
+
+// Walk-route polylines: hydrate _walkRouteCache with resolved values (callers
+// await either a Promise or a plain object alike), and write through on success.
+function _hydrateWalkRoutes() {
+  try {
+    const store = JSON.parse(localStorage.getItem('bm_walkroute_v1') || '{}');
+    const now = Date.now();
+    for (const k in store) {
+      const e = store[k];
+      if (e && now - e.ts < WALK_CACHE_MAX_AGE_MS)
+        _walkRouteCache.set(k, { coords: e.coords, distance: e.distance, duration: e.duration });
+    }
+  } catch {}
+}
+function _persistWalkRoute(k, res) {
+  try {
+    const store = JSON.parse(localStorage.getItem('bm_walkroute_v1') || '{}');
+    store[k] = { coords: res.coords, distance: res.distance, duration: res.duration, ts: Date.now() };
+    _evictOldest(store, WALK_ROUTE_CACHE_MAX);
+    localStorage.setItem('bm_walkroute_v1', JSON.stringify(store));
+  } catch {}
+}
+
+// Walk-distance pairs: in-memory Map mirrored to localStorage (debounced). The
+// key encodes the matrix's source→target orientation, so a hit equals exactly
+// what the matrix would have returned.
+const _walkDistCache = new Map();        // key → { m, ts }
+const _walkDistKey = (a, b) => _r5(a.lat) + ',' + _r5(a.lng) + '>' + _r5(b.lat) + ',' + _r5(b.lng);
+let _walkDistDirty = false, _walkDistFlushTimer = null;
+function _hydrateWalkDists() {
+  try {
+    const store = JSON.parse(localStorage.getItem('bm_walkdist_v1') || '{}');
+    const now = Date.now();
+    for (const k in store) {
+      const e = store[k];
+      if (e && now - e.ts < WALK_CACHE_MAX_AGE_MS) _walkDistCache.set(k, e);
+    }
+  } catch {}
+}
+function _walkDistGet([a, b]) {
+  const e = _walkDistCache.get(_walkDistKey(a, b));
+  return (e && Date.now() - e.ts < WALK_CACHE_MAX_AGE_MS) ? e.m : null;
+}
+function _walkDistSet([a, b], m) {
+  _walkDistCache.set(_walkDistKey(a, b), { m, ts: Date.now() });
+  _walkDistDirty = true;
+  if (_walkDistFlushTimer) return;       // coalesce a planner batch into one write
+  _walkDistFlushTimer = setTimeout(() => {
+    _walkDistFlushTimer = null;
+    if (!_walkDistDirty) return;
+    _walkDistDirty = false;
+    try {
+      let entries = [..._walkDistCache.entries()];
+      if (entries.length > WALK_DIST_CACHE_MAX) {   // keep newest, drop the rest
+        entries.sort((x, y) => y[1].ts - x[1].ts);
+        entries = entries.slice(0, WALK_DIST_CACHE_MAX);
+        _walkDistCache.clear();
+        for (const [k, v] of entries) _walkDistCache.set(k, v);
+      }
+      const store = {};
+      for (const [k, v] of entries) store[k] = v;
+      localStorage.setItem('bm_walkdist_v1', JSON.stringify(store));
+    } catch {}
+  }, 1500);
+}
+_hydrateWalkRoutes();
+_hydrateWalkDists();
+
 // Decode a Valhalla-encoded polyline (Google polyline algorithm, precision 6).
 function _decodePolyline6(str) {
   let i = 0, lat = 0, lng = 0; const coords = [];
@@ -2621,31 +2733,22 @@ async function fetchWalkingRoute(a, b) {
   if (!a || !b) return null;
   const k = a.lat.toFixed(5)+','+a.lng.toFixed(5)+'>'+b.lat.toFixed(5)+','+b.lng.toFixed(5);
   if (_walkRouteCache.has(k)) return _walkRouteCache.get(k);
-  const body = JSON.stringify({
-    locations: [{ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }],
-    costing: 'pedestrian', units: 'kilometers',
-  });
   const p = (async () => {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), WALK_ROUTE_TIMEOUT_MS);
-      const r = await fetch('https://valhalla1.openstreetmap.de/route', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body, signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (!r.ok) return null;
-      const d = await r.json();
-      const trip = d.trip;
-      if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
-      let coords = [];
-      for (const leg of trip.legs) if (leg.shape) coords = coords.concat(_decodePolyline6(leg.shape));
-      return {
-        coords,
-        distance: trip.summary.length * 1000,  // km → meters, real pedestrian distance
-        duration: trip.summary.time,            // seconds (realistic walking time)
-      };
-    } catch { return null; }
+    const d = await _valhallaPost('/route', {
+      locations: [{ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }],
+      costing: 'pedestrian', units: 'kilometers',
+    });
+    const trip = d && d.trip;
+    if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
+    let coords = [];
+    for (const leg of trip.legs) if (leg.shape) coords = coords.concat(_decodePolyline6(leg.shape));
+    const res = {
+      coords,
+      distance: trip.summary.length * 1000,  // km → meters, real pedestrian distance
+      duration: trip.summary.time,            // seconds (realistic walking time)
+    };
+    _persistWalkRoute(k, res);                // write-through to localStorage
+    return res;
   })();
   _walkRouteCache.set(k, p);
   return p;
@@ -3270,6 +3373,7 @@ const TRANSFER_PENALTY_MIN = 10;     // a transfer must save >this vs a direct t
 const TRANSFER_ETA_TOLERANCE_MIN = 5; // (B) transfers within this of the fastest are "equally fast" — then shortest walk wins
 const TRANSFER_CROSS_ROAD_M = 60;    // (C) a transfer walk ≤ this is a "cross the road" hop, preferred outright
 const WALK_RELAX_MULT = 3;           // long-walk fallback radius = walkRadius × this
+const WALK_DETOUR_FACTOR = 1.35;     // real walk ≈ straight-line × this; applied to haversine fallbacks
 const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
 const REACH_GRACE_MIN = 3;           // a live bus this many mins "too soon" still counts (people speed up)
 const LIVE_RANK_MAX_FETCH = 12;      // cap on distinct route+dir live fetches per plan
@@ -3353,21 +3457,37 @@ async function _fetchLiveBuses(code, dir) {
 }
 
 // Real walking distance (meters) from one point to a set of stops, via Valhalla
-// matrix. Returns Map(stopId → meters). Falls back to haversine per stop if the
-// matrix call fails. `reverse` swaps direction (stops → point).
+// matrix. Returns Map(stopId → meters). Consults the persistent pair cache first
+// and only matrixes the misses; falls back to detour-factored haversine per stop
+// when both cache and matrix miss. `reverse` swaps direction (stops → point).
 async function _walkDistances(point, stops, reverse) {
   const ids = [...stops.keys()];
   if (!ids.length) return new Map();
-  const pts = ids.map(id => { const s = stops.get(id); return { lat: s.lat, lon: s.lng }; });
-  const mx = reverse ? await _walkMatrix(pts, [{ lat: point.lat, lon: point.lng }])
-                     : await _walkMatrix([{ lat: point.lat, lon: point.lng }], pts);
+
+  // Persistent-cache lookup. Key keeps the matrix's source→target orientation so
+  // a cached value equals exactly what the matrix would have returned.
   const out = new Map();
-  ids.forEach((id, i) => {
-    let m = null;
-    if (mx) m = reverse ? (mx[i] && mx[i][0]) : (mx[0] && mx[0][i]);
-    if (m == null) { const s = stops.get(id); m = haversine(point.lat, point.lng, s.lat, s.lng); }
-    out.set(id, m);
-  });
+  const missIds = [];
+  for (const id of ids) {
+    const s = stops.get(id);
+    const cached = _walkDistGet(reverse ? [s, point] : [point, s]);
+    if (cached != null) out.set(id, cached);
+    else missIds.push(id);
+  }
+
+  if (missIds.length) {
+    const pts = missIds.map(id => { const s = stops.get(id); return { lat: s.lat, lon: s.lng }; });
+    const mx = reverse ? await _walkMatrix(pts, [{ lat: point.lat, lon: point.lng }])
+                       : await _walkMatrix([{ lat: point.lat, lon: point.lng }], pts);
+    missIds.forEach((id, i) => {
+      const s = stops.get(id);
+      let m = null;
+      if (mx) m = reverse ? (mx[i] && mx[i][0]) : (mx[0] && mx[0][i]);
+      if (m != null) _walkDistSet(reverse ? [s, point] : [point, s], m);  // real value → cache
+      else m = haversine(point.lat, point.lng, s.lat, s.lng) * WALK_DETOUR_FACTOR; // fallback, not cached
+      out.set(id, m);
+    });
+  }
   return out;
 }
 
@@ -3638,21 +3758,10 @@ async function planTrips(gen) {
 // on failure), or null if the request fails so callers fall back to haversine.
 async function _walkMatrix(sources, targets) {
   if (!sources.length || !targets.length) return null;
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), WALK_ROUTE_TIMEOUT_MS);
-    const r = await fetch('https://valhalla1.openstreetmap.de/sources_to_targets', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sources, targets, costing: 'pedestrian', units: 'kilometers' }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (!r.ok) return null;
-    const d = await r.json();
-    const mx = d.sources_to_targets;
-    if (!Array.isArray(mx)) return null;
-    return mx.map(row => row.map(c => (c && c.distance != null) ? c.distance * 1000 : null));
-  } catch { return null; }
+  const d = await _valhallaPost('/sources_to_targets', { sources, targets, costing: 'pedestrian', units: 'kilometers' });
+  const mx = d && d.sources_to_targets;
+  if (!Array.isArray(mx)) return null;
+  return mx.map(row => row.map(c => (c && c.distance != null) ? c.distance * 1000 : null));
 }
 
 
@@ -3767,7 +3876,9 @@ function selectPlannerMatch(m, fitMap = true){
       { color, weight: 4, opacity: .85, dashArray: '6,8' }
     ).addTo(window._map);
     drawnLayers.push(straight);
-    const dStraight = haversine(a.lat, a.lng, b.lat, b.lng);
+    // Pre-route placeholder: detour-factor the straight line so the time/dist
+    // label isn't an under-estimate (the routed value replaces it once it lands).
+    const dStraight = haversine(a.lat, a.lng, b.lat, b.lng) * WALK_DETOUR_FACTOR;
     const tStraight = (dStraight / SETTINGS.walkSpeedMpm) * 60;
     let labelM = _walkLabelMarker([(a.lat+b.lat)/2, (a.lng+b.lng)/2], tStraight, dStraight).addTo(window._map);
     drawnLayers.push(labelM);

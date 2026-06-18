@@ -1434,7 +1434,13 @@ async function refreshSchedule() {
   }
 }
 
-(async () => {
+// Kick off schedule loading on the next tick. This MUST run after the whole
+// inline script has executed, because loadScheduleData → setSchedProgress → t()
+// reads the STR i18n dictionary, which is a `const` declared further down this
+// file. Calling it inline here would hit STR's temporal dead zone and throw
+// ("Cannot access 'STR' before initialization"), which silently stranded the
+// schedule on a cold load (first visit / private tab / cleared cache).
+setTimeout(async () => {
   try {
     await loadScheduleData(false);
     renderSchedule();
@@ -1442,7 +1448,7 @@ async function refreshSchedule() {
   } catch(e) {
     setSchedProgress(100, t('schedLoadFail',{err:e.message}), true);
   }
-})();
+}, 0);
 
 setInterval(highlightNextTimes, 60000);
 

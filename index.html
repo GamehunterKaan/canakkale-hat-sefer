@@ -1202,11 +1202,18 @@ function applyScheduleData(data) {
 // stale-while-revalidate (which would otherwise hand back the cached copy).
 // Throws on failure so callers can fall back to the cached copy.
 async function fetchScheduleFresh() {
-  const r = await fetch('./data/schedule.json?_=' + Date.now(), { cache: 'no-store' });
-  if (!r.ok) throw new Error('schedule.json alınamadı (refresh)');
-  const data = await r.json();
-  if (!Array.isArray(data.schedules)) throw new Error('schedule.json geçersiz');
-  return data;
+  // Hard timeout so a hanging request can never strand the schedule load.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch('./data/schedule.json?_=' + Date.now(), { cache: 'no-store', signal: ctrl.signal });
+    if (!r.ok) throw new Error('schedule.json alınamadı (refresh)');
+    const data = await r.json();
+    if (!Array.isArray(data.schedules)) throw new Error('schedule.json geçersiz');
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function loadScheduleData(forceRefresh) {
@@ -1239,21 +1246,30 @@ async function loadScheduleData(forceRefresh) {
     }
   } catch {}
 
-  // No usable cache → SW-served fetch (works offline). The old-shape branch
-  // (after an app upgrade) forces a fresh fetch.
+  // No usable cache → fetch the fresh copy DIRECTLY (cache-busted, bypassing the
+  // service worker) so a stale or hanging SW-cached copy can't strand the load.
+  // Fall back to the SW-served/cached copy only when the fresh fetch fails
+  // (e.g. offline). Either way the loader resolves instead of spinning forever.
   setSchedProgress(10, t('schedLoading'));
-  let r = await fetch('./data/schedule.json');
-  if (!r.ok) throw new Error('schedule.json alınamadı');
-  let data = await r.json();
-  if (!Array.isArray(data.schedules)) {
-    setSchedProgress(40, t('schedUpdating'));
+  let data;
+  try {
     data = await fetchScheduleFresh();
+  } catch {
+    setSchedProgress(40, t('schedUpdating'));
+    // Offline fallback: the SW-served/cached copy, also timed out so a hanging
+    // service-worker revalidation can't leave the loader spinning forever.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const r = await fetch('./data/schedule.json', { signal: ctrl.signal });
+      if (!r.ok) throw new Error('schedule.json alınamadı');
+      data = await r.json();
+      if (!Array.isArray(data.schedules)) throw new Error('schedule.json geçersiz');
+    } finally { clearTimeout(timer); }
   }
   applyScheduleData(data);
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
   setSchedProgress(100, t('schedDone'));
-  // The SW may have served a stale copy — verify against the network.
-  refreshScheduleInBackground(data.fetchedAt);
 }
 
 // Fire-and-forget: pull the newest schedule.json and, if its build is newer

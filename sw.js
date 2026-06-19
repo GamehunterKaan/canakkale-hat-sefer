@@ -1,7 +1,7 @@
 // Service worker — Web Push + offline caching for app shell, JSON data, tiles.
 // Bump VERSION to invalidate every cache on the next activate.
 
-const VERSION     = 'v3';
+const VERSION     = 'v4';
 const SHELL_CACHE = `bm-shell-${VERSION}`;
 const DATA_CACHE  = `bm-data-${VERSION}`;
 const TILE_CACHE  = `bm-tiles-${VERSION}`;

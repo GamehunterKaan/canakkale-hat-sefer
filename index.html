@@ -463,6 +463,62 @@
       border-bottom: 11px solid #4285f4; transform: translate(-50%, -100%);
       filter: drop-shadow(0 0 1px rgba(255,255,255,.9)); }
     @keyframes livePulse { 0% { transform: scale(.5); opacity: .8; } 100% { transform: scale(1.9); opacity: 0; } }
+    /* ── Guided "Start Trip" (turn-by-turn) ── */
+    body.guided-active .p-top,
+    body.guided-active #panel-handle,
+    body.guided-active #bottomNav,
+    body.guided-active #gear-btn,
+    body.guided-active #gps-fab { display: none !important; }
+    @media (min-width: 640px) { body.guided-active #scr-planner { flex-direction: column; } }
+    body.guided-active #map, body.guided-active #map.panel-full { flex: 1 !important; height: 100% !important; max-height: none !important; }
+    #guided-banner {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 1200;
+      background: #0d1520; border-top: 2px solid #1a3660;
+      padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+      box-shadow: 0 -4px 18px rgba(0,0,0,.55);
+      display: none; flex-direction: column; gap: 9px;
+    }
+    body.guided-active #guided-banner { display: flex; }
+    #guided-banner.flash { animation: gFlash 1s ease-out; }
+    @keyframes gFlash { 0% { background: #1d3a63; } 100% { background: #0d1520; } }
+    .g-top { display: flex; align-items: flex-start; gap: 11px; }
+    .g-icon { font-size: 1.7rem; flex-shrink: 0; line-height: 1.1; }
+    .g-instr { flex: 1; min-width: 0; }
+    .g-primary { font-size: 1rem; font-weight: 800; color: #e6edf7; line-height: 1.25; }
+    .g-secondary { font-size: .8rem; color: #8aa0c0; margin-top: 3px; }
+    .g-progress { display: flex; gap: 5px; align-items: center; }
+    .g-pdot { width: 7px; height: 7px; border-radius: 50%; background: #252d40; transition: background .2s; }
+    .g-pdot.done { background: #2f6fb3; }
+    .g-pdot.cur  { background: #4a90d9; box-shadow: 0 0 6px rgba(74,144,217,.6); }
+    .g-actions { display: flex; gap: 8px; }
+    .g-btn { padding: 12px; border-radius: 8px; font-size: .86rem; font-weight: 800; cursor: pointer; }
+    .g-btn.primary { flex: 1; background: #1a3660; color: #cfe3ff; border: 1px solid #4a90d9; }
+    .g-btn.back { flex: 0 0 auto; padding: 12px 14px; background: #161d2e; color: #8aa0c0; border: 1px solid #252d40; }
+    .g-btn.end  { flex: 0 0 auto; padding: 12px 16px; background: #2a1414; color: #f1a3a3; border: 1px solid #7f1d1d; }
+    .g-eta { display: flex; align-items: baseline; gap: 8px; background: #101a2b; border: 1px solid #1f3a5f; border-radius: 8px; padding: 7px 11px; }
+    .g-eta .lbl { font-size: .62rem; text-transform: uppercase; letter-spacing: .4px; color: #6b86ad; flex-shrink: 0; }
+    .g-eta .val { font-size: 1.02rem; font-weight: 800; color: #cfe3ff; margin-left: auto; }
+    .g-eta .val .mins { color: #7eb3f7; }
+    .g-eta.due .val { color: #6ee7a8; }
+    .g-detail { max-height: 32vh; overflow-y: auto; -webkit-overflow-scrolling: touch; border-top: 1px solid #16243a; padding-top: 7px; }
+    .g-detail .trip-section { margin: 0 0 6px; }
+    .g-detail .tl-dot.cur { background: #4a90d9; box-shadow: 0 0 0 3px rgba(74,144,217,.28); }
+    .g-detail .tl-item.cur .tl-name { color: #cfe3ff; font-weight: 700; }
+    #guided-recenter {
+      position: absolute; right: 12px; bottom: 150px; z-index: 1100;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: #1a3660; border: 2px solid #4a90d9; color: #7eb3f7;
+      font-size: 1.15rem; display: none; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.6);
+    }
+    body.guided-active #guided-recenter.show { display: flex; }
+    .guided-start-btn {
+      display: block; width: 100%; margin: 2px 0 14px; padding: 12px; border-radius: 9px;
+      font-size: .92rem; font-weight: 800; color: #fff; cursor: pointer;
+      background: linear-gradient(135deg,#1a3660,#22508f); border: 1px solid #4a90d9;
+      box-shadow: 0 2px 10px rgba(74,144,217,.25);
+    }
+    .guided-start-hint { font-size: .74rem; color: #6b7a99; text-align: center; margin: 2px 0 14px; }
     /* ── Panel expand/collapse (mobile only) ── */
     /* Expanded: p-top fills all space, panel-handle stays, map collapses */
     .p-top.panel-full { flex: 1; max-height: unset; }
@@ -895,9 +951,11 @@
     </div>
     <div id="map">
       <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
+      <button id="guided-recenter" onclick="event.stopPropagation();guidedRecenter()" title="Recenter">📍</button>
       <div id="map-ripple">
         <div class="rr"></div><div class="rr"></div><div class="rr"></div>
       </div>
+      <div id="guided-banner"></div>
     </div>
   </div>
 
@@ -1541,6 +1599,14 @@ const STR = {
     walkBoardDetail: '{dist} · {mins} dk yürüyüş · Biniş noktası',
     walkAlightDetail: '{dist} · {mins} dk yürüyüş · İniş noktası',
     journeySummary: 'Yolculuk Özeti',
+    startTrip: 'Yola Çık', startTripPlanAhead: 'Adım adım yol tarifi yalnızca “şimdi” için. Saati sıfırla.',
+    navWalkTo: '{stop} durağına yürü', navWalkToDest: 'Hedefe yürü', navWalkSecondary: 'Yaklaşık {mins} dk yürüyüş',
+    navWaitAt: '{stop} durağında bekle', navBusHere: 'Otobüs durakta — bin!', navBusApproaching: 'Otobüs {n} durak ötede',
+    navNextDep: '{time} kalkışlı sefer · ~{mins} dk', navNoSchedule: 'Sefer bilgisi yok',
+    navRideTo: '{stop} durağına kadar git', navStopsLeft: '{n} durak kaldı', navGetOffNow: 'Sıradaki durakta in!', navOnBus: 'Otobüstesin',
+    navTransferWalk: 'Aktarma: {stop} durağına yürü', navTransferSame: 'Aktarma: aynı durakta ({stop}) bekle', navTransferSameSub: 'Yürümene gerek yok',
+    navArrivedTitle: 'Vardın! 🎉', navArrivedSub: 'Yolculuk tamamlandı',
+    navIBoarded: 'Bindim', navIGotOff: 'İndim', navImHere: 'Geldim', navNext: 'Devam', navBack: 'Geri', navEnd: 'Bitir',
     stepWalk: 'yürüyüş', boardingPoint: 'Biniş noktası', alightPoint: 'İniş noktası',
     waitBusArrived: 'Otobüs durağa geldi', waitLive: 'Canlı konum',
     waitDepart: '{time} kalkışı', waitDepartTomorrow: 'Yarın {time} kalkışı',
@@ -1549,6 +1615,7 @@ const STR = {
     nowWord: 'Şimdi',
     rideStep: '{code} ile {sc} durak', ridePath: '{from} → {to}',
     totalEst: 'Toplam tahmini süre',
+    navEtaTitle: 'Tahmini varış', navEtaArrive: '~{time} · {mins} dk', navEtaCalc: 'Hesaplanıyor…', navEtaNow: 'Neredeyse vardın',
     incomingBuses: 'Biniş Noktasına Gelen Otobüsler',
     busArrivedExcl: 'Durağa geldi!',
     stopsAwayText: '{n} durak uzakta',
@@ -1686,6 +1753,14 @@ const STR = {
     walkBoardDetail: '{dist} · {mins} min walk · Boarding point',
     walkAlightDetail: '{dist} · {mins} min walk · Drop-off point',
     journeySummary: 'Journey Summary',
+    startTrip: 'Start Trip', startTripPlanAhead: 'Step-by-step guidance is for “now” only. Reset the time.',
+    navWalkTo: 'Walk to {stop}', navWalkToDest: 'Walk to your destination', navWalkSecondary: 'About {mins} min walk',
+    navWaitAt: 'Wait at {stop}', navBusHere: 'Bus is at the stop — board!', navBusApproaching: 'Bus is {n} stops away',
+    navNextDep: '{time} departure · ~{mins} min', navNoSchedule: 'No schedule info',
+    navRideTo: 'Ride to {stop}', navStopsLeft: '{n} stops left', navGetOffNow: 'Get off at the next stop!', navOnBus: 'On the bus',
+    navTransferWalk: 'Transfer: walk to {stop}', navTransferSame: 'Transfer: wait at the same stop ({stop})', navTransferSameSub: 'No walking needed',
+    navArrivedTitle: 'Arrived! 🎉', navArrivedSub: 'Trip complete',
+    navIBoarded: 'I boarded', navIGotOff: 'I got off', navImHere: 'I\'m here', navNext: 'Next', navBack: 'Back', navEnd: 'End',
     stepWalk: 'walk', boardingPoint: 'Boarding point', alightPoint: 'Drop-off point',
     waitBusArrived: 'Bus has arrived', waitLive: 'Live position',
     waitDepart: '{time} departure', waitDepartTomorrow: 'Tomorrow {time} departure',
@@ -1694,6 +1769,7 @@ const STR = {
     nowWord: 'Now',
     rideStep: '{sc} stops on {code}', ridePath: '{from} → {to}',
     totalEst: 'Total estimated time',
+    navEtaTitle: 'Est. arrival', navEtaArrive: '~{time} · {mins} min', navEtaCalc: 'Calculating…', navEtaNow: 'Almost there',
     incomingBuses: 'Buses Approaching the Boarding Stop',
     busArrivedExcl: 'At the stop!',
     stopsAwayText: '{n} stops away',
@@ -1847,6 +1923,13 @@ let selectedMatch = null;
 let currentMatches = [];
 let tripMatch = null;
 let currentTaxi = null;   // { km, min, tl } driving estimate for the active O/D, shown at the bottom of results
+// Guided "Start Trip" state — self-contained; draws only into its own layer group.
+let guided = { active: false, m: null, steps: [], idx: 0, group: null, timer: null, wakeLock: null, userPanned: false, fetching: false };
+let _guidedPanHook = false;
+// Block origin/dest picking while a guided trip is active. (The End/Back/Next
+// buttons stopPropagation so their clicks never reach the map in the first place
+// — see guidedRenderBanner; this just stops stray map taps mid-trip.)
+function guidedLocksPicks() { return !!(guided && guided.active); }
 let stopRefreshTimer = null;
 let openStopId   = null;
 
@@ -2838,7 +2921,7 @@ function getNextDeparture(code) {
   const toM  = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
   const all  = [...(entry.dir0?.times || []), ...(entry.dir1?.times || [])].sort((a, b) => toM(a) - toM(b));
   if (!all.length) return null;
-  const now  = new Date().getHours() * 60 + new Date().getMinutes();
+  const now  = _schedNow();   // service-day frame, matches toM
   const next = all.find(t => toM(t) >= now);
   return next || (all[0] ? all[0] + t('tomorrowParen') : null);
 }
@@ -2857,6 +2940,7 @@ async function initPlanner() {
   }).addTo(window._map);
   window._map.on('click',e=>{
     if(!allStops.size)return;
+    if(guidedLocksPicks())return;   // during a guided trip (and just after End) taps must NOT re-pick origin/dest
     if(mode==='stops')showNearbyStops(e.latlng.lat,e.latlng.lng);
     else applyPoint(e.latlng.lat,e.latlng.lng,mode);
   });
@@ -2866,6 +2950,15 @@ async function initPlanner() {
   {
     const el = document.getElementById('gps-fab');
     if (el) { L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); }
+    // The guided banner + recenter FAB live INSIDE #map, so their clicks would
+    // otherwise bubble to the map's click handler. Critical for the End button:
+    // endGuidedTrip() flips guided.active=false, then the same click would reach
+    // the map handler (guard now lifted) and re-pick the destination under the
+    // button. Stop propagation so banner/FAB taps never touch the map.
+    for (const id of ['guided-banner', 'guided-recenter']) {
+      const g = document.getElementById(id);
+      if (g) { L.DomEvent.disableClickPropagation(g); L.DomEvent.disableScrollPropagation(g); }
+    }
   }
   // Live "blue dot" is always on — start watching the user's position as soon
   // as the map exists. No toggle; it quietly tracks them as they walk to a stop.
@@ -2907,6 +3000,7 @@ async function initPlanner() {
       // In Konum/Hedef pick modes, treat a stop tap as picking that stop's
       // exact location instead of opening the stops-browser panel.
       .on('click', () => {
+        if (guided && guided.active) return;   // ignore stop taps during a guided trip
         if (mode === 'origin' || mode === 'dest') applyPoint(s.lat, s.lng, mode);
         else openStopOnMap(s.stopId);
       });
@@ -2914,6 +3008,9 @@ async function initPlanner() {
     _stopCircles.push(c);
   }
   window._updateStopVis = () => {
+    // Never show the whole-network stop layer during a guided trip — its per-step
+    // camera zoom would otherwise splatter all ~350 city stops onto the map.
+    if (guided && guided.active) { networkStopLayer.remove(); return; }
     if(!networkStopLayer._active) return;
     const z = window._map.getZoom();
     if(z >= 13) {
@@ -3014,7 +3111,7 @@ function estimateWaitFromMins(routeCode, boardSeq, path, fromMins) {
 }
 
 function estimateWaitMins(routeCode, boardSeq, path) {
-  const effectiveNow = new Date().getHours() * 60 + new Date().getMinutes() + planOffset;
+  const effectiveNow = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame
   return estimateWaitFromMins(routeCode, boardSeq, path, effectiveNow);
 }
 
@@ -3256,6 +3353,7 @@ function startLiveLocation() {
   _liveWatchId = navigator.geolocation.watchPosition(
     pos => {
       const { latitude: lat, longitude: lng, accuracy, heading } = pos.coords;
+      lastUserPos = { lat, lng };   // keep session position fresh (used by stops + guided nav)
       if (!_liveMarker) {
         _liveMarker = L.marker([lat, lng], { icon: _liveIcon(heading), zIndexOffset: 1600, interactive: false, keyboard: false }).addTo(window._map);
         _liveCircle = L.circle([lat, lng], { radius: accuracy || 30, color: '#4285f4', weight: 1, opacity: .5, fillColor: '#4285f4', fillOpacity: .12, interactive: false }).addTo(window._map);
@@ -3263,6 +3361,7 @@ function startLiveLocation() {
         _liveMarker.setLatLng([lat, lng]).setIcon(_liveIcon(heading));
         _liveCircle.setLatLng([lat, lng]).setRadius(accuracy || 30);
       }
+      if (guided.active) onGuidedPosition(lat, lng);
     },
     () => {},  // ignore errors silently; the dot just won't appear
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
@@ -3270,6 +3369,10 @@ function startLiveLocation() {
 }
 
 function applyPoint(lat,lng,which){
+  // Never re-pick origin/dest while a guided trip is running (or in the brief
+  // window right after End) — a stray tap, GPS, bookmark, or the End-button
+  // click bubbling to the map would otherwise move the destination.
+  if (guidedLocksPicks()) return;
   // Reject points outside the Çanakkale map bounds (typically GPS picks from
   // outside the city, or stale bookmarks). Map clicks are already constrained
   // by maxBounds so they never trigger this.
@@ -3379,7 +3482,23 @@ const WALK_DETOUR_FACTOR = 1.35;     // real walk ≈ straight-line × this; app
 const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
 const REACH_GRACE_MIN = 3;           // a live bus this many mins "too soon" still counts (people speed up)
 const LIVE_RANK_MAX_FETCH = 12;      // cap on distinct route+dir live fetches per plan
+const GUIDED_ARRIVE_M = 35;          // guided: within this of a stop = "arrived" (walk/alight)
+const GUIDED_BOARDED_M = 70;         // guided: moved this far past the board stop = "you boarded"
 const _tmMin = t => { const [h, m] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + m; };
+// Raw clock minutes (0..1439) and "now" in the SAME service-day frame as _tmMin
+// (early-morning h<4 maps to the tail of the operating day, +1440). Using a raw
+// clock "now" against service-day-shifted departures is the bug that makes a
+// 02:30 bus look like it's tomorrow at 01:42 — compare in one frame instead.
+const _clockMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+// Put any raw minute value into the service-day frame (clock < 04:00 ⇒ tail of
+// the operating day, +1440). Use this on the *effective* planning time so it
+// also works with planOffset (plan-ahead), which is a raw delta.
+function _schedFrame(rawMin) { const c = ((rawMin % 1440) + 1440) % 1440; return c < 240 ? c + 1440 : c; }
+function _schedNow() { const d = new Date(); return _schedFrame(d.getHours()*60 + d.getMinutes()); }
+// Minutes until the next occurrence of HH:MM relative to the raw clock `nowRaw`.
+const _untilClock = (hhmm, nowRaw) => { const d = (_clockMin(hhmm) - nowRaw) % 1440; return d < 0 ? d + 1440 : d; };
+// The next n departures, soonest first, regardless of the midnight wrap.
+function _nextTimes(times, n) { const nowRaw = new Date().getHours()*60 + new Date().getMinutes(); return times.slice().sort((a, b) => _untilClock(a, nowRaw) - _untilClock(b, nowRaw)).slice(0, n); }
 
 // Minutes from a trip's terminal departure until the bus reaches a stop, taken
 // from kentkart's GTFS arrival_offset (seconds). Falls back to a flat per-stop
@@ -3499,7 +3618,7 @@ async function planTrips(gen) {
   const O = { lat: originClick.lat, lng: originClick.lng };
   const D = { lat: destClick.lat,   lng: destClick.lng };
   const W = SETTINGS.walkRadius, MAXW = W * WALK_RELAX_MULT;
-  const nowMins = new Date().getHours()*60 + new Date().getMinutes() + planOffset;
+  const nowMins = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame, matches u.times (_tmMin)
   const dayData = getActiveRoutes();
   const walkMins = m => m / SETTINGS.walkSpeedMpm;
 
@@ -3701,9 +3820,12 @@ async function planTrips(gen) {
       const liveWait = _liveBoardWaitMins(p.busStopList || [], leg._bi, buses, nowMins, arriveAtStop);
       const schedWait = c.isMultiLeg ? c.leg1.wait : c._wait;
       if (liveWait < schedWait) {
-        c._eta -= (schedWait - liveWait);
-        if (c.isMultiLeg) { c.leg1.wait = liveWait; c.leg1._live = true; }
-        else { c._wait = liveWait; c._live = true; }
+        // _liveBoardWaitMins is a float (offset seconds ÷ 60); round it like the
+        // schedule wait so _eta/_wait stay whole minutes (not "~12.283 min").
+        const lw = Math.max(0, Math.round(liveWait));
+        c._eta = Math.max(0, c._eta - (schedWait - lw));
+        if (c.isMultiLeg) { c.leg1.wait = lw; c.leg1._live = true; }
+        else { c._wait = lw; c._live = true; }
       }
     }
   }
@@ -3850,6 +3972,10 @@ function showTaxiRoute() {
 }
 
 function selectPlannerMatch(m, fitMap = true){
+  // Never redraw the planner overview while a guided trip is running — an async
+  // findRoutes() continuation (its awaits resolving mid-trip) would otherwise
+  // splatter the full route + walks back onto the guided map.
+  if (guided && guided.active) return;
   selectedMatch=m;
   document.querySelectorAll('.p-route-card').forEach(c=>c.classList.remove('active'));
   document.querySelector('.p-taxi-card')?.classList.remove('active');
@@ -3885,7 +4011,7 @@ function selectPlannerMatch(m, fitMap = true){
     let labelM = _walkLabelMarker([(a.lat+b.lat)/2, (a.lng+b.lng)/2], tStraight, dStraight).addTo(window._map);
     drawnLayers.push(labelM);
     fetchWalkingRoute(a, b).then(route => {
-      if (_walkGen !== selectPlannerMatch._gen) return;
+      if (_walkGen !== selectPlannerMatch._gen || (guided && guided.active)) return;
       if (!route) return;
       window._map.removeLayer(straight);
       drawnLayers = drawnLayers.filter(l => l !== straight && l !== labelM);
@@ -4092,7 +4218,7 @@ async function refreshBuses(){
 function clearDrawn(){drawnLayers.forEach(l=>window._map.removeLayer(l));drawnLayers=[];}
 function clearBuses(){busMarkers.forEach(l=>window._map.removeLayer(l));busMarkers=[];}
 function hideNetworkStops(){ if(networkStopLayer){ networkStopLayer._active=false; networkStopLayer.remove(); } }
-function showNetworkStops(){ if(networkStopLayer){ networkStopLayer._active=true; if(window._updateStopVis) window._updateStopVis(); } }
+function showNetworkStops(){ if(guided&&guided.active)return; if(networkStopLayer){ networkStopLayer._active=true; if(window._updateStopVis) window._updateStopVis(); } }
 
 // ── Route tracker (launched from Seferler tab) ────────────────────────────────
 let trackedPaths   = [];   // all pathCache entries for the tracked route code
@@ -4417,25 +4543,15 @@ function applyAppUpdate() {
 }
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
-    const promote = () => {
-      _pendingWorker = reg.waiting;
-      document.getElementById('updateToast')?.classList.add('visible');
-    };
+    const promote = () => { _pendingWorker = reg.waiting; document.getElementById('updateToast')?.classList.add('visible'); };
     if (reg.waiting && navigator.serviceWorker.controller) promote();
     reg.addEventListener('updatefound', () => {
-      const nw = reg.installing;
-      if (!nw) return;
-      nw.addEventListener('statechange', () => {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) promote();
-      });
+      const nw = reg.installing; if (!nw) return;
+      nw.addEventListener('statechange', () => { if (nw.state === 'installed' && navigator.serviceWorker.controller) promote(); });
     });
   }).catch(() => {});
   let _reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (_reloaded) return;
-    _reloaded = true;
-    location.reload();
-  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (_reloaded) return; _reloaded = true; location.reload(); });
 }
 
 // ── Trip detail ───────────────────────────────────────────────────────────────
@@ -4507,9 +4623,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Schedule is keyed by full route name (e.g. "Ç11K KEPEZ ESENLER"), not by code.
   const dayData = getActiveRoutes();
   const schedEntry = findSchedEntry(dayData, m.path.displayRouteCode);
-  const realNow    = new Date().getHours() * 60 + new Date().getMinutes();
-  const nowMins    = realNow + planOffset;
-  const curStr     = new Date().getHours().toString().padStart(2,'0') + ':' + new Date().getMinutes().toString().padStart(2,'0');
+  const nowMins    = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame, matches toMins below
   // toMins maps early-morning times (h<4) to next-day to keep sort order sane
   const toMins     = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
   // Sort by actual chronological minute value — NOT alphabetically.
@@ -4564,10 +4678,8 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // once real road distance arrives.
   window._tripWalks = { walkBMins: walkToMins, walkAMins: walkFromMins, waitMins, rideMins };
 
-  // ── Scheduled departure chips (next 5 terminal departures) ──────────────────
-  const nextTimes = allSchedTimes.filter(t => t >= curStr).slice(0, 5);
-  if (!nextTimes.length && new Date().getHours() >= 20)
-    nextTimes.push(...allSchedTimes.filter(t => t < '04:00').slice(0, 2));
+  // ── Scheduled departure chips (next 5 terminal departures, wrap-aware) ──────
+  const nextTimes = _nextTimes(allSchedTimes, 5);
 
   // Badge
   const hex = (m.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
@@ -4590,6 +4702,11 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         +     (isNotifying ? t('notifyOn') : t('notifyOff'))
         +   '</button>'
         + '</div>';
+
+  // ── Start guided trip ─────────────────────────────────────────────────────
+  html += planOffset
+    ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
+    : '<button class="guided-start-btn" onclick="startGuidedTrip(tripMatch)">🧭 '+t('startTrip')+'</button>';
 
   // ── Journey summary ──────────────────────────────────────────────────────
   html += '<div class="trip-section">';
@@ -4742,6 +4859,11 @@ function _showMultiLegTripDetail(m) {
         +   '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>';
 
+  // Start guided trip
+  html += planOffset
+    ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
+    : '<button class="guided-start-btn" onclick="startGuidedTrip(tripMatch)">🧭 '+t('startTrip')+'</button>';
+
   // Journey summary
   html += '<div class="trip-section">';
   html += '<div class="trip-section-title">'+t('journeySummary')+'</div>';
@@ -4821,6 +4943,501 @@ function closeTripDetail() {
       return badges[0]?.textContent === selectedMatch.path.displayRouteCode;
     })?.classList.add('active');
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  GUIDED "START TRIP" — step through the trip ONE segment at a time.
+//  On start it wipes the planner overview and draws into its OWN layer group.
+//  Each step clears that group and draws ONLY the current segment: the walk you
+//  are on, OR the board→alight portion of the bus ride — never the whole route
+//  or the other walks. So during a walk step there is NO bus line, and during a
+//  ride step there are NO walk lines. Nothing else is ever on the map.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Pure helpers (mirrored in tests) ──
+// Within `m` metres of a point with .lat/.lng (string or number)?
+function withinM(pos, pt, m) {
+  if (!pos || !pt) return false;
+  return haversine(pos.lat, pos.lng, parseFloat(pt.lat), parseFloat(pt.lng)) <= m;
+}
+// Moved past the board stop toward the next stop (boarding auto-detect)?
+function movedPast(pos, boardStop, nextStop, m) {
+  if (!pos || !boardStop) return false;
+  const dB = haversine(pos.lat, pos.lng, parseFloat(boardStop.lat), parseFloat(boardStop.lng));
+  if (dB <= m) return false;
+  if (!nextStop) return true;
+  const dN = haversine(pos.lat, pos.lng, parseFloat(nextStop.lat), parseFloat(nextStop.lng));
+  return dN < dB;
+}
+// The board→alight PORTION of a route's road shape (not the whole line): slice
+// pointList between the points nearest the board and alight stops.
+function routeSliceCoords(pointList, board, alight) {
+  if (!pointList || !pointList.length || !board || !alight) return [];
+  const near = (lat, lng) => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < pointList.length; i++) {
+      const d = haversine(lat, lng, parseFloat(pointList[i].lat), parseFloat(pointList[i].lng));
+      if (d < bd) { bd = d; bi = i; }
+    }
+    return bi;
+  };
+  let i1 = near(parseFloat(board.lat), parseFloat(board.lng));
+  let i2 = near(parseFloat(alight.lat), parseFloat(alight.lng));
+  if (i1 > i2) { const t = i1; i1 = i2; i2 = t; }
+  return pointList.slice(i1, i2 + 1).map(p => [parseFloat(p.lat), parseFloat(p.lng)]);
+}
+
+// ── Build the ordered steps (metadata only — no geometry; the map drawing is
+//    the planner's). origin/dest are {lat,lng}. Pure → unit-tested. ──
+function buildGuidedSteps(m, origin, dest) {
+  const wMins = meters => Math.max(1, Math.round(meters / SETTINGS.walkSpeedMpm));
+  const P = s => ({ lat: parseFloat(s.lat), lng: parseFloat(s.lng) });
+  const rideOf = (stops, bId, aId) => {
+    const bi = stops.findIndex(s => s.stopId === bId), ai = stops.findIndex(s => s.stopId === aId);
+    return (bi >= 0 && ai >= 0) ? Math.round(_rideMins(stops, bi, ai)) : 0;
+  };
+  const legs = m.isMultiLeg ? [m.leg1, m.leg2] : [{ path: m.path, route: m.route, board: m.board, alight: m.alight, walkB: m.walkB, walkA: m.walkA, buses: m.buses, ride: rideOf(m.path.busStopList || [], m.board.stopId, m.alight.stopId) || Math.round((m.sc || 0) * MINS_PER_STOP) }];
+  const steps = [];
+  steps.push({ type: 'WALK', from: origin, to: P(legs[0].board), toStop: legs[0].board, walkMins: wMins(legs[0].walkB) });
+  for (let li = 0; li < legs.length; li++) {
+    const L0 = legs[li];
+    const stops = L0.path.busStopList || [];
+    steps.push({ type: 'WAIT', path: L0.path, route: L0.route, stops, boardId: L0.board.stopId, alightId: L0.alight.stopId, boardStop: L0.board, buses: L0.buses || [] });
+    steps.push({ type: 'RIDE', path: L0.path, route: L0.route, stops, boardId: L0.board.stopId, alightId: L0.alight.stopId, boardStop: L0.board, alightStop: L0.alight, rideMins: (L0.ride ?? rideOf(stops, L0.board.stopId, L0.alight.stopId)), buses: L0.buses || [] });
+    const nextLeg = legs[li + 1];
+    if (nextLeg) steps.push({ type: 'TRANSFER', from: P(L0.alight), to: P(nextLeg.board), fromStop: L0.alight, toStop: nextLeg.board, sameStop: (nextLeg.transferWalkM || 0) === 0, walkMins: nextLeg.transferWalkMins || 0 });
+  }
+  const lastLeg = legs[legs.length - 1];
+  steps.push({ type: 'WALK', from: P(lastLeg.alight), to: dest, fromStop: lastLeg.alight, walkMins: wMins(lastLeg.walkA) });
+  steps.push({ type: 'ARRIVED' });
+  return steps;
+}
+
+// ── Start / stop ──
+function startGuidedTrip(m) {
+  m = m || tripMatch;
+  if (!m || !originClick || !destClick || !window._map) return;
+  if (planOffset) { setHint(t('startTripPlanAhead'), true); return; }
+  guided = { active: true, m, steps: buildGuidedSteps(m, { lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }), idx: 0, group: L.layerGroup().addTo(window._map), timer: null, wakeLock: null, userPanned: false, fetching: false };
+
+  // CLEAN SLATE: wipe the planner overview (full route line + every walk) so the
+  // map shows ONLY base tiles + the live dot + our group. Bump the planner's gen
+  // so any in-flight overview walk fetch aborts instead of re-adding a line, and
+  // stop the bus-refresh timer. From here, guided draws only the current segment.
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  guidedWipeMap();
+
+  document.body.classList.add('guided-active');
+  window._map.invalidateSize();
+  if (!_guidedPanHook) {
+    _guidedPanHook = true;
+    window._map.on('dragstart', () => { if (guided.active) { guided.userPanned = true; document.getElementById('guided-recenter')?.classList.add('show'); } });
+  }
+  startLiveLocation();
+  guidedWakeLock();
+  guided.timer = setInterval(guidedTick, 15000);
+  guidedEnterStep();
+}
+
+function endGuidedTrip(returnToDetail = true) {
+  const m = guided.m;
+  if (guided.timer) clearInterval(guided.timer);
+  try { guided.wakeLock?.release(); } catch {}
+  try { guided.group && window._map.removeLayer(guided.group); } catch {}
+  guided.active = false; guided.timer = null; guided.wakeLock = null; guided.group = null;
+  document.body.classList.remove('guided-active');
+  document.getElementById('guided-recenter')?.classList.remove('show');
+  const b = document.getElementById('guided-banner'); if (b) b.innerHTML = '';
+  if (window._map) {
+    window._map.invalidateSize();
+    try { originMarker && originMarker.addTo(window._map); } catch {}
+    try { destMarker && destMarker.addTo(window._map); } catch {}
+  }
+  if (returnToDetail && m) {
+    // Exit to the trip LIST with a CLEAN map. Do NOT auto-redraw the full trip
+    // overview — for a transfer it draws both entire bus lines + three walks,
+    // which looked like a mess on End. The user can re-tap a card to see it.
+    clearDrawn(); clearBuses(); hideNetworkStops();
+    tripMatch = null; selectedMatch = null;
+    if (typeof renderPlannerResults === 'function' && currentMatches && currentMatches.length) {
+      renderPlannerResults(currentMatches);
+    }
+  }
+}
+
+// ── Step transitions ──
+function guidedEnterStep() {
+  if (!guided.active) return;
+  const step = guided.steps[guided.idx];
+  guided.userPanned = false;
+  guided._track = null;      // reset adaptive per-stop pace for the new step
+  document.getElementById('guided-recenter')?.classList.remove('show');
+  drawGuidedStep(step);      // clears the group, draws ONLY this segment
+  guidedRenderBanner();
+  step._alerted = false;
+  if (step.type === 'ARRIVED') { guidedAlert(); return; }
+  if (step.type === 'WAIT' || step.type === 'RIDE') guidedTick();
+  if (lastUserPos) onGuidedPosition(lastUserPos.lat, lastUserPos.lng);
+}
+function guidedAdvance() {
+  if (!guided.active || guided.idx >= guided.steps.length - 1) return;
+  guided.idx++; guidedEnterStep();
+}
+function guidedBack() {
+  if (!guided.active || guided.idx <= 0) return;
+  guided.idx--; guidedEnterStep();
+}
+function onGuidedPosition(lat, lng) {
+  if (!guided.active) return;
+  const pos = { lat, lng }, step = guided.steps[guided.idx];
+  if (!guided.userPanned && window._map) window._map.panTo([lat, lng], { animate: true, duration: 0.6 });
+  if (step.type === 'WALK' || step.type === 'TRANSFER') {
+    if (withinM(pos, step.to, GUIDED_ARRIVE_M)) { guidedAdvance(); return; }
+    guidedRenderBanner();   // refresh the live walk ETA as they move
+  } else if (step.type === 'WAIT') {
+    const bIdx = step.stops.findIndex(s => s.stopId === step.boardId);
+    const next = bIdx >= 0 ? step.stops[bIdx + 1] : null;
+    if ((step.buses || []).some(b => b.stopId === step.boardId) || movedPast(pos, step.boardStop, next, GUIDED_BOARDED_M)) { guidedAdvance(); return; }
+    guidedRenderBanner();
+  } else if (step.type === 'RIDE') {
+    if (withinM(pos, step.alightStop, GUIDED_ARRIVE_M)) { guidedAdvance(); return; }
+    guidedRenderBanner();
+  }
+}
+async function guidedTick() {
+  if (!guided.active || guided.fetching) return;
+  const step = guided.steps[guided.idx];
+  if (step.type === 'ARRIVED') return;
+  if (step.type !== 'WAIT' && step.type !== 'RIDE') { guidedRenderBanner(); return; }  // walk/transfer: refresh ETA only
+  guided.fetching = true;
+  try {
+    const buses = await _fetchLiveBuses(step.path.displayRouteCode, step.path.direction);
+    if (!guided.active || step !== guided.steps[guided.idx]) return;
+    if (buses && buses.length) {
+      step.buses = buses;
+      guidedDrawBuses(step);   // refresh live buses on the current segment
+      if (step.type === 'WAIT' && buses.some(b => b.stopId === step.boardId) && !step._alerted) { step._alerted = true; guidedAlert(); }
+    }
+    guidedRenderBanner();
+    if (lastUserPos) onGuidedPosition(lastUserPos.lat, lastUserPos.lng);
+  } catch {} finally { guided.fetching = false; }
+}
+
+// ── Draw ONLY the current segment into guided.group ──
+function guidedDrawBuses(step) {
+  if (!guided.group) return;
+  guided.group.eachLayer(l => { if (l.options && l.options._gbus) guided.group.removeLayer(l); });
+  const hex = (step.route && step.route.routeColor || 'f59e0b').replace('#', '').padStart(6, '0');
+  for (const b of (step.buses || [])) {
+    if (!b.lat || !b.lng) continue;
+    guided.group.addLayer(L.marker([parseFloat(b.lat), parseFloat(b.lng)], { icon: mkBusIcon(hex, null, b.plateNumber || b.busLabel || ''), zIndexOffset: 2000, _gbus: true }));
+  }
+}
+// Strip the map down to base tiles + live dot + our (empty) group. Bumps the
+// planner's draw-gen so any in-flight overview walk fetch aborts. Run at start
+// AND before every step, because the planner overview keeps creeping back onto
+// the map (async walk routes, etc.) — re-wiping each step keeps guided clean.
+function guidedWipeMap() {
+  if (!window._map) return;
+  selectPlannerMatch._gen = (selectPlannerMatch._gen || 0) + 1;
+  // Collect first, THEN remove — removing during eachLayer skips entries.
+  const toWipe = [];
+  window._map.eachLayer(l => {
+    if (l instanceof L.TileLayer || l === _liveMarker || l === _liveCircle || l === guided.group) return;
+    if (guided.group && guided.group.hasLayer && guided.group.hasLayer(l)) return;
+    toWipe.push(l);
+  });
+  toWipe.forEach(l => { try { window._map.removeLayer(l); } catch {} });
+  drawnLayers.length = 0; busMarkers.length = 0; hideNetworkStops();
+}
+function drawGuidedStep(step) {
+  if (!guided.group) return;
+  guided.group.clearLayers();
+  guidedWipeMap();   // remove any overview that crept back since the last step
+  const add = l => { guided.group.addLayer(l); return l; };
+  const C = s => s ? [parseFloat(s.lat), parseFloat(s.lng)] : null;
+  const fit = pts => {
+    const valid = pts.filter(Boolean);
+    if (!valid.length) return;
+    const b = L.latLngBounds(valid);
+    if (lastUserPos) b.extend([lastUserPos.lat, lastUserPos.lng]);
+    if (b.isValid()) window._map.fitBounds(b, { padding: [55, 55], maxZoom: 16 });
+  };
+  if (step.type === 'WALK' || step.type === 'TRANSFER') {
+    const a = step.from, b = step.to;
+    const col = step.type === 'TRANSFER' ? '#f59e0b' : '#2563eb';
+    // Straight dashed line first (instant), then swap in the real Valhalla
+    // walking route — same road-following geometry the normal trip view uses.
+    const line = add(L.polyline([[a.lat, a.lng], [b.lat, b.lng]], { color: col, weight: 5, opacity: .9, dashArray: '8,8' }));
+    if (step.toStop) add(L.marker([b.lat, b.lng], { icon: mkStopIcon(col, 14) }).bindTooltip('🚏 ' + esc(step.toStop.stopName), { permanent: true, direction: 'top', offset: [0, -10] }));
+    else add(L.marker([b.lat, b.lng], { icon: mkPinIcon('#16a34a') }));
+    const applyRoute = coords => {
+      if (!coords || coords.length < 2) return;
+      if (guided.active && guided.steps[guided.idx] === step && guided.group && guided.group.hasLayer(line)) {
+        line.setLatLngs(coords); line.setStyle({ dashArray: null });
+        fit(coords);
+      }
+    };
+    if (step.coords) { applyRoute(step.coords); fit([[a.lat, a.lng], [b.lat, b.lng]]); }
+    else {
+      fit([[a.lat, a.lng], [b.lat, b.lng]]);
+      fetchWalkingRoute(a, b).then(rt => { if (rt && rt.coords) { step.coords = rt.coords; applyRoute(rt.coords); } }).catch(() => {});
+    }
+  } else if (step.type === 'WAIT') {
+    const p = C(step.boardStop);
+    add(L.marker(p, { icon: mkStopIcon('#2563eb', 15) }).bindTooltip('🚏 ' + esc(step.boardStop.stopName), { permanent: true, direction: 'top', offset: [0, -10] }));
+    guidedDrawBuses(step);
+    fit([p]);
+  } else if (step.type === 'RIDE') {
+    const slice = routeSliceCoords(step.path.pointList || [], step.boardStop, step.alightStop);
+    if (slice.length > 1) add(L.polyline(slice, { color: '#f59e0b', weight: 6, opacity: .95 }));
+    const bp = C(step.boardStop), ap = C(step.alightStop);
+    // Intermediate stops along the ride (board → alight), like the planner shows.
+    const bi = step.stops.findIndex(s => s.stopId === step.boardId);
+    const ai = step.stops.findIndex(s => s.stopId === step.alightId);
+    if (bi >= 0 && ai > bi) {
+      for (let i = bi + 1; i < ai; i++) {
+        const s = step.stops[i];
+        add(L.circleMarker([parseFloat(s.lat), parseFloat(s.lng)], { radius: 4, color: '#f59e0b', weight: 2, fillColor: '#0d1520', fillOpacity: 1 })
+          .bindTooltip(esc(s.stopName), { direction: 'top' }));
+      }
+    }
+    add(L.marker(bp, { icon: mkStopIcon('#2563eb', 13) }).bindTooltip('🚌 ' + esc(step.boardStop.stopName), { direction: 'top' }));
+    add(L.marker(ap, { icon: mkStopIcon('#16a34a', 15) }).bindTooltip('🏁 ' + esc(step.alightStop.stopName), { permanent: true, direction: 'top', offset: [0, -10] }));
+    guidedDrawBuses(step);
+    fit(slice.length ? slice : [bp, ap]);
+  } else if (step.type === 'ARRIVED') {
+    if (destClick) { add(L.marker([destClick.lat, destClick.lng], { icon: mkPinIcon('#16a34a') })); window._map.setView([destClick.lat, destClick.lng], 16); }
+  }
+}
+
+// ── Live, adaptive ETA ──────────────────────────────────────────────────────
+// Sorted scheduled departure times for a leg.
+function _gSchedTimes(step) {
+  return (schedTimesForPath(findSchedEntry(getActiveRoutes(), step.path.displayRouteCode), step.path) || [])
+    .slice().sort((a, b) => _tmMin(a) - _tmMin(b));
+}
+// Minutes to wait for the next scheduled bus at the board stop, given you're
+// there at fromMin (clock minutes). Wraps to tomorrow if all buses have gone.
+function _gSchedWait(step, fromMin) {
+  const times = _gSchedTimes(step);
+  if (!times.length) return { mins: 20, time: null };
+  const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop);
+  for (const tm of times) { const bm = _tmMin(tm) + travel; if (bm >= fromMin) return { mins: bm - fromMin, time: tm }; }
+  return { mins: _tmMin(times[0]) + travel + 1440 - fromMin, time: times[0] };
+}
+// Adaptive pace: observed minutes-per-stop (EWMA) plus any "overage" if we've
+// been stuck on the current stop longer than expected (bus late / slow leg).
+// Tracking is per-step (reset in guidedEnterStep); curIdx is a route index.
+function _gPace(curIdx) {
+  const base = MINS_PER_STOP, now = Date.now();
+  let tr = guided._track;
+  if (!tr) { tr = guided._track = { idx: curIdx, t: now, perStop: base }; }
+  if (curIdx > tr.idx) {
+    const dt = (now - tr.t) / 60000, adv = curIdx - tr.idx;
+    const obs = Math.max(base * 0.4, Math.min(base * 4, dt / adv));
+    tr.perStop = tr.perStop * 0.5 + obs * 0.5; tr.idx = curIdx; tr.t = now;
+  } else if (curIdx < tr.idx) { tr.idx = curIdx; tr.t = now; }   // resync on GPS jitter
+  const overage = Math.max(0, (now - tr.t) / 60000 - tr.perStop);
+  return { perStop: tr.perStop, overage };
+}
+// Which board→alight stop index the rider is nearest to right now.
+function _gRideIdx(step) {
+  const bi = step.stops.findIndex(s => s.stopId === step.boardId);
+  const ai = step.stops.findIndex(s => s.stopId === step.alightId);
+  let cur = bi;
+  if (lastUserPos && bi >= 0 && ai >= bi) {
+    let best = Infinity;
+    for (let i = bi; i <= ai; i++) { const d = haversine(lastUserPos.lat, lastUserPos.lng, parseFloat(step.stops[i].lat), parseFloat(step.stops[i].lng)); if (d < best) { best = d; cur = i; } }
+  }
+  return { bi, ai, cur };
+}
+// Minutes until the bus you can catch reaches the board stop — live if a bus is
+// approaching (so a late bus pushes it out), else from the schedule.
+function _gWaitMins(step, fromMin) {
+  const buses = step.buses || [];
+  const seqOf = {}; step.stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
+  const boardSeq = seqOf[step.boardId] ?? 0;
+  const boardIdx = step.stops.findIndex(s => s.stopId === step.boardId);
+  if (buses.some(b => b.stopId === step.boardId)) return { mins: 0, live: true };
+  const appr = buses
+    .map(b => ({ idx: step.stops.findIndex(s => s.stopId === b.stopId), seq: seqOf[b.stopId] ?? -1 }))
+    .filter(x => x.idx >= 0 && x.seq >= 0 && x.seq < boardSeq)
+    .sort((a, b) => b.seq - a.seq);   // nearest (highest seq below board) first
+  if (appr.length && boardIdx >= 0) {
+    const pace = _gPace(appr[0].idx);
+    return { mins: (boardIdx - appr[0].idx) * pace.perStop + pace.overage, live: true };
+  }
+  const sd = _gSchedWait(step, fromMin);
+  return { mins: Math.max(0, sd.mins), live: false, time: sd.time };
+}
+// Total remaining minutes to the destination from the CURRENT step onward.
+// Current step uses live buses / GPS pace (grows when the bus is late or a leg
+// drags); downstream steps use stored estimates. Recomputed every render/tick.
+function guidedETA() {
+  if (!guided.active) return null;
+  const nowMin = _schedNow();   // service-day frame; arrival clock below folds back via %1440
+  let total = 0;
+  for (let j = guided.idx; j < guided.steps.length; j++) {
+    const s = guided.steps[j], cur = j === guided.idx;
+    if (s.type === 'WALK' || s.type === 'TRANSFER') {
+      if (cur && lastUserPos && s.to) total += haversine(lastUserPos.lat, lastUserPos.lng, s.to.lat, s.to.lng) / SETTINGS.walkSpeedMpm;
+      else total += s.walkMins || 0;
+    } else if (s.type === 'WAIT') {
+      total += cur ? _gWaitMins(s, nowMin + total).mins : _gSchedWait(s, nowMin + total).mins;
+    } else if (s.type === 'RIDE') {
+      if (cur) { const r = _gRideIdx(s), pace = _gPace(r.cur); total += Math.max(0, r.ai - r.cur) * pace.perStop + pace.overage; }
+      else total += s.rideMins || 0;
+    }
+  }
+  total = Math.max(0, Math.round(total));
+  const arr = (nowMin + total) % 1440;
+  const time = String(Math.floor(arr / 60)).padStart(2, '0') + ':' + String(Math.round(arr % 60)).padStart(2, '0');
+  return { mins: total, time };
+}
+// HTML for the always-on ETA line in the banner.
+function guidedEtaHtml() {
+  const e = guidedETA();
+  if (!e) return '';
+  if (e.mins <= 1) return '<div class="g-eta due"><span class="lbl">' + t('navEtaTitle') + '</span><span class="val">' + t('navEtaNow') + '</span></div>';
+  return '<div class="g-eta"><span class="lbl">' + t('navEtaTitle') + '</span><span class="val">' + t('navEtaArrive', { time: e.time, mins: e.mins }) + '</span></div>';
+}
+// WAIT detail: scheduled departures + buses approaching the board stop.
+function guidedWaitDetail(step) {
+  let html = '';
+  const times = _gSchedTimes(step);
+  const chips = _nextTimes(times, 6);   // soonest 6 departures, wrap-aware
+  if (chips.length) {
+    html += '<div class="trip-section"><div class="trip-section-title">' + t('schedTimes') + ' <span style="font-weight:400;opacity:.6">' + t('schedApprox') + '</span></div><div class="dep-chips">';
+    chips.forEach((tm, i) => { html += '<span class="dep-chip' + (i === 0 ? ' next' : '') + '">' + tm + '</span>'; });
+    html += '</div></div>';
+  }
+  const buses = step.buses || [];
+  const seqOf = {}; step.stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
+  const boardSeq = seqOf[step.boardId] ?? 0;
+  const boardIdx = step.stops.findIndex(s => s.stopId === step.boardId);
+  const appr = buses
+    .map(b => ({ b, idx: step.stops.findIndex(s => s.stopId === b.stopId), seq: seqOf[b.stopId] ?? -1 }))
+    .filter(x => x.idx >= 0 && x.seq >= 0 && x.seq <= boardSeq)
+    .sort((a, b) => b.seq - a.seq);
+  if (appr.length) {
+    html += '<div class="trip-section"><div class="trip-section-title">' + t('activeOnRoute') + '</div>';
+    appr.forEach(({ b, idx, seq }) => {
+      const away = Math.max(0, boardIdx - idx);
+      const pace = _gPace(idx);
+      const eta = seq === boardSeq ? 0 : Math.round(away * pace.perStop + pace.overage);
+      html += '<div class="live-row"><div class="bus-dot dot-orange" style="width:10px;height:10px"></div>'
+        + '<div style="flex:1"><b>' + esc(b.plateNumber || b.busLabel || t('activeShort')) + '</b>'
+        + '<div style="font-size:.68rem;color:#4a5568">' + (away ? t('stopsLeft', { n: away }) : t('busArrivedExcl')) + '</div></div>'
+        + '<span class="live-eta" style="color:#ef4444">' + (eta ? '~' + eta + ' ' + t('min') : t('nowWord')) + '</span></div>';
+    });
+    html += '</div>';
+  }
+  return html;
+}
+// RIDE detail: the board→alight stop list, current stop highlighted.
+function guidedRideDetail(step) {
+  const { bi, ai, cur } = _gRideIdx(step);
+  if (bi < 0 || ai <= bi) return '';
+  const busAt = new Set((step.buses || []).map(b => b.stopId));
+  let html = '<div class="trip-section"><div class="trip-section-title">' + t('routeStops') + '</div><div class="tl"><div class="tl-line"></div>';
+  for (let i = bi; i <= ai; i++) {
+    const s = step.stops[i];
+    const isBoard = i === bi, isAlight = i === ai, hasBus = busAt.has(s.stopId), isCur = i === cur;
+    const dotCls = isBoard ? 'board' : isAlight ? 'alight' : isCur ? 'cur' : hasBus ? 'bus' : '';
+    html += '<div class="tl-item' + (isCur ? ' cur' : '') + '"><div class="tl-dot ' + dotCls + '"></div>'
+      + '<span class="tl-name">' + esc(s.stopName) + '</span><span class="tl-id">#' + s.stopId + '</span>';
+    if (isBoard) html += ' <span class="tl-badge board">' + t('tlBoard') + '</span>';
+    if (isAlight) html += ' <span class="tl-badge alight">' + t('tlAlight') + '</span>';
+    if (hasBus && !isBoard && !isAlight) html += ' <span class="tl-badge bus">🚌</span>';
+    html += '</div>';
+  }
+  return html + '</div></div>';
+}
+
+// ── Banner ──
+function guidedWaitText(step) {
+  const buses = step.buses || [];
+  const seqOf = {}; step.stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
+  const boardSeq = seqOf[step.boardId] ?? 0;
+  if (buses.some(b => b.stopId === step.boardId)) return t('navBusHere');
+  const approaching = buses.filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= 0 && s < boardSeq; })
+    .map(b => boardSeq - seqOf[b.stopId]).sort((a, b) => a - b);
+  if (approaching.length) return t('navBusApproaching', { n: approaching[0] });
+  const times = (schedTimesForPath(findSchedEntry(getActiveRoutes(), step.path.displayRouteCode), step.path) || []).slice().sort((a, b) => _tmMin(a) - _tmMin(b));
+  const now = _schedNow();   // service-day frame, matches _tmMin
+  const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop);
+  for (const tm of times) { const bm = _tmMin(tm) + travel; if (bm >= now) return t('navNextDep', { time: tm, mins: Math.max(0, Math.round(bm - now)) }); }
+  return t('navNoSchedule');
+}
+function guidedRideText(step) {
+  if (!lastUserPos) return t('navOnBus');
+  const bi = step.stops.findIndex(s => s.stopId === step.boardId);
+  const ai = step.stops.findIndex(s => s.stopId === step.alightId);
+  if (bi < 0 || ai < 0 || ai <= bi) return t('navOnBus');
+  let cur = bi, best = Infinity;
+  for (let i = bi; i <= ai; i++) { const d = haversine(lastUserPos.lat, lastUserPos.lng, parseFloat(step.stops[i].lat), parseFloat(step.stops[i].lng)); if (d < best) { best = d; cur = i; } }
+  const left = Math.max(0, ai - cur);
+  if (left <= 1 && !step._alerted) { step._alerted = true; guidedAlert(); }
+  return left <= 1 ? t('navGetOffNow') : t('navStopsLeft', { n: left });
+}
+function guidedRenderBanner() {
+  const el = document.getElementById('guided-banner');
+  if (!el || !guided.active) return;
+  const step = guided.steps[guided.idx];
+  let icon = '🧭', primary = '', secondary = '', actionLabel = t('navNext');
+  if (step.type === 'WALK') {
+    icon = '🚶'; primary = step.toStop ? t('navWalkTo', { stop: esc(step.toStop.stopName) }) : t('navWalkToDest');
+    secondary = t('navWalkSecondary', { mins: step.walkMins }); actionLabel = t('navImHere');
+  } else if (step.type === 'TRANSFER') {
+    icon = '🔁'; primary = step.sameStop ? t('navTransferSame', { stop: esc(step.toStop.stopName) }) : t('navTransferWalk', { stop: esc(step.toStop.stopName) });
+    secondary = step.sameStop ? t('navTransferSameSub') : t('navWalkSecondary', { mins: step.walkMins }); actionLabel = t('navImHere');
+  } else if (step.type === 'WAIT') {
+    icon = '⏱'; primary = t('navWaitAt', { stop: esc(step.boardStop.stopName) }); secondary = guidedWaitText(step); actionLabel = t('navIBoarded');
+  } else if (step.type === 'RIDE') {
+    icon = '🚌'; primary = t('navRideTo', { stop: esc(step.alightStop.stopName) }); secondary = guidedRideText(step); actionLabel = t('navIGotOff');
+  } else if (step.type === 'ARRIVED') {
+    icon = '🎉'; primary = t('navArrivedTitle'); secondary = t('navArrivedSub');
+  }
+  const n = guided.steps.length;
+  let dots = '';
+  for (let i = 0; i < n; i++) dots += '<span class="g-pdot ' + (i < guided.idx ? 'done' : i === guided.idx ? 'cur' : '') + '"></span>';
+  const arrived = step.type === 'ARRIVED';
+  const etaLine = arrived ? '' : guidedEtaHtml();
+  const detail = step.type === 'WAIT' ? guidedWaitDetail(step) : step.type === 'RIDE' ? guidedRideDetail(step) : '';
+  const detailHtml = detail ? '<div class="g-detail">' + detail + '</div>' : '';
+  // stopPropagation FIRST so the click can't reach the map even if the handler
+  // detaches this button from the DOM (endGuidedTrip clears the banner) — see the
+  // map click handler / endGuidedTrip for why Leaflet's flag-walk misses it.
+  const backBtn = guided.idx > 0 ? '<button class="g-btn back" onclick="event.stopPropagation();guidedBack()">'+t('navBack')+'</button>' : '';
+  const nextBtn = arrived ? '' : '<button class="g-btn primary" onclick="event.stopPropagation();guidedAdvance()">' + actionLabel + '</button>';
+  const prevScroll = el.querySelector('.g-detail')?.scrollTop || 0;   // keep list position across live re-renders
+  el.innerHTML =
+    '<div class="g-top"><span class="g-icon">' + icon + '</span>'
+    + '<div class="g-instr"><div class="g-primary">' + primary + '</div><div class="g-secondary">' + secondary + '</div></div></div>'
+    + etaLine
+    + detailHtml
+    + '<div class="g-progress">' + dots + '</div>'
+    + '<div class="g-actions">' + backBtn + nextBtn + '<button class="g-btn end" onclick="event.stopPropagation();endGuidedTrip()">' + t('navEnd') + '</button></div>';
+  if (prevScroll) { const d = el.querySelector('.g-detail'); if (d) d.scrollTop = prevScroll; }
+}
+
+// ── Alerts / wake lock / recenter ──
+function guidedAlert() {
+  try { if (navigator.vibrate) navigator.vibrate([130, 70, 130]); } catch {}
+  const b = document.getElementById('guided-banner');
+  if (b) { b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash'); }
+}
+async function guidedWakeLock() {
+  try { if (navigator.wakeLock) guided.wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (guided.active && document.visibilityState === 'visible' && !guided.wakeLock) guidedWakeLock();
+});
+function guidedRecenter() {
+  guided.userPanned = false;
+  document.getElementById('guided-recenter')?.classList.remove('show');
+  if (lastUserPos && window._map) window._map.setView([lastUserPos.lat, lastUserPos.lng], Math.max(window._map.getZoom(), 16));
 }
 
 // ── Stops feature ─────────────────────────────────────────────────────────────

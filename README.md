@@ -64,8 +64,21 @@ Tap any route to see a full breakdown:
 - Walk to destination
 - Total estimated journey time
 - Stop timeline with live bus positions marked
+- **🧭 Start Trip** — launches guided turn-by-turn navigation for this trip (see below)
 
 ![Trip detail showing journey steps and live bus position](screenshots/trip-detail.png)
+
+---
+
+### 🧭 Start Trip — Guided Navigation
+
+From any trip detail, tap **🧭 Start Trip** to be guided through the journey one step at a time. The map clears to show **only the current segment** — no clutter from the full overview — while a bottom banner tells you what to do right now: walk to your stop → wait for the bus → ride → (transfer →) walk to your destination → arrived. Advance manually, or let GPS auto-advance as you reach each stop.
+
+- **Live, adaptive ETA on every step** — a running "estimated arrival" that updates with the situation rather than a fixed guess. Walking uses your live distance, waiting uses the approaching bus's real position (a late bus pushes the arrival out), and riding uses the pace stops are *actually* taking (so a slow leg updates the estimate upward). Falls back to the schedule when no live data is available.
+- **Ride view** — the board → drop-off stop list with your current stop highlighted, and every stop on that leg drawn on the map.
+- **Wait view** — the next scheduled departures plus the live buses approaching your stop, with per-bus ETAs.
+- **Real walking routes** — guided walk legs follow the same Valhalla road route the planner draws, not a straight line.
+- **Stays on track** — screen wake-lock and a vibration nudge so you don't miss your stop; the map follows you as you move, with a recenter button if you pan away.
 
 ---
 

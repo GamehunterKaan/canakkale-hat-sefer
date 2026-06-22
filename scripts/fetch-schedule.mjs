@@ -215,6 +215,12 @@ async function parsePDF(buffer) {
   const TIME_RE   = /^\d{2}:\d{2}$/;
   const DEPART_RE = /^(KALKIŞ|.*\sKALKIŞ|HAREKET|.*\sHAREKET)$/i;
   const KEYWORD_RE= /KALKIŞ|HAREKET|VARIŞ/i;
+  // A departure-column marker is a bare "… KALKIŞ/HAREKET" header. Notes like
+  // "07:40 - SSK HAREKET" also match DEPART_RE but carry a TIME — they're per-trip
+  // annotations, not columns. Treating them as columns invents a fake departure
+  // column that shifts the dir0/dir1 split and leaks intermediate-stop columns
+  // into the times (e.g. Ç11K EKSPRES showing 77 times). Exclude time-bearing ones.
+  const isDeptCol = it => DEPART_RE.test(it.text) && !/\d{1,2}:\d{2}/.test(it.text);
   // Footnote / annotation words that never appear in real route names. Lines
   // like "Ç1 OLARAK BAŞLAYACAKTIR" (will start as Ç1) match ROUTE_RE but are
   // notes, not routes; if we accept them they steal times from the route above.
@@ -280,7 +286,7 @@ async function parsePDF(buffer) {
 
       // Departure markers
       let deptItems = band
-        .filter(it => DEPART_RE.test(it.text) && Math.abs(it.y - headerY) <= 150)
+        .filter(it => isDeptCol(it) && Math.abs(it.y - headerY) <= 150)
         .sort((a, b) => a.x - b.x);
       const deduped = [];
       for (const d of deptItems) {
@@ -288,7 +294,7 @@ async function parsePDF(buffer) {
       }
       deptItems = deduped;
       if (deptItems.length < 2) {
-        const fb = band.filter(it => DEPART_RE.test(it.text)).sort((a, b) => a.x - b.x);
+        const fb = band.filter(it => isDeptCol(it)).sort((a, b) => a.x - b.x);
         const fb2 = [];
         for (const d of fb) {
           if (!fb2.some(e => Math.abs(e.x - d.x) < 20)) fb2.push(d);
@@ -305,12 +311,39 @@ async function parsePDF(buffer) {
                        !KEYWORD_RE.test(i.text) && !TIME_RE.test(i.text))
           .sort((a, b) => b.y - a.y);
         const sp = TIME_RE.test(selfPart) ? '' : selfPart;
-        return [...above.map(i => i.text.trim()), sp].filter(Boolean).join(' ');
+        let label = [...above.map(i => i.text.trim()), sp].filter(Boolean).join(' ');
+        // Bare "KALKIŞ" marker whose terminal name sits as a separate item to its
+        // LEFT on the same row (weekend Ç9: "OTOGAR" @x179 … "KALKIŞ" @x224, vs
+        // weekday's combined "OTOGAR KALKIŞ" item). Without this the direction
+        // parses its times but has no label, breaking direction matching + the
+        // Seferler header. Only fills an otherwise-empty label, never overwrites.
+        if (!label) {
+          const sameRowLeft = band
+            .filter(i => Math.abs(i.y - kItem.y) <= 4 && i.x < kItem.x && i.x > kItem.x - 80 &&
+                         !KEYWORD_RE.test(i.text) && !TIME_RE.test(i.text) && !ROUTE_RE.test(i.text))
+            .sort((a, b) => b.x - a.x);
+          if (sameRowLeft.length) label = sameRowLeft[0].text.trim();
+        }
+        return label;
       }
+
+      // Snap each KALKIŞ marker to the x where its HH:MM values actually stack.
+      // A combined header item ("GÜZELYALI KALKIŞ") has its left edge a few pt
+      // off from the time column beneath it (weekend Ç11G: header x128 vs times
+      // x149), which the tight ±20 tolerance below would otherwise miss entirely
+      // — leaving that whole direction empty. Columns sit ≥50pt apart, so the
+      // nearest dense time-cluster within 28pt of a marker is unambiguously that
+      // marker's own column; snapping to it keeps the tolerance tight and honest.
+      const timeXs = band.filter(it => /^\d{1,2}:\d{2}\b/.test(it.text)).map(it => it.x);
+      const snapCol = x => {
+        const near = timeXs.filter(tx => Math.abs(tx - x) <= 28).sort((a, b) => a - b);
+        return near.length ? near[Math.floor(near.length / 2)] : x;
+      };
+      const deptColXs = deptItems.map(d => snapCol(d.x));
 
       let splitX = null, dir0Lbl = '', dir1Lbl = '';
       if (deptItems.length >= 2) {
-        splitX  = (deptItems[0].x + deptItems[1].x) / 2;
+        splitX  = (deptColXs[0] + deptColXs[1]) / 2;
         dir0Lbl = deptLabel(deptItems[0]);
         dir1Lbl = deptLabel(deptItems[1]);
       } else if (deptItems.length === 1) {
@@ -320,13 +353,27 @@ async function parsePDF(buffer) {
       // Assign times by column: each deptItem defines a departure column.
       // Only include times whose X falls within 20pt of a departure-column X.
       // This is column-based matching, not fuzzy radius — VARIŞ/intermediate
-      // columns are naturally excluded because they have no KALKIŞ marker.
-      const deptColXs = deptItems.map(d => d.x);
+      // columns are naturally excluded because they have no KALKIŞ marker. The
+      // filter applies whenever ≥1 column was found (not only ≥2): a single-
+      // terminal loop like Ç5 has one KALKIŞ column (NUSRAT YURDU) sharing the
+      // band with EĞİTİM FAKÜLTESİ pass-through and NUSRAT YURDU VARIŞ columns;
+      // without the filter those arrival/pass-through times leak in as fake
+      // departures (Ç5 showed 18 "departures" when only 7 are real).
+      //
+      // A departure time can be glued to a route-variant annotation inside one
+      // text item — "12:45 -" / "07:45- iskele" / "16:55-Kalabaklı hareket" —
+      // because the "- Çınarlı/iskele/…" suffix is printed right after the time
+      // and shifts it a few pt left of the column. Match a LEADING HH:MM (not the
+      // whole item) so these variant departures aren't dropped, while the column-
+      // proximity gate still excludes genuine notes parked away from any column
+      // ("07:40 - SSK HAREKET" at its own annotation X).
       const dir0 = new Set(), dir1 = new Set();
       for (const it of band) {
-        if (!TIME_RE.test(it.text)) continue;
-        if (deptItems.length >= 2 && !deptColXs.some(cx => Math.abs(cx - it.x) <= 20)) continue;
-        (splitX !== null && it.x >= splitX ? dir1 : dir0).add(it.text);
+        const tm = it.text.match(/^(\d{1,2}:\d{2})\b/);
+        if (!tm) continue;
+        if (deptColXs.length && !deptColXs.some(cx => Math.abs(cx - it.x) <= 20)) continue;
+        const time = tm[1].length === 4 ? '0' + tm[1] : tm[1];
+        (splitX !== null && it.x >= splitX ? dir1 : dir0).add(time);
       }
 
       if (!routeMap[mapKey])

@@ -3059,26 +3059,40 @@ function findSchedEntry(dayData, routeCode) {
   return dayData[(isExpress ? expressKey : plainKey) || candidates[0]];
 }
 
-// Pick which PDF direction (dir0/dir1) belongs to the user's kentkart path by
-// matching the PDF's KALKIŞ label against the first stops of the kentkart route.
-// The mapping is not always dir0=kk0/dir1=kk1 — for many routes it's inverted.
+// Pick which PDF direction (dir0/dir1) belongs to the user's kentkart path.
+// PDF blocks are labelled by their DEPARTURE terminal (the origin you board at —
+// the app only adds a decorative "→"). So a path's block is the one whose label
+// matches where the path STARTS; the other block's label matches where it ends.
+// We score "aligned vs inverted" from BOTH endpoints — symmetric, so the two kk
+// directions always agree on orientation (never collapse both onto one block) —
+// and fall back to the usual kk dirN ↔ PDF dirN index alignment on a tie.
+//   e.g. Ç9: path Otogar→Halkbahçesi starts at OTOGAR ⇒ the "OTOGAR" block.
+//        Ç7: path PARK17→Esenler starts at PARK17 ⇒ the "PARK 17 EVLERİ" block.
 function pickSchedDir(schedEntry, path) {
   if (!schedEntry || !path) return null;
+  const has = d => schedEntry[d] && (schedEntry[d].times || []).length;
+  const def = String(path.direction) === '1' ? 'dir1' : 'dir0';   // usual kk dirN ↔ PDF dirN
+  const oth = def === 'dir0' ? 'dir1' : 'dir0';
   const normStr = s => (s || '').toUpperCase().replace(/[^A-ZÇĞIİÖŞÜ0-9]/g, '');
-  const firstStops = (path.busStopList || []).slice(0, 5).map(s => normStr(s.stopName));
-  for (const dir of ['dir0', 'dir1']) {
-    const label = normStr(schedEntry[dir]?.label);
-    if (label.length < 4) continue;
-    for (const stop of firstStops) {
-      if (stop.length < 4) continue;
-      if (stop.includes(label) || label.includes(stop)) return dir;
-      // Share 5+ char substring
-      for (let i = 0; i + 5 <= label.length; i++) {
-        if (stop.includes(label.slice(i, i + 5))) return dir;
-      }
-    }
-  }
-  return null;
+  const names = arr => arr.map(s => normStr(s.stopName)).filter(x => x.length >= 4);
+  const stops = path.busStopList || [];
+  const O = names(stops.slice(0, 4));  // where this path STARTS (its departure terminal)
+  const D = names(stops.slice(-4));    // where this path ENDS
+  const m = (dir, list) => {
+    const l = normStr(schedEntry[dir]?.label);
+    if (l.length < 4) return false;
+    return list.some(stop => {
+      if (stop.includes(l) || l.includes(stop)) return true;
+      for (let i = 0; i + 5 <= l.length; i++) if (stop.includes(l.slice(i, i + 5))) return true;
+      return false;
+    });
+  };
+  // Block labelled by departure terminal: this path's block ↔ its ORIGIN, the
+  // other ↔ its DESTINATION (= the other path's origin).
+  const aligned  = (m(def, O) ? 1 : 0) + (m(oth, D) ? 1 : 0);
+  const inverted = (m(oth, O) ? 1 : 0) + (m(def, D) ? 1 : 0);
+  const pick = inverted > aligned ? oth : def;
+  return has(pick) ? pick : (pick === def ? oth : def);
 }
 
 function schedTimesForPath(schedEntry, path) {

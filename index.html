@@ -809,8 +809,13 @@
     .rr:nth-child(2) { width:40px;height:40px;margin:-20px; animation: rr 2s ease-out infinite .65s; }
     .rr:nth-child(3) { width:40px;height:40px;margin:-20px; animation: rr 2s ease-out infinite 1.3s; }
     @keyframes rr { 0%{opacity:.7;transform:scale(.8)} 100%{opacity:0;transform:scale(4)} }
-    .leaflet-tile { filter: invert(1) brightness(0.7) hue-rotate(180deg); }
-    .leaflet-container { background: #0f1117; }
+    /* Inverting OSM's light tiles crushes everything into near-black with little
+       road/building separation. Lift the black point (contrast < 1) so land
+       reads as a visible grey with roads staying darkest, brighten overall for
+       daylight legibility, and restore saturation so parks/water/major roads
+       separate by hue, not just luminance. */
+    .leaflet-tile { filter: invert(1) hue-rotate(180deg) brightness(1.05) contrast(0.88) saturate(1.4); }
+    .leaflet-container { background: #161a24; }
     .leaflet-control-attribution { background: rgba(15,17,23,.8) !important; color: #4a5568 !important; }
     .leaflet-control-attribution a { color: #4a5568 !important; }
     html[data-theme="light"] .leaflet-tile { filter: none; }
@@ -5091,6 +5096,10 @@ function guidedEnterStep() {
   step._alerted = false;
   if (step.type === 'ARRIVED') { guidedAlert(); return; }
   if (step.type === 'WAIT' || step.type === 'RIDE') guidedTick();
+  // Arm auto-advance only if we're NOT already inside this step's arrival zone,
+  // so a Back (or Next) into a step we're physically at/past waits for a fresh
+  // crossing instead of instantly re-advancing.
+  guided._armed = lastUserPos ? !guidedStepMet(step, lastUserPos) : true;
   if (lastUserPos) onGuidedPosition(lastUserPos.lat, lastUserPos.lng);
 }
 function guidedAdvance() {
@@ -5101,22 +5110,30 @@ function guidedBack() {
   if (!guided.active || guided.idx <= 0) return;
   guided.idx--; guidedEnterStep();
 }
+// Is the current step's arrival condition satisfied at this position?
+function guidedStepMet(step, pos) {
+  if (step.type === 'WALK' || step.type === 'TRANSFER') return withinM(pos, step.to, GUIDED_ARRIVE_M);
+  if (step.type === 'WAIT') {
+    const bIdx = step.stops.findIndex(s => s.stopId === step.boardId);
+    const next = bIdx >= 0 ? step.stops[bIdx + 1] : null;
+    return (step.buses || []).some(b => b.stopId === step.boardId) || movedPast(pos, step.boardStop, next, GUIDED_BOARDED_M);
+  }
+  if (step.type === 'RIDE') return withinM(pos, step.alightStop, GUIDED_ARRIVE_M);
+  return false;
+}
 function onGuidedPosition(lat, lng) {
   if (!guided.active) return;
   const pos = { lat, lng }, step = guided.steps[guided.idx];
   if (!guided.userPanned && window._map) window._map.panTo([lat, lng], { animate: true, duration: 0.6 });
-  if (step.type === 'WALK' || step.type === 'TRANSFER') {
-    if (withinM(pos, step.to, GUIDED_ARRIVE_M)) { guidedAdvance(); return; }
-    guidedRenderBanner();   // refresh the live walk ETA as they move
-  } else if (step.type === 'WAIT') {
-    const bIdx = step.stops.findIndex(s => s.stopId === step.boardId);
-    const next = bIdx >= 0 ? step.stops[bIdx + 1] : null;
-    if ((step.buses || []).some(b => b.stopId === step.boardId) || movedPast(pos, step.boardStop, next, GUIDED_BOARDED_M)) { guidedAdvance(); return; }
-    guidedRenderBanner();
-  } else if (step.type === 'RIDE') {
-    if (withinM(pos, step.alightStop, GUIDED_ARRIVE_M)) { guidedAdvance(); return; }
-    guidedRenderBanner();
-  }
+  if (step.type === 'ARRIVED') return;
+  // Edge-triggered auto-advance: fire only when the arrival condition NEWLY
+  // becomes true after being false during this step (guided._armed). Standing
+  // inside the zone on entry — e.g. after pressing Back into a step you're
+  // already at/past — must not bounce you straight forward again.
+  const met = guidedStepMet(step, pos);
+  if (!met) guided._armed = true;
+  else if (guided._armed) { guidedAdvance(); return; }
+  guidedRenderBanner();   // refresh live ETA as they move
 }
 async function guidedTick() {
   if (!guided.active || guided.fetching) return;

@@ -1,0 +1,40 @@
+name: Tests
+
+# Code tests run when code changes — deliberately NOT wired into update-data.yml,
+# which is an hourly data cron: planner-test.mjs calls Valhalla, and an outage
+# there must never turn the data job red or block a transit-data commit.
+on:
+  push:
+    paths-ignore:
+      - 'data/**'
+      - 'screenshots/**'
+      - '**.md'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Importing core.js under bare node IS the headless proof: node has no
+      # document/window/localStorage/L, so a browser dependency creeping into
+      # core fails here rather than silently making it page-only again.
+      - name: core.js is headless
+        run: node test/core-test.mjs
+
+      # Fast, offline, deterministic. Guards the inline on*= handler contract —
+      # the thing that silently breaks when app code moves into an ES module.
+      - name: Inline handler contract
+        run: node test/handlers-test.mjs
+
+      # Planner/schedule logic against the committed data. Hits Valhalla, so it
+      # is the step expected to flake on an upstream outage — keep it last and
+      # distinct so the cause is obvious from the job summary.
+      - name: Planner + schedule logic
+        run: node test/planner-test.mjs

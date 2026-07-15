@@ -1,7 +1,7 @@
 // Service worker — Web Push + offline caching for app shell, JSON data, tiles.
 // Bump VERSION to invalidate every cache on the next activate.
 
-const VERSION     = 'v4';
+const VERSION     = 'v5';
 const SHELL_CACHE = `bm-shell-${VERSION}`;
 const DATA_CACHE  = `bm-data-${VERSION}`;
 const TILE_CACHE  = `bm-tiles-${VERSION}`;
@@ -9,6 +9,8 @@ const TILE_MAX    = 7000;  // covers all of MAP_BOUNDS at z13-16 (~5500 tiles) p
 const SHELL_ASSETS = [
   './',
   './index.html',
+  './ui.js',            // app code now lives outside index.html — must be precached
+  './core.js',          // …or the app is blank offline
   './site.webmanifest',
   './icons/web-app-manifest-192x192.png',
   './icons/web-app-manifest-512x512.png',
@@ -115,6 +117,23 @@ self.addEventListener('fetch', event => {
   if (sameOrigin && url.pathname.startsWith('/data/') && url.pathname.endsWith('.json')) {
     if (url.search) return; // network passthrough, no cache
     event.respondWith(staleWhileRevalidate(req, DATA_CACHE));
+    return;
+  }
+
+  // Same-origin app code → network-first, exactly like index.html above.
+  //
+  // This MUST NOT fall through to the cache-first branch below. index.html is
+  // network-first, so a cache-first ui.js/core.js would let a fresh page load
+  // against indefinitely-stale JS — and JS that queries element IDs the new
+  // markup no longer has is a broken app, not a degraded one. While the app was
+  // a single file, HTML and JS were versioned atomically and this couldn't
+  // happen; splitting them introduced the skew, so the two must stay in lockstep.
+  //
+  // staleWhileRevalidate is the tempting alternative but is wrong here: it can
+  // serve fresh HTML with stale JS *within a single load*. Correctness beats the
+  // extra round-trip. Offline still works — networkFirstShell falls back to cache.
+  if (sameOrigin && url.pathname.endsWith('.js') && !url.pathname.endsWith('/sw.js')) {
+    event.respondWith(networkFirstShell(req));
     return;
   }
 

@@ -1,0 +1,9 @@
+{
+  "name": "canakkale-hat-sefer",
+  "private": true,
+  "type": "module",
+  "description": "Çanakkale public bus PWA. core.js is the headless logic module; ui.js is the browser/Leaflet layer.",
+  "scripts": {
+    "test": "node test/core-test.mjs && node test/handlers-test.mjs && node test/planner-test.mjs"
+  }
+}

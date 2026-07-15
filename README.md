@@ -194,6 +194,39 @@ Everything except the notification worker runs entirely in the browser. No backe
 
 ---
 
+## Using the logic without the app — `core.js`
+
+The app is split into a headless logic module and a browser layer:
+
+```
+index.html   markup + CSS only
+ui.js        DOM, Leaflet, localStorage, push, offline  →  imports core.js
+core.js      trip planning, schedules, guided steps, taxi, i18n  →  imports nothing
+```
+
+`core.js` touches no DOM, no Leaflet, no `localStorage` and no `navigator`, so you can import it straight from GitHub Pages and use the network's logic with no webpage at all:
+
+```js
+import { init, planTrips } from 'https://gamehunterkaan.github.io/bus-manager/core.js';
+
+await init();                       // self-fetches schedule.json + stops.json
+const { list } = await planTrips(
+  { lat: 40.1553, lng: 26.4211 },   // Otogar
+  { lat: 40.1467, lng: 26.4056 },   // Halk Bahçesi
+);
+list[0];  // → { path, route, board, alight, walkB, walkA, _wait, _eta, … }
+```
+
+- `init()` — self-fetches from the deployed site by default. `init({ baseUrl })` points at your own host; `init({ schedule, stops })` injects pre-parsed data and does zero I/O (this is what `ui.js` and the tests use).
+- `planTrips(origin, dest, opts)` — returns `{ list, relaxed }`, or `null` if `isCancelled()` tripped. Pass `live: false` to plan off the timetable alone, and inject `fetchLive` / `walkMatrix` / `walkCache` to keep it deterministic offline.
+- Also exported: `findSchedEntry` / `pickSchedDir` / `schedTimesForPath` (which timetable block a route direction uses), `buildGuidedSteps` + `guidedStepMet` (turn-by-turn state), `_taxiEstimate`, `haversine`, the service-day time helpers, and the `STR` TR/EN dictionary via `createT`.
+
+> **Note:** import from the GitHub Pages URL, not `raw.githubusercontent.com` — raw serves `text/plain`, which browsers reject for ES modules. In Node, vendor the file.
+
+Headlessness isn't a convention here, it's enforced: `test/core-test.mjs` imports `core.js` under bare Node — where `document`/`window`/`localStorage`/`L` genuinely don't exist — and plans a real trip. If a browser dependency creeps in, CI fails.
+
+---
+
 ## Tech
 
 - **Schedule data** — GitHub Actions parses the municipality's PDF timetables hourly using [pdf.js](https://mozilla.github.io/pdf.js/) (Node.js, server-side) and commits pre-built JSON to the repo. The parser knows how to skip footnote/annotation lines that would otherwise corrupt neighbouring routes

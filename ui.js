@@ -508,6 +508,20 @@ const WORKER_URL       = 'https://bus-notify.17bus-notify.workers.dev'; // e.g. 
 
 let planOffset = 0; // minutes into the future to plan for
 
+// Arrive-by mode: 'depart' plans forward from a time (planOffset); 'arrive'
+// plans backward so the trip lands by a deadline. The deadline lives in
+// arriveByMins (service-day frame); until one is typed, 'arrive' behaves like
+// depart-now — arriveActive() is the "really planning backward" check.
+let planMode = 'depart';
+let arriveByMins = null;
+const arriveActive = () => planMode === 'arrive' && arriveByMins != null;
+
+// Service-day minutes → wall-clock "HH:MM" (the +1440 early-morning shift undone).
+const _fmtSched = mins => {
+  const r = ((Math.round(mins) % 1440) + 1440) % 1440;
+  return String(Math.floor(r / 60)).padStart(2, '0') + ':' + String(r % 60).padStart(2, '0');
+};
+
 let allStops     = new Map();
 let allRoutes    = [];
 let stopToRoutes = new Map();
@@ -1632,7 +1646,8 @@ function resetPlanner() {
 
 function setPlanOffset(mins) {
   planOffset = mins;
-  document.querySelectorAll('.plan-time-btn').forEach(b =>
+  planMode = 'depart'; arriveByMins = null; _syncPlanModeButtons(); // presets are departure-only
+  document.querySelectorAll('#plan-time-row .plan-time-btn').forEach(b =>
     b.classList.toggle('active', parseInt(b.dataset.offset) === mins)
   );
   // Hide custom time picker when a preset is chosen
@@ -1727,9 +1742,26 @@ function togglePlanTime() {
   document.getElementById('btnPlanTime').classList.toggle('active', open);
 }
 
+function _syncPlanModeButtons() {
+  document.getElementById('btn-mode-depart')?.classList.toggle('active', planMode === 'depart');
+  document.getElementById('btn-mode-arrive')?.classList.toggle('active', planMode === 'arrive');
+}
+
+// Kalkış/Varış toggle inside the custom-time row: the SAME typed time is read
+// as a departure (forward planning) or an arrival deadline (backward planning).
+function setPlanMode(m) {
+  planMode = m;
+  if (m === 'depart') arriveByMins = null;
+  _syncPlanModeButtons();
+  const val = document.getElementById('custom-time-input').value;
+  if (val) applyCustomTime();                 // re-interpret the typed time in the new mode
+  else if (m === 'depart' && originStop && destStop) findRoutes();
+}
+
 function openCustomTime() {
   const cr = document.getElementById('custom-time-row');
   cr.style.display = '';
+  _syncPlanModeButtons();
   const inp = document.getElementById('custom-time-input');
   // Pre-fill with current time
   if (!inp.value) {
@@ -1744,16 +1776,27 @@ function applyCustomTime() {
   const val = document.getElementById('custom-time-input').value;
   if (!val) return;
   const [h, m] = val.split(':').map(Number);
+  // Mark Özel button active, deactivate presets
+  document.querySelectorAll('#plan-time-row .plan-time-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-custom-time').classList.add('active');
+  const clockBtn = document.getElementById('btnPlanTime');
+  if (planMode === 'arrive') {
+    // The typed time is an ARRIVAL deadline within the current service day;
+    // planning still starts from "now" (planOffset stays 0).
+    arriveByMins = _schedFrame(h * 60 + m);
+    planOffset = 0;
+    if (clockBtn) clockBtn.innerHTML = '⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">→' + val + '</span>';
+    setHint(t('arriveByLabel', { time: val }));
+    if (originStop && destStop) findRoutes();
+    return;
+  }
+  arriveByMins = null;
   const targetMins = h * 60 + m;
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
   let offset = targetMins - nowMins;
   if (offset < 0) offset += 1440; // next day
   planOffset = offset;
-  // Mark Özel button active, deactivate presets
-  document.querySelectorAll('.plan-time-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('btn-custom-time').classList.add('active');
   // Update clock button label
-  const clockBtn = document.getElementById('btnPlanTime');
   if (clockBtn) clockBtn.innerHTML = '⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">' + val + '</span>';
   const hint = offset === 0 ? '' : t('planningFor',{label:val});
   setHint(hint || (originStop && destStop ? t('hintRouteRefresh') : t('hintClickStart')));
@@ -1932,7 +1975,8 @@ async function findRoutes(){
       dayData: getActiveRoutes(),
       settings: SETTINGS,
       nowMins: _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset),
-      live: !planOffset,                      // planning ahead → schedule only, no live buses
+      arriveByMins: arriveActive() ? arriveByMins : null,
+      live: !planOffset && !arriveActive(),   // planning ahead → schedule only, no live buses
       walkCache: { get: _walkDistGet, set: _walkDistSet },
       isCancelled: () => gen !== _findGen,    // same generation semantics as before
     }),
@@ -1948,9 +1992,10 @@ async function findRoutes(){
   if (!trips.list.length) {
     currentMatches = []; tripMatch = null; selectedMatch = null;
     clearDrawn(); clearBuses();
-    setHint(t('noConnection'), true);
+    setHint(arriveActive() ? t('noTripInTime') : t('noConnection'), true);
     document.getElementById('results').innerHTML =
-      '<p style="color:#4a5568;font-size:.8rem;padding:6px 0">'+t('noConnectionLong')+'</p>';
+      '<p style="color:#4a5568;font-size:.8rem;padding:6px 0">'
+      + (arriveActive() ? t('noTripInTime') : t('noConnectionLong')) + '</p>';
     hidePanelHandle();
     _appendTaxiCard(); return;
   }
@@ -1983,6 +2028,11 @@ function renderPlannerResults(matches){
   cont.innerHTML='<div class="result-header">' + (isMulti ? t('resultsTransfer') : t('resultsDirect')) + '</div>';
   for(const m of matches){
     const c=document.createElement('div');c.className='p-route-card';
+    // Arrive-by trips carry concrete clock times — surface them on the card.
+    const leaveLine = m._leaveAt != null
+      ? '<div style="font-size:.7rem;color:#a78bfa;margin-top:2px">🕐 <b>'
+        + t('leaveAtArriveAt',{leave:_fmtSched(m._leaveAt),arrive:_fmtSched(m._arriveAt)}) + '</b></div>'
+      : '';
     if (m.isMultiLeg) {
       const h1=(m.leg1.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
       const h2=(m.leg2.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
@@ -2001,6 +2051,7 @@ function renderPlannerResults(matches){
         + '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>'
         + '<div class="p-route-meta">'+t('metaMulti',{a:m.leg1.sc,b:m.leg2.sc,ride:totalRide})+'</div>'
+        + leaveLine
         + '<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.leg1.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.leg1.walkB)+')</span></div>'
         + '<div style="font-size:.7rem;color:#f59e0b">🔁 <b>'+esc(m.leg1.alight.stopName)+'</b>'
         + (m.leg2.transferWalkM > 0 ? ' <span style="color:#4a5568">'+t('transferWalkParen',{dist:fmtDist(m.leg2.transferWalkM)})+'</span>' : ' <span style="color:#4a5568">'+t('sameStopParen')+'</span>')
@@ -2014,6 +2065,7 @@ function renderPlannerResults(matches){
       const lastBusChip = m._lastBus ? '<span class="p-lastbus-badge" title="'+t('lastBusTitle')+'">'+t('lastBus')+'</span>' : '';
       c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+lastBusChip+liveChip+'<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span></div>'
         +'<div class="p-route-meta">'+t('metaDirect',{n:m.sc})+'</div>'
+        +leaveLine
         +'<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkB)+')</span></div>'
         +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>'
         +'<div style="margin-top:4px">'+bh+'</div>';
@@ -2736,8 +2788,15 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
 
   // ── Wait time ────────────────────────────────────────────────────────────────
   // Live data is only relevant when planning for now; skip it when planOffset > 0
+  // Arrive-by trips already picked their bus backward from the deadline — show
+  // its concrete leave/board/arrive clocks instead of a (meaningless) wait.
+  const arriveMode = arriveActive() && m._leaveAt != null;
   let waitMins = 0, waitLabel = '', waitDetail = '';
-  if (!planOffset && atStopReachable) {
+  if (arriveMode) {
+    waitMins   = 0;
+    waitLabel  = t('waitDepart', { time: _fmtSched(m._boardAt) });
+    waitDetail = t('leaveAtArriveAt', { leave: _fmtSched(m._leaveAt), arrive: _fmtSched(m._arriveAt) });
+  } else if (!planOffset && atStopReachable) {
     waitMins   = 0;
     waitLabel  = t('waitBusArrived');
     waitDetail = atStop[0].plateNumber || '';
@@ -2757,9 +2816,11 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     waitLabel  = t('schedUnknown');
     waitDetail = t('noLive');
   }
-  // Last-bus notice: when the caught departure is the day's final one.
-  const isLastSeferDetail = !!(nextDep && !nextDep.tomorrow && allSchedTimes.length
-    && nextDep.time === allSchedTimes[allSchedTimes.length - 1]);
+  // Last-bus notice: when the caught departure is the day's final one. In
+  // arrive-by mode the planner already knows (its bus ≠ the next one from now).
+  const isLastSeferDetail = arriveMode ? !!m._lastBus
+    : !!(nextDep && !nextDep.tomorrow && allSchedTimes.length
+      && nextDep.time === allSchedTimes[allSchedTimes.length - 1]);
 
   const totalMins = walkToMins + waitMins + rideMins + walkFromMins;
   // Snapshot for async OSRM correction — _updateTripWalk patches this card
@@ -2792,7 +2853,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         + '</div>';
 
   // ── Start guided trip ─────────────────────────────────────────────────────
-  html += planOffset
+  html += (planOffset || arriveActive())
     ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
     : '<button class="guided-start-btn" onclick="startGuidedTrip()">🧭 '+t('startTrip')+'</button>';
 
@@ -2947,8 +3008,14 @@ function _showMultiLegTripDetail(m) {
         +   '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>';
 
+  // Arrive-by: concrete clock times instead of the "from now" wait framing.
+  if (m._leaveAt != null) {
+    html += '<div style="font-size:.78rem;color:#a78bfa;margin:0 0 8px">🕐 <b>'
+          + t('leaveAtArriveAt',{leave:_fmtSched(m._leaveAt),arrive:_fmtSched(m._arriveAt)}) + '</b></div>';
+  }
+
   // Start guided trip
-  html += planOffset
+  html += (planOffset || arriveActive())
     ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
     : '<button class="guided-start-btn" onclick="startGuidedTrip()">🧭 '+t('startTrip')+'</button>';
 
@@ -3048,7 +3115,7 @@ function closeTripDetail() {
 function startGuidedTrip(m) {
   m = m || tripMatch;
   if (!m || !originClick || !destClick || !window._map) return;
-  if (planOffset) { setHint(t('startTripPlanAhead'), true); return; }
+  if (planOffset || arriveActive()) { setHint(t('startTripPlanAhead'), true); return; }
   guided = { active: true, m, steps: buildGuidedSteps(m, { lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }, { walkSpeedMpm: SETTINGS.walkSpeedMpm }), idx: 0, group: L.layerGroup().addTo(window._map), timer: null, wakeLock: null, userPanned: false, fetching: false };
 
   // CLEAN SLATE: wipe the planner overview (full route line + every walk) so the
@@ -3583,7 +3650,7 @@ applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStop
   closeTrackPanel, closeTripDetail, deleteBookmark, dismissOnboarding, downloadOfflineMap,
   endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail,
   removeRecentDest, renderStopsList, requestNearbyOnce, resetOnboarding, resetPlanner,
-  resetWalkRadius, resetWalkSpeed, saveLocationBookmark, setLang, setMode, setPlanOffset,
+  resetWalkRadius, resetWalkSpeed, saveLocationBookmark, setLang, setMode, setPlanMode, setPlanOffset,
   setTheme, shareStop, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
   toggleBmDropdown, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
   useRecentDest, viewStopInDuraklar,

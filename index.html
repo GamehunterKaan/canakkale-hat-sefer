@@ -924,6 +924,10 @@
         <button class="plan-time-btn" id="btn-custom-time"    onclick="openCustomTime()" data-i18n="tCustom">🕐 Özel</button>
       </div>
       <div id="custom-time-row" style="display:none;padding:5px 9px 0">
+        <div style="display:flex;gap:4px;padding-bottom:5px">
+          <button class="plan-time-btn active" id="btn-mode-depart" onclick="setPlanMode('depart')" data-i18n="tDepart">Kalkış</button>
+          <button class="plan-time-btn" id="btn-mode-arrive" onclick="setPlanMode('arrive')" data-i18n="tArrive">Varış</button>
+        </div>
         <input type="time" id="custom-time-input" onchange="applyCustomTime()">
       </div>
       <div id="recent-dests" class="chip-row" style="display:none"></div>

@@ -73,6 +73,10 @@ export const STR = {
     btnOrigin: '📍 Konum', btnDest: '🏁 Hedef', btnPlan: 'Planla',
     swapDir: '⇄ Yön değiştir', swapDirTitle: 'Başlangıç ve hedefi değiştir',
     tNow: 'Şimdi', tPlus30: '+30 dk', tPlus1h: '+1 sa', tCustom: '🕐 Özel',
+    tDepart: 'Kalkış', tArrive: 'Varış',
+    arriveByLabel: 'En geç {time} varış için planlanıyor.',
+    leaveAtArriveAt: '{leave} çıkış → {arrive} varış',
+    noTripInTime: 'Bu saate yetiştiren sefer bulunamadı.',
     waitingMap: 'Harita bekleniyor…',
     // ── Planner results / hints ──
     calcRoutes: 'Rotalar hesaplanıyor…',
@@ -228,6 +232,10 @@ export const STR = {
     btnOrigin: '📍 From', btnDest: '🏁 To', btnPlan: 'Plan',
     swapDir: '⇄ Swap', swapDirTitle: 'Swap origin and destination',
     tNow: 'Now', tPlus30: '+30 min', tPlus1h: '+1 hr', tCustom: '🕐 Custom',
+    tDepart: 'Depart', tArrive: 'Arrive',
+    arriveByLabel: 'Planning to arrive by {time}.',
+    leaveAtArriveAt: 'Leave {leave} → arrive {arrive}',
+    noTripInTime: 'No trip gets you there by that time.',
     waitingMap: 'Waiting for map…',
     calcRoutes: 'Finding routes…',
     noConnection: 'No connection found.',
@@ -561,6 +569,30 @@ export function _waitFromTimes(times, travelToBoardMins, fromMins) {
   return Math.max(0, Math.round(times[0] + travel + 1440 - fromMins)); // first bus tomorrow
 }
 
+// Arrive-by (backward) selection. `times` are pre-sorted ascending terminal
+// departures in the service-day frame, so the latest feasible bus is found by
+// scanning from the end. Returns the bus-at-stop minute (departure + travel)
+// within [earliestAtStop, latestAtStop], or null when no bus fits — exact
+// (unrounded), so deadline comparisons don't drift.
+export function _latestBoardAt(times, travelToStopMins, latestAtStop, earliestAtStop) {
+  for (let i = times.length - 1; i >= 0; i--) {
+    const a = times[i] + travelToStopMins;
+    if (a <= latestAtStop && a >= earliestAtStop) return a;
+  }
+  return null;
+}
+
+// Forward twin of _latestBoardAt: the first bus-at-stop minute ≥ earliestAtStop,
+// or null. Unlike _waitFromTimes this neither rounds nor wraps to tomorrow —
+// arrive-by chaining needs the exact same-day minute.
+export function _earliestBoardAt(times, travelToStopMins, earliestAtStop) {
+  for (const t of times) {
+    const a = t + travelToStopMins;
+    if (a >= earliestAtStop) return a;
+  }
+  return null;
+}
+
 // True when the next catchable departure is the LAST of the operating day (no
 // later same-day departure). `times` are pre-sorted terminal-departure minutes.
 export function _isLastSefer(times, travelToBoardMins, fromMins) {
@@ -836,6 +868,8 @@ export async function _walkDistances(point, stops, reverse, { cache = NULL_CACHE
 //   dayData     active schedule routes     (default: the dataset from init())
 //   settings    { walkRadius, walkSpeedMpm }
 //   nowMins     service-day frame minutes  (caller owns "now" — it depends on planOffset)
+//   arriveByMins service-day frame minutes: plan BACKWARD so every trip lands by
+//               this deadline (latest catchable bus per route). null = forward.
 //   live        consult live buses         (false when planning ahead)
 //   walkCache   { get, set } adapter       (localStorage in the page, NULL_CACHE in Node)
 //   fetchLive / walkMatrix                 injectable for tests
@@ -845,6 +879,7 @@ export async function planTrips(origin, dest, {
   dayData = getActiveRoutes(),
   settings = SETTINGS_DEFAULTS,
   nowMins = _schedNow(),
+  arriveByMins = null,
   live = true,
   walkCache = NULL_CACHE,
   fetchLive = _fetchLiveBuses,
@@ -855,6 +890,9 @@ export async function planTrips(origin, dest, {
   const D = { lat: dest.lat,   lng: dest.lng };
   const W = settings.walkRadius, MAXW = W * WALK_RELAX_MULT;
   const walkMins = m => m / settings.walkSpeedMpm;
+  // Arrive-by plans a future departure, so current bus positions are irrelevant —
+  // suppress the live pass exactly like planOffset > 0 does at the call site.
+  if (arriveByMins != null) live = false;
 
   // Usable paths with pre-sorted schedule times (skip student/ghost routes that
   // have neither a schedule nor live buses).
@@ -921,16 +959,32 @@ export async function planTrips(origin, dest, {
     }
     if (!chosen) continue;
     const boardArr = nowMins + walkMins(chosen.bw);
-    const wait = _waitFromTimes(u.times, _travelToStopMins(u.st[chosen.bi]), boardArr);
-    if (wait >= MAX_WAIT_MIN) continue;
-    const eta = Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
+    let wait, eta, timing = null;
+    if (arriveByMins != null) {
+      // Backward: the LATEST bus that still lands by the deadline and that you
+      // can physically reach from now. No wait to bound — you leave just in time.
+      const ride = _rideMins(u.st, chosen.bi, chosen.ai);
+      const latestAtBoard = arriveByMins - ride - walkMins(chosen.aw);
+      const busAtBoard = _latestBoardAt(u.times, _travelToStopMins(u.st[chosen.bi]), latestAtBoard, boardArr);
+      if (busAtBoard == null) continue;
+      wait = 0;
+      const leaveAt = busAtBoard - walkMins(chosen.bw);
+      const arriveAt = busAtBoard + ride + walkMins(chosen.aw);
+      eta = Math.round(arriveAt - leaveAt);
+      timing = { _leaveAt: leaveAt, _arriveAt: arriveAt, _boardAt: busAtBoard };
+    } else {
+      wait = _waitFromTimes(u.times, _travelToStopMins(u.st[chosen.bi]), boardArr);
+      if (wait >= MAX_WAIT_MIN) continue;
+      eta = Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
+    }
     candidates.push({
       isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
       board: u.st[chosen.bi], alight: u.st[chosen.ai],
       walkB: Math.round(chosen.bw), walkA: Math.round(chosen.aw),
       sc: chosen.ai - chosen.bi, _wait: wait, _eta: eta, _maxWalk: Math.max(chosen.bw, chosen.aw),
-      _lastBus: _isLastSefer(u.times, _travelToStopMins(u.st[chosen.bi]), boardArr),
+      _lastBus: _isLastSefer(u.times, _travelToStopMins(u.st[chosen.bi]), timing ? timing._boardAt : boardArr),
       _bi: chosen.bi, _bw: chosen.bw, // transient: board index + walk metres, for the live pass
+      ...timing,
     });
   }
 
@@ -947,8 +1001,15 @@ export async function planTrips(origin, dest, {
 
   for (const A of originPaths) {
     const board = A.boards.reduce((a,b)=> b.w < a.w ? b : a); // closest board on A
-    const leg1Wait = _waitFromTimes(A.u.times, _travelToStopMins(board.s), nowMins + walkMins(board.w));
-    if (leg1Wait >= MAX_WAIT_MIN) continue;
+    const travelToBoard = _travelToStopMins(board.s);
+    const earliestAtBoard = nowMins + walkMins(board.w);
+    // Forward mode boards leg 1 as soon as possible; arrive-by has no up-front
+    // wait (the leg-1 bus is chosen backward from the leg-2 connection below).
+    let leg1Wait = 0;
+    if (arriveByMins == null) {
+      leg1Wait = _waitFromTimes(A.u.times, travelToBoard, earliestAtBoard);
+      if (leg1Wait >= MAX_WAIT_MIN) continue;
+    }
     for (const B of destPaths) {
       if (B.u.code === A.u.code) continue;
       const alight = B.alights.reduce((a,b)=> b.w < a.w ? b : a); // closest alight on B
@@ -966,12 +1027,36 @@ export async function planTrips(origin, dest, {
           const t = (X.stopId === Y.stopId) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
           if (t > TRANSFER_WALK_MAX_M) continue;
           const ride1 = _rideMins(A.u.st, board.i, xi);
-          const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + ride1 + walkMins(t);
-          const leg2Wait = _waitFromTimes(B.u.times, _travelToStopMins(Y), arriveB2);
-          if (leg2Wait >= MAX_WAIT_MIN) continue;
           const ride2 = _rideMins(B.u.st, yj, alight.i);
-          const eta = Math.round(walkMins(board.w) + leg1Wait + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(alight.w));
-          xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta });
+          const travelToY = _travelToStopMins(Y);
+          if (arriveByMins != null) {
+            // Backward chain, leg 2 → leg 1: anchor on the LATEST leg-2 bus that
+            // lands by the deadline, take the latest leg-1 bus that still makes
+            // that connection, then board the FIRST leg-2 bus you actually catch
+            // after the transfer walk — it can only be the anchor or an earlier
+            // one, so the deadline still holds.
+            const latestAtY = arriveByMins - ride2 - walkMins(alight.w);
+            const busAtYMax = _latestBoardAt(B.u.times, travelToY, latestAtY, -Infinity);
+            if (busAtYMax == null) continue;
+            const busAtBoard = _latestBoardAt(A.u.times, travelToBoard, busAtYMax - walkMins(t) - ride1, earliestAtBoard);
+            if (busAtBoard == null) continue;
+            const atY = busAtBoard + ride1 + walkMins(t);
+            const busAtY = _earliestBoardAt(B.u.times, travelToY, atY);
+            if (busAtY == null) continue; // unreachable: busAtYMax ≥ atY guarantees a hit
+            const leg2Wait = busAtY - atY;
+            const leaveAt = busAtBoard - walkMins(board.w);
+            const arriveAt = busAtY + ride2 + walkMins(alight.w);
+            // _eta legitimately includes the mid-trip transfer wait: once you're
+            // committed to leg 1 you can't leave later to avoid it.
+            xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta: Math.round(arriveAt - leaveAt),
+                         leaveAt, arriveAt, boardAt: busAtBoard, leg2BoardAt: busAtY });
+          } else {
+            const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + ride1 + walkMins(t);
+            const leg2Wait = _waitFromTimes(B.u.times, travelToY, arriveB2);
+            if (leg2Wait >= MAX_WAIT_MIN) continue;
+            const eta = Math.round(walkMins(board.w) + leg1Wait + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(alight.w));
+            xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta });
+          }
         }
       }
       // (B) Among transfers within TRANSFER_ETA_TOLERANCE_MIN of the fastest,
@@ -993,11 +1078,19 @@ export async function planTrips(origin, dest, {
           : pool.reduce((a, b) => (b.t < a.t || (b.t === a.t && b.eta < a.eta)) ? b : a);
       }
       if (best) {
-      const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + best.ride1 + walkMins(best.t);
-      const lastBus = _isLastSefer(A.u.times, _travelToStopMins(board.s), nowMins + walkMins(board.w))
-                   || _isLastSefer(B.u.times, _travelToStopMins(best.Y), arriveB2);
+      // "From" minutes for last-bus detection: in arrive-by they're the chosen
+      // buses themselves (first catchable ≥ their own arrival is that bus).
+      const boardFrom = best.boardAt != null ? best.boardAt : nowMins + walkMins(board.w);
+      const yFrom = best.boardAt != null
+        ? best.boardAt + best.ride1 + walkMins(best.t)
+        : nowMins + walkMins(board.w) + leg1Wait + best.ride1 + walkMins(best.t);
+      const lastBus = _isLastSefer(A.u.times, _travelToStopMins(board.s), boardFrom)
+                   || _isLastSefer(B.u.times, _travelToStopMins(best.Y), yFrom);
       candidates.push({
         isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w), _lastBus: lastBus,
+        ...(best.boardAt != null
+          ? { _leaveAt: best.leaveAt, _arriveAt: best.arriveAt, _boardAt: best.boardAt, _leg2BoardAt: best.leg2BoardAt }
+          : null),
         leg1: {
           path: A.u.p, route: A.u.route, board: board.s, alight: best.X,
           walkB: Math.round(board.w), sc: best.xi - board.i, wait: leg1Wait,
@@ -1006,7 +1099,7 @@ export async function planTrips(origin, dest, {
         },
         leg2: {
           path: B.u.p, route: B.u.route, board: best.Y, alight: alight.s,
-          walkA: Math.round(alight.w), sc: alight.i - best.yj, wait: best.leg2Wait,
+          walkA: Math.round(alight.w), sc: alight.i - best.yj, wait: Math.round(best.leg2Wait),
           ride: Math.round(best.ride2), buses: B.u.buses,
           transferWalkM: Math.round(best.t), transferWalkMins: Math.max(0, Math.round(walkMins(best.t))),
         },

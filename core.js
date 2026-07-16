@@ -78,6 +78,10 @@ export const STR = {
     leaveAtArriveAt: '{leave} çıkış → {arrive} varış',
     noTripInTime: 'Bu saate yetiştiren sefer bulunamadı.',
     arriveTimePast: 'Bu saat bugün için geçti — varış planı aynı gün içinde çalışır. Yarın için Kalkış modunu kullanın.',
+    shareTripBtn: '🔗', shareTripTitle: 'Yolculuğu paylaş',
+    tripShareText: '{route} · {from} → {to} — Çanakkale Hat & Sefer',
+    tripLinkGone: 'Paylaşılan yolculuk artık oluşturulamıyor (sefer verisi değişmiş olabilir). Rota yeniden planlanıyor…',
+    tripLinkRestored: 'Paylaşılan yolculuk yüklendi.',
     waitingMap: 'Harita bekleniyor…',
     // ── Planner results / hints ──
     calcRoutes: 'Rotalar hesaplanıyor…',
@@ -238,6 +242,10 @@ export const STR = {
     leaveAtArriveAt: 'Leave {leave} → arrive {arrive}',
     noTripInTime: 'No trip gets you there by that time.',
     arriveTimePast: 'That time has already passed today — arrive-by plans within the same day. Use Depart mode for tomorrow.',
+    shareTripBtn: '🔗', shareTripTitle: 'Share trip',
+    tripShareText: '{route} · {from} → {to} — Çanakkale Hat & Sefer',
+    tripLinkGone: 'The shared trip can no longer be built (schedule data may have changed). Replanning the route…',
+    tripLinkRestored: 'Shared trip loaded.',
     waitingMap: 'Waiting for map…',
     calcRoutes: 'Finding routes…',
     noConnection: 'No connection found.',
@@ -1220,6 +1228,141 @@ export async function planTrips(origin, dest, {
   for (const m of pool) m._longWalk = m._maxWalk > W;
 
   return { list: pool.slice(0, 5), relaxed };
+}
+
+// ── Shareable trips: rebuild ONE exact trip from its identity ────────────────
+// A share link pins a trip by what it IS — route(s)+direction, board/alight stop
+// ids per leg, origin/dest coords, and an absolute planning time — rather than
+// by where it happened to rank: re-running planTrips later could reorder or drop
+// it from the top-5, but the identity always reconstructs to the same trip with
+// the same schedule clocks. Times/waits are recomputed from the CURRENT schedule
+// with the same helpers planTrips uses (core-test pins the two paths to agree),
+// so a data update shifts the clocks honestly instead of showing stale ones.
+//
+//   spec = { origin: {lat,lng}, dest: {lat,lng},
+//            legs: [{ code, dir, board, alight }]        (1 = direct, 2 = transfer) }
+//   opts = { pathCache, dayData, settings, nowMins, arriveByMins } (as planTrips)
+//
+// Returns a match object shaped exactly like a planTrips candidate, or null when
+// the trip can no longer be built (route/stop gone from the data, or no bus fits
+// an arrive-by deadline) — callers should fall back to a fresh plan.
+// walkB/walkA (meters) override the board/alight walk distances: the UI passes
+// real road distances from the same walk-matrix machinery planTrips uses, so the
+// rebuilt clocks equal the sharer's to the minute. Without them the walks fall
+// back to detour-factored haversine (the planner's own no-network fallback).
+export function buildTripFromSpec(spec, {
+  pathCache = _pathCache,
+  dayData = getActiveRoutes(),
+  settings = SETTINGS_DEFAULTS,
+  nowMins = _schedNow(),
+  arriveByMins = null,
+  walkB = null,
+  walkA = null,
+} = {}) {
+  const legs = spec?.legs || [];
+  if (!legs.length || legs.length > 2 || !spec.origin || !spec.dest) return null;
+  const walkMins = m => m / settings.walkSpeedMpm;
+  const walkM = (pt, s) => haversine(pt.lat, pt.lng, +s.lat, +s.lng) * WALK_DETOUR_FACTOR;
+
+  // Resolve each leg's path + stop indices + sorted schedule times.
+  const L = [];
+  for (const lg of legs) {
+    const pe = pathCache.find(pe => pe.path.displayRouteCode === lg.code
+                                 && String(pe.path.direction) === String(lg.dir));
+    if (!pe) return null;
+    const st = pe.path.busStopList || [];
+    const bi = st.findIndex(s => String(s.stopId) === String(lg.board));
+    const ai = st.findIndex(s => String(s.stopId) === String(lg.alight));
+    if (bi < 0 || ai < 0 || ai <= bi) return null;
+    const entry = findSchedEntry(dayData, lg.code);
+    L.push({
+      p: pe.path, route: pe.route, st, bi, ai, buses: pe.path.busList || [],
+      times: entry ? (schedTimesForPath(entry, pe.path) || []).map(_tmMin).sort((a, b) => a - b) : [],
+    });
+  }
+
+  const A = L[0];
+  const bw = walkB != null ? walkB : walkM(spec.origin, A.st[A.bi]);
+  const travelToBoard = _travelToStopMins(A.st[A.bi]);
+  const earliestAtBoard = nowMins + walkMins(bw);
+
+  if (L.length === 1) {
+    const aw = walkA != null ? walkA : walkM(spec.dest, A.st[A.ai]);
+    const ride = _rideMins(A.st, A.bi, A.ai);
+    let wait, eta, timing = null;
+    if (arriveByMins != null) {
+      const busAtBoard = _latestBoardAt(A.times, travelToBoard, arriveByMins - ride - walkMins(aw), earliestAtBoard);
+      if (busAtBoard == null) return null;
+      wait = 0;
+      const leaveAt = busAtBoard - walkMins(bw), arriveAt = busAtBoard + ride + walkMins(aw);
+      eta = Math.round(arriveAt - leaveAt);
+      timing = { _leaveAt: leaveAt, _arriveAt: arriveAt, _boardAt: busAtBoard };
+    } else {
+      wait = _waitFromTimes(A.times, travelToBoard, earliestAtBoard);
+      if (wait >= MAX_WAIT_MIN) return null;
+      eta = Math.round(walkMins(bw) + wait + ride + walkMins(aw));
+    }
+    return {
+      isMultiLeg: false, path: A.p, route: A.route, buses: A.buses,
+      board: A.st[A.bi], alight: A.st[A.ai],
+      walkB: Math.round(bw), walkA: Math.round(aw),
+      sc: A.ai - A.bi, _wait: wait, _eta: eta,
+      _maxWalk: Math.max(bw, aw), _longWalk: Math.max(bw, aw) > settings.walkRadius,
+      _lastBus: _isLastSefer(A.times, travelToBoard, timing ? timing._boardAt : earliestAtBoard),
+      _bi: A.bi, _bw: bw,
+      ...timing,
+    };
+  }
+
+  // Transfer: leg 1 alight (X) → walk → leg 2 board (Y).
+  const B = L[1];
+  const X = A.st[A.ai], Y = B.st[B.bi];
+  const t = (String(X.stopId) === String(Y.stopId)) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
+  const aw = walkA != null ? walkA : walkM(spec.dest, B.st[B.ai]);
+  const ride1 = _rideMins(A.st, A.bi, A.ai);
+  const ride2 = _rideMins(B.st, B.bi, B.ai);
+  const travelToY = _travelToStopMins(Y);
+  let leg1Wait = 0, leg2Wait, eta, timing = null, boardFrom = earliestAtBoard, yFrom;
+  if (arriveByMins != null) {
+    const busAtYMax = _latestBoardAt(B.times, travelToY, arriveByMins - ride2 - walkMins(aw), -Infinity);
+    if (busAtYMax == null) return null;
+    const busAtBoard = _latestBoardAt(A.times, travelToBoard, busAtYMax - walkMins(t) - ride1, earliestAtBoard);
+    if (busAtBoard == null) return null;
+    const atY = busAtBoard + ride1 + walkMins(t);
+    const busAtY = _earliestBoardAt(B.times, travelToY, atY);
+    if (busAtY == null) return null;
+    leg2Wait = busAtY - atY;
+    if (leg2Wait >= MAX_WAIT_MIN) return null;
+    const leaveAt = busAtBoard - walkMins(bw), arriveAt = busAtY + ride2 + walkMins(aw);
+    eta = Math.round(arriveAt - leaveAt);
+    timing = { _leaveAt: leaveAt, _arriveAt: arriveAt, _boardAt: busAtBoard, _leg2BoardAt: busAtY };
+    boardFrom = busAtBoard; yFrom = atY;
+  } else {
+    leg1Wait = _waitFromTimes(A.times, travelToBoard, earliestAtBoard);
+    if (leg1Wait >= MAX_WAIT_MIN) return null;
+    yFrom = nowMins + walkMins(bw) + leg1Wait + ride1 + walkMins(t);
+    leg2Wait = _waitFromTimes(B.times, travelToY, yFrom);
+    if (leg2Wait >= MAX_WAIT_MIN) return null;
+    eta = Math.round(walkMins(bw) + leg1Wait + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(aw));
+  }
+  return {
+    isMultiLeg: true, _eta: eta,
+    _maxWalk: Math.max(bw, aw), _longWalk: Math.max(bw, aw) > settings.walkRadius,
+    _lastBus: _isLastSefer(A.times, travelToBoard, boardFrom) || _isLastSefer(B.times, travelToY, yFrom),
+    ...timing,
+    leg1: {
+      path: A.p, route: A.route, board: A.st[A.bi], alight: X,
+      walkB: Math.round(bw), sc: A.ai - A.bi, wait: leg1Wait,
+      ride: Math.round(ride1), buses: A.buses,
+      _bi: A.bi, _bw: bw,
+    },
+    leg2: {
+      path: B.p, route: B.route, board: Y, alight: B.st[B.ai],
+      walkA: Math.round(aw), sc: B.ai - B.bi, wait: Math.round(leg2Wait),
+      ride: Math.round(ride2), buses: B.buses,
+      transferWalkM: Math.round(t), transferWalkMins: Math.max(0, Math.round(walkMins(t))),
+    },
+  };
 }
 
 // Valhalla one-shot distance matrix: every source→target walking distance in a

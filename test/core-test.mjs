@@ -258,6 +258,82 @@ const backEarly = await core.planTrips(ORIGIN, DEST, { ...noNet, nowMins: NOW, a
   }
 }
 
+// ── Shareable trips: buildTripFromSpec reconstructs the exact trip ──────────
+console.log('\n── buildTripFromSpec (share links) ──\n');
+
+// The share link pins a trip by identity; reconstruction must agree with what
+// planTrips produced for the same inputs — byte-for-byte on the fields the UI
+// renders. This parity check is what stops the two code paths from drifting.
+{
+  const specOf = m => m.isMultiLeg
+    ? { legs: [
+        { code: m.leg1.path.displayRouteCode, dir: m.leg1.path.direction, board: m.leg1.board.stopId, alight: m.leg1.alight.stopId },
+        { code: m.leg2.path.displayRouteCode, dir: m.leg2.path.direction, board: m.leg2.board.stopId, alight: m.leg2.alight.stopId },
+      ] }
+    : { legs: [{ code: m.path.displayRouteCode, dir: m.path.direction, board: m.board.stopId, alight: m.alight.stopId }] };
+
+  // Forward direct parity (Otogar → Halk Bahçesi, fixed 10:00).
+  const fw = await core.planTrips(ORIGIN, DEST, { ...noNet, nowMins: NOW });
+  const fd = fw.list.find(m => !m.isMultiLeg);
+  ck('parity setup: forward plan has a direct trip', !!fd);
+  if (fd) {
+    const rb = core.buildTripFromSpec({ origin: ORIGIN, dest: DEST, ...specOf(fd) }, { ...noNet, nowMins: NOW });
+    ck('direct rebuild: same route+direction', rb && rb.path.displayRouteCode === fd.path.displayRouteCode && rb.path.direction === fd.path.direction);
+    ck('direct rebuild: same board/alight stops', rb && rb.board.stopId === fd.board.stopId && rb.alight.stopId === fd.alight.stopId);
+    ck('direct rebuild: same wait and ETA', rb && rb._wait === fd._wait && rb._eta === fd._eta, rb ? `${rb._wait}/${rb._eta} vs ${fd._wait}/${fd._eta}` : 'null');
+    ck('direct rebuild: same walks', rb && rb.walkB === fd.walkB && rb.walkA === fd.walkA);
+    ck('direct rebuild: same last-bus flag', rb && rb._lastBus === fd._lastBus);
+  }
+
+  // Arrive-by parity, incl. the concrete clocks (the whole point of sharing).
+  const bwPlan = await core.planTrips(ORIGIN, DEST, { ...noNet, nowMins: NOW, arriveByMins: ARRIVE_BY });
+  const bd = bwPlan.list.find(m => !m.isMultiLeg);
+  ck('parity setup: arrive-by plan has a direct trip', !!bd);
+  if (bd) {
+    const rb = core.buildTripFromSpec({ origin: ORIGIN, dest: DEST, ...specOf(bd) }, { ...noNet, nowMins: NOW, arriveByMins: ARRIVE_BY });
+    ck('arrive-by rebuild: identical leave/board/arrive clocks',
+       rb && rb._leaveAt === bd._leaveAt && rb._boardAt === bd._boardAt && rb._arriveAt === bd._arriveAt,
+       rb ? `${rb._leaveAt}/${rb._boardAt}/${rb._arriveAt} vs ${bd._leaveAt}/${bd._boardAt}/${bd._arriveAt}` : 'null');
+    ck('arrive-by rebuild: same ETA', rb && rb._eta === bd._eta);
+  }
+
+  // Transfer parity on the arrive-by YENİ HASTANE→FenEd plan (has transfers).
+  const stopArr = Object.values(stops.stops).map(v => Array.isArray(v) ? v[1] : v);
+  const byId = id => stopArr.find(s => String(s.stopId) === String(id));
+  const YH = byId(447), FE = byId(308);
+  const O2 = { lat: +YH.lat, lng: +YH.lng }, D2 = { lat: +FE.lat, lng: +FE.lng };
+  const xp = await core.planTrips(O2, D2, { ...noNet, nowMins: NOW, arriveByMins: ARRIVE_BY });
+  const xm = xp.list.find(m => m.isMultiLeg);
+  ck('parity setup: transfer trip available', !!xm);
+  if (xm) {
+    const rb = core.buildTripFromSpec({ origin: O2, dest: D2, ...specOf(xm) }, { ...noNet, nowMins: NOW, arriveByMins: ARRIVE_BY });
+    ck('transfer rebuild: same legs (routes, board/alight/transfer stops)',
+       rb && rb.isMultiLeg
+       && rb.leg1.path.displayRouteCode === xm.leg1.path.displayRouteCode
+       && rb.leg2.path.displayRouteCode === xm.leg2.path.displayRouteCode
+       && rb.leg1.board.stopId === xm.leg1.board.stopId
+       && rb.leg1.alight.stopId === xm.leg1.alight.stopId
+       && rb.leg2.board.stopId === xm.leg2.board.stopId
+       && rb.leg2.alight.stopId === xm.leg2.alight.stopId);
+    ck('transfer rebuild: identical clocks + waits',
+       rb && rb._leaveAt === xm._leaveAt && rb._arriveAt === xm._arriveAt
+       && rb.leg1.wait === xm.leg1.wait && rb.leg2.wait === xm.leg2.wait,
+       rb ? `${rb._leaveAt}→${rb._arriveAt} vs ${xm._leaveAt}→${xm._arriveAt}` : 'null');
+    ck('transfer rebuild: same ETA and transfer walk', rb && rb._eta === xm._eta && rb.leg2.transferWalkM === xm.leg2.transferWalkM);
+  }
+
+  // Broken specs must return null (never a half-built trip).
+  ck('unknown route code → null',
+     core.buildTripFromSpec({ origin: ORIGIN, dest: DEST, legs: [{ code: 'NOPE', dir: '0', board: 1, alight: 2 }] }, { ...noNet, nowMins: NOW }) === null);
+  ck('alight before board → null', (() => {
+    const fd2 = fw.list.find(m => !m.isMultiLeg);
+    if (!fd2) return true;
+    const s = specOf(fd2); [s.legs[0].board, s.legs[0].alight] = [s.legs[0].alight, s.legs[0].board];
+    return core.buildTripFromSpec({ origin: ORIGIN, dest: DEST, ...s }, { ...noNet, nowMins: NOW }) === null;
+  })());
+  ck('empty legs → null', core.buildTripFromSpec({ origin: ORIGIN, dest: DEST, legs: [] }, noNet) === null);
+}
+
 // Infeasible deadline (04:30) — empty result, NOT null (null means cancelled).
 const none = await core.planTrips(ORIGIN, DEST, { ...noNet, nowMins: NOW, arriveByMins: 4 * 60 + 30 });
 ck('infeasible deadline yields { list: [], relaxed: false }, not null',

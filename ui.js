@@ -21,7 +21,7 @@ import {
   pickActiveScheduleId, pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath,
   todayParts, withinM,
   QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
-  _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, estimateWaitFromMins,
+  _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
   getActiveRoutes, getActiveSchedule, planTrips,
   getSchedule, setSchedule, getPathCache, setPathCache,
 } from './core.js';
@@ -522,6 +522,11 @@ const arriveActive = () => planMode === 'arrive' && arriveByMins != null;
 // new mode can't silently slip past one of the guards.
 const planningAhead = () => planOffset > 0 || arriveActive();
 
+// Set while a shared-trip deep link restores origin/dest through applyPoint:
+// the pinned trip must render, not the auto re-plan that "both points set"
+// normally triggers.
+let _suppressAutoPlan = false;
+
 // Service-day minutes → wall-clock "HH:MM" (the +1440 early-morning shift undone).
 const _fmtSched = mins => {
   const r = ((Math.round(mins) % 1440) + 1440) % 1440;
@@ -570,7 +575,29 @@ let _pendingStopDeepLink = (() => {
   try { return new URLSearchParams(window.location.search).get('stop') || null; }
   catch { return null; }
 })();
+
+// Shareable trips: /?trip=1&o=lat,lng&d=lat,lng&m=depart|arrive&t=HH:MM
+//                        &l1=code|dir|boardId|alightId[&l2=…]
+// The link pins the trip by IDENTITY (exact route+direction+stops per leg) and
+// by an ABSOLUTE clock time — never "now" and never a rank in the results list —
+// so reopening it reconstructs the same trip with the same schedule clocks.
+let _pendingTripDeepLink = (() => {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('trip') !== '1') return null;
+    const pt = s => { const [lat, lng] = (s || '').split(',').map(Number); return isFinite(lat) && isFinite(lng) ? { lat, lng } : null; };
+    const leg = s => { const [code, dir, board, alight] = (s || '').split('|'); return code && dir != null && board && alight ? { code, dir, board, alight } : null; };
+    const o = pt(q.get('o')), d = pt(q.get('d'));
+    const m = q.get('m') === 'arrive' ? 'arrive' : 'depart';
+    const tm = /^\d{1,2}:\d{2}$/.test(q.get('t') || '') ? q.get('t') : null;
+    const legs = [leg(q.get('l1')), leg(q.get('l2'))].filter(Boolean);
+    if (!o || !d || !tm || !legs.length) return null;
+    return { o, d, m, t: tm, legs };
+  } catch { return null; }
+})();
+
 function applyDeepLink() {
+  if (_pendingTripDeepLink) _applyTripDeepLink();
   if (!_pendingStopDeepLink) return;
   if (!allStops || !allStops.size) return; // try again after stops finish loading
   const id = _pendingStopDeepLink;
@@ -579,6 +606,125 @@ function applyDeepLink() {
   stopDetailId = id;
   pushRecentStop(id);
   showScreen('stops');
+}
+
+// Restore a shared trip: pin the time, place origin/dest (without triggering the
+// auto re-plan), rebuild the exact trip headlessly, and open its detail. If the
+// trip can't be rebuilt any more (route/stop gone, deadline infeasible), fall
+// back to a normal plan for the same inputs so the link still lands somewhere useful.
+// Async (walk-distance fetch) and deliberately un-awaited by applyDeepLink.
+async function _applyTripDeepLink() {
+  if (!window._map || !allStops.size || !getPathCache().length) return; // retried on the post-load call
+  const spec = _pendingTripDeepLink;
+  _pendingTripDeepLink = null;
+
+  // 1. Pin the time state exactly as the sharer had it (absolute clock time).
+  const [h, mn] = spec.t.split(':').map(Number);
+  planMode = spec.m;
+  if (spec.m === 'arrive') {
+    arriveByMins = _schedFrame(h * 60 + mn);
+    planOffset = 0;
+  } else {
+    arriveByMins = null;
+    const nowRaw = new Date().getHours() * 60 + new Date().getMinutes();
+    planOffset = (h * 60 + mn - nowRaw + 1440) % 1440; // same wrap rule as applyCustomTime
+  }
+  const inp = document.getElementById('custom-time-input');
+  if (inp) inp.value = spec.t;
+  document.querySelectorAll('.plan-time-btn[data-offset]').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-custom-time')?.classList.add('active');
+  _syncPlanModeButtons();
+  const clockBtn = document.getElementById('btnPlanTime');
+  if (clockBtn) clockBtn.innerHTML = '⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">' + (spec.m === 'arrive' ? '→' : '') + spec.t + '</span>';
+
+  // 2. Place origin/dest through the normal path (markers, cards, recents) but
+  //    keep applyPoint's "both set → findRoutes()" from racing the pinned trip.
+  _suppressAutoPlan = true;
+  try {
+    applyPoint(spec.o.lat, spec.o.lng, 'origin');
+    applyPoint(spec.d.lat, spec.d.lng, 'dest');
+  } finally { _suppressAutoPlan = false; }
+  if (!originClick || !destClick) return; // out-of-bounds coords — applyPoint already hinted
+
+  showScreen('planner');
+
+  // 3. Real walk distances for the two endpoints, through the SAME machinery
+  //    the planner uses (persistent cache → Valhalla matrix → haversine
+  //    fallback) — so the rebuilt leave/arrive clocks equal the sharer's to
+  //    the minute instead of drifting on the walk estimate.
+  const first = spec.legs[0], last = spec.legs[spec.legs.length - 1];
+  const findStop = (lg, id) => {
+    const pe = getPathCache().find(pe => pe.path.displayRouteCode === lg.code
+                                      && String(pe.path.direction) === String(lg.dir));
+    const s = (pe?.path.busStopList || []).find(s => String(s.stopId) === String(id));
+    return s ? { id: s.stopId, lat: +s.lat, lng: +s.lng } : null;
+  };
+  const bStop = findStop(first, first.board), aStop = findStop(last, last.alight);
+  let walkB = null, walkA = null;
+  if (bStop && aStop) {
+    const wc = { get: _walkDistGet, set: _walkDistSet };
+    const [bm, am] = await Promise.all([
+      _walkDistances(spec.o, new Map([[bStop.id, bStop]]), false, { cache: wc, matrix: _walkMatrix }),
+      _walkDistances(spec.d, new Map([[aStop.id, aStop]]), true,  { cache: wc, matrix: _walkMatrix }),
+    ]);
+    walkB = bm.get(bStop.id) ?? null; walkA = am.get(aStop.id) ?? null;
+  }
+
+  // 4. Rebuild the exact trip; fall back to a fresh plan if it no longer exists.
+  const m = buildTripFromSpec({ origin: spec.o, dest: spec.d, legs: spec.legs }, {
+    pathCache: getPathCache(), dayData: getActiveRoutes(), settings: SETTINGS,
+    nowMins: _schedFrame(new Date().getHours() * 60 + new Date().getMinutes() + planOffset),
+    arriveByMins: arriveActive() ? arriveByMins : null,
+    walkB, walkA,
+  });
+  if (!m) { setHint(t('tripLinkGone'), true); findRoutes(); return; }
+  currentMatches = [m];
+  hidePlannerGuide();
+  setHint(t('tripLinkRestored'));
+  renderPlannerResults(currentMatches);
+  showTripDetail(m);
+  expandPanel(1);
+}
+
+// Build the share URL for a planned trip (the inverse of the parser above).
+// The effective planning time is ALWAYS pinned as an absolute HH:MM — sharing a
+// "now" plan freezes the current clock, so the link reproduces the same buses
+// and hours whenever it is opened (live positions excepted; they're live).
+function _tripShareUrl(m) {
+  const q = new URLSearchParams();
+  q.set('trip', '1');
+  const pt = p => p.lat.toFixed(5) + ',' + p.lng.toFixed(5);
+  q.set('o', pt(originClick)); q.set('d', pt(destClick));
+  const effMins = arriveActive() ? arriveByMins
+    : (new Date().getHours() * 60 + new Date().getMinutes() + planOffset) % 1440;
+  q.set('m', arriveActive() ? 'arrive' : 'depart');
+  q.set('t', _fmtSched(effMins));
+  const leg = l => [l.path.displayRouteCode, l.path.direction, l.board.stopId, l.alight.stopId].join('|');
+  if (m.isMultiLeg) { q.set('l1', leg(m.leg1)); q.set('l2', leg(m.leg2)); }
+  else q.set('l1', leg(m));
+  return window.location.origin + window.location.pathname + '?' + q.toString();
+}
+
+function shareTrip() {
+  const m = tripMatch;
+  if (!m || !originClick || !destClick) return;
+  const url = _tripShareUrl(m);
+  const route = m.isMultiLeg
+    ? m.leg1.path.displayRouteCode + '+' + m.leg2.path.displayRouteCode
+    : m.path.displayRouteCode;
+  const from = m.isMultiLeg ? m.leg1.board.stopName : m.board.stopName;
+  const to   = m.isMultiLeg ? m.leg2.alight.stopName : m.alight.stopName;
+  const text = t('tripShareText', { route, from, to });
+  if (navigator.share) {
+    navigator.share({ title: text, text, url }).catch(() => {});
+  } else if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => setHint(t('linkCopied')),
+      () => prompt(t('copyLinkPrompt'), url)
+    );
+  } else {
+    prompt(t('copyLinkPrompt'), url);
+  }
 }
 
 // ── Duraklar tab state ──────────────────────────────────────────────────────
@@ -1009,6 +1155,18 @@ function closeStopDetail() {
   stopDetailId = null;
   _setStopDeepLinkInUrl(null);
   renderStopsList();
+}
+
+// A restored ?trip=… link stays in the address bar (so it can be re-copied)
+// until the user changes the plan — a fresh search or a reset supersedes it.
+function _clearTripDeepLinkFromUrl() {
+  try {
+    const u = new URL(window.location.href);
+    if (!u.searchParams.has('trip')) return;
+    for (const k of ['trip', 'o', 'd', 'm', 't', 'l1', 'l2']) u.searchParams.delete(k);
+    const qs = u.searchParams.toString();
+    history.replaceState(null, '', u.pathname + (qs ? '?' + qs : '') + u.hash);
+  } catch {}
 }
 
 // Keep the URL's ?stop=… in sync with the currently viewed stop so the link
@@ -1599,7 +1757,10 @@ async function initPlanner() {
   renderBookmarksBar();
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
-      applyPoint(pos.coords.latitude, pos.coords.longitude, 'origin');
+      // Auto-fill only an EMPTY origin. The callback resolves async, after
+      // applyDeepLink below — without this guard it would stomp a restored
+      // shared-trip origin and re-plan over the pinned trip.
+      if (!originClick) applyPoint(pos.coords.latitude, pos.coords.longitude, 'origin');
     }, () => {}, { enableHighAccuracy: false, timeout: 10000, maximumAge: 120000 });
   }
   applyDeepLink();
@@ -1625,6 +1786,7 @@ function resetPlanner() {
     return;
   }
   clearSingleStopMarker();
+  _clearTripDeepLinkFromUrl();
   // Clear markers
   if (originMarker) { window._map.removeLayer(originMarker); originMarker = null; }
   if (destMarker)   { window._map.removeLayer(destMarker);   destMarker   = null; }
@@ -1932,7 +2094,7 @@ function applyPoint(lat,lng,which){
   }
   document.getElementById('swap-row').style.display = (originStop && destStop) ? '' : 'none';
   renderRecentDests();
-  if(originStop&&destStop)findRoutes();
+  if(originStop&&destStop&&!_suppressAutoPlan)findRoutes();
 }
 
 function swapOD() {
@@ -1970,6 +2132,7 @@ const _nextPaint = () => new Promise(r => requestAnimationFrame(() => requestAni
 
 async function findRoutes(){
   const gen = ++_findGen;
+  _clearTripDeepLinkFromUrl(); // a fresh plan supersedes any restored share link
   clearDrawn();clearBuses();showNetworkStops();
   _showPlannerSpinner(t('calcRoutes'));
   setHint(t('calcRoutes'));
@@ -2862,6 +3025,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         +   '<button class="trip-back" onclick="closeTripDetail()">'+t('backToLines')+'</button>'
         +   '<span class="p-route-badge" style="background:#'+hex+';color:'+txt+'">'+m.path.displayRouteCode+'</span>'
         +   '<span style="font-size:.78rem;font-weight:600;flex:1">'+esc(m.path.headSign)+'</span>'
+        +   '<button class="trip-back" title="'+t('shareTripTitle')+'" onclick="shareTrip()">'+t('shareTripBtn')+'</button>'
         +   '<button class="notify-btn'+(isNotifying?' active':'')+'" id="notify-btn" '
         +     'onclick="toggleBusNotify()">'
         +     (isNotifying ? t('notifyOn') : t('notifyOff'))
@@ -3021,6 +3185,7 @@ function _showMultiLegTripDetail(m) {
         +   '<span class="p-leg-arrow">→</span>'
         +   '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
         +   '<span style="flex:1"></span>'
+        +   '<button class="trip-back" title="'+t('shareTripTitle')+'" onclick="shareTrip()">'+t('shareTripBtn')+'</button>'
         +   '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>';
 
@@ -3665,7 +3830,7 @@ applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStop
   endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail,
   removeRecentDest, renderStopsList, requestNearbyOnce, resetOnboarding, resetPlanner,
   resetWalkRadius, resetWalkSpeed, saveLocationBookmark, setLang, setMode, setPlanMode, setPlanOffset,
-  setTheme, shareStop, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
+  setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
   toggleBmDropdown, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
   useRecentDest, viewStopInDuraklar,
 });

@@ -207,7 +207,7 @@ core.js      trip planning, schedules, guided steps, taxi, i18n  →  imports no
 `core.js` touches no DOM, no Leaflet, no `localStorage` and no `navigator`, so you can import it straight from GitHub Pages and use the network's logic with no webpage at all:
 
 ```js
-import { init, planTrips } from 'https://gamehunterkaan.github.io/bus-manager/core.js';
+import { init, planTrips } from 'https://17hatsefer.kaangultekin.net/core.js';
 
 await init();                       // self-fetches schedule.json + stops.json
 const { list } = await planTrips(

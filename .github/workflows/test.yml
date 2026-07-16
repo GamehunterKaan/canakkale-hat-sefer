@@ -36,5 +36,8 @@ jobs:
       # Planner/schedule logic against the committed data. Hits Valhalla, so it
       # is the step expected to flake on an upstream outage — keep it last and
       # distinct so the cause is obvious from the job summary.
+      # --quiet: assertions only. The full run prints an origin→destination trip
+      # dump for manual inspection; that belongs on a dev's terminal, never in a
+      # public CI log where any configured O/D pair (i.e. a real address) leaks.
       - name: Planner + schedule logic
-        run: node test/planner-test.mjs
+        run: node test/planner-test.mjs --quiet

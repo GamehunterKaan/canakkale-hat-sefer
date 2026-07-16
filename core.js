@@ -77,6 +77,7 @@ export const STR = {
     arriveByLabel: 'En geç {time} varış için planlanıyor.',
     leaveAtArriveAt: '{leave} çıkış → {arrive} varış',
     noTripInTime: 'Bu saate yetiştiren sefer bulunamadı.',
+    arriveTimePast: 'Bu saat bugün için geçti — varış planı aynı gün içinde çalışır. Yarın için Kalkış modunu kullanın.',
     waitingMap: 'Harita bekleniyor…',
     // ── Planner results / hints ──
     calcRoutes: 'Rotalar hesaplanıyor…',
@@ -236,6 +237,7 @@ export const STR = {
     arriveByLabel: 'Planning to arrive by {time}.',
     leaveAtArriveAt: 'Leave {leave} → arrive {arrive}',
     noTripInTime: 'No trip gets you there by that time.',
+    arriveTimePast: 'That time has already passed today — arrive-by plans within the same day. Use Depart mode for tomorrow.',
     waitingMap: 'Waiting for map…',
     calcRoutes: 'Finding routes…',
     noConnection: 'No connection found.',
@@ -564,9 +566,9 @@ export function _rideMins(stops, boardIdx, alightIdx) {
 // wrapped to tomorrow.
 export function _waitFromTimes(times, travelToBoardMins, fromMins) {
   if (!times.length) return 20;
-  const travel = travelToBoardMins;
-  for (const t of times) { const a = t + travel; if (a >= fromMins) return Math.max(0, Math.round(a - fromMins)); }
-  return Math.max(0, Math.round(times[0] + travel + 1440 - fromMins)); // first bus tomorrow
+  const a = _earliestBoardAt(times, travelToBoardMins, fromMins);
+  if (a != null) return Math.max(0, Math.round(a - fromMins));
+  return Math.max(0, Math.round(times[0] + travelToBoardMins + 1440 - fromMins)); // first bus tomorrow
 }
 
 // Arrive-by (backward) selection. `times` are pre-sorted ascending terminal
@@ -890,8 +892,12 @@ export async function planTrips(origin, dest, {
   const D = { lat: dest.lat,   lng: dest.lng };
   const W = settings.walkRadius, MAXW = W * WALK_RELAX_MULT;
   const walkMins = m => m / settings.walkSpeedMpm;
-  // Arrive-by plans a future departure, so current bus positions are irrelevant —
-  // suppress the live pass exactly like planOffset > 0 does at the call site.
+  // Live-suppression contract: current bus positions only help when planning
+  // for NOW. Core owns the arrive-by half (it can see arriveByMins); callers
+  // planning ahead via a future nowMins own the other half and must pass
+  // live:false (ui.js's findRoutes does, via !planningAhead()). Core cannot
+  // enforce that half itself — comparing nowMins to "now" misfires across the
+  // 04:00 service-day rollover.
   if (arriveByMins != null) live = false;
 
   // Usable paths with pre-sorted schedule times (skip student/ghost routes that
@@ -1016,34 +1022,47 @@ export async function planTrips(origin, dest, {
       // Collect every viable transfer point for this route pair, then choose
       // among them with the B+C rule below.
       const boardToDest = haversine(+board.s.lat, +board.s.lng, D.lat, D.lng);
+      // Per-Y precompute: ride2 / travelToY (and the arrive-by "latest leg-2
+      // bus" anchor, an O(times) scan) depend only on the transfer stop Y —
+      // hoisted so B's timetable isn't rescanned for every (X, Y) pair.
+      const yInfo = [];
+      for (let yj = 0; yj < alight.i; yj++) {
+        const Y = B.u.st[yj];
+        const ride2 = _rideMins(B.u.st, yj, alight.i);
+        const travelToY = _travelToStopMins(Y);
+        let busAtYMax = null;
+        if (arriveByMins != null) {
+          busAtYMax = _latestBoardAt(B.u.times, travelToY, arriveByMins - ride2 - walkMins(alight.w), -Infinity);
+          if (busAtYMax == null) { yInfo.push(null); continue; } // no leg-2 bus lands by the deadline
+        }
+        yInfo.push({ Y, ride2, travelToY, busAtYMax });
+      }
       const xfers = [];
       for (let xi = board.i + 1; xi < A.u.st.length; xi++) {
         const X = A.u.st[xi];
         // Leg 1 must make progress toward the destination — never ride past it
         // to a far terminal and double back (e.g. home → İskele → faculty).
         if (haversine(+X.lat, +X.lng, D.lat, D.lng) > boardToDest) continue;
+        const ride1 = _rideMins(A.u.st, board.i, xi);
         for (let yj = 0; yj < alight.i; yj++) {
-          const Y = B.u.st[yj];
+          const info = yInfo[yj];
+          if (!info) continue;
+          const { Y, ride2, travelToY, busAtYMax } = info;
           const t = (X.stopId === Y.stopId) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
           if (t > TRANSFER_WALK_MAX_M) continue;
-          const ride1 = _rideMins(A.u.st, board.i, xi);
-          const ride2 = _rideMins(B.u.st, yj, alight.i);
-          const travelToY = _travelToStopMins(Y);
           if (arriveByMins != null) {
             // Backward chain, leg 2 → leg 1: anchor on the LATEST leg-2 bus that
             // lands by the deadline, take the latest leg-1 bus that still makes
             // that connection, then board the FIRST leg-2 bus you actually catch
             // after the transfer walk — it can only be the anchor or an earlier
             // one, so the deadline still holds.
-            const latestAtY = arriveByMins - ride2 - walkMins(alight.w);
-            const busAtYMax = _latestBoardAt(B.u.times, travelToY, latestAtY, -Infinity);
-            if (busAtYMax == null) continue;
             const busAtBoard = _latestBoardAt(A.u.times, travelToBoard, busAtYMax - walkMins(t) - ride1, earliestAtBoard);
             if (busAtBoard == null) continue;
             const atY = busAtBoard + ride1 + walkMins(t);
             const busAtY = _earliestBoardAt(B.u.times, travelToY, atY);
             if (busAtY == null) continue; // unreachable: busAtYMax ≥ atY guarantees a hit
             const leg2Wait = busAtY - atY;
+            if (leg2Wait >= MAX_WAIT_MIN) continue; // same absurd-transfer-wait cull as forward mode
             const leaveAt = busAtBoard - walkMins(board.w);
             const arriveAt = busAtY + ride2 + walkMins(alight.w);
             // _eta legitimately includes the mid-trip transfer wait: once you're

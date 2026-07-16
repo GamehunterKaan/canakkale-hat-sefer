@@ -516,6 +516,12 @@ let planMode = 'depart';
 let arriveByMins = null;
 const arriveActive = () => planMode === 'arrive' && arriveByMins != null;
 
+// "Planning ahead" = anything other than leaving right now (a departure offset
+// OR an arrive-by deadline). This single predicate gates every live-only
+// affordance — guided trip, live wait lines, the live-bus planner pass — so a
+// new mode can't silently slip past one of the guards.
+const planningAhead = () => planOffset > 0 || arriveActive();
+
 // Service-day minutes → wall-clock "HH:MM" (the +1440 early-morning shift undone).
 const _fmtSched = mins => {
   const r = ((Math.round(mins) % 1440) + 1440) % 1440;
@@ -1647,9 +1653,12 @@ function resetPlanner() {
 function setPlanOffset(mins) {
   planOffset = mins;
   planMode = 'depart'; arriveByMins = null; _syncPlanModeButtons(); // presets are departure-only
-  document.querySelectorAll('#plan-time-row .plan-time-btn').forEach(b =>
+  // [data-offset] is what MAKES a button a preset — container-based selection
+  // would sweep the Kalkış/Varış mode buttons the moment markup gets rearranged.
+  document.querySelectorAll('.plan-time-btn[data-offset]').forEach(b =>
     b.classList.toggle('active', parseInt(b.dataset.offset) === mins)
   );
+  document.getElementById('btn-custom-time').classList.remove('active');
   // Hide custom time picker when a preset is chosen
   document.getElementById('custom-time-row').style.display = 'none';
   // Update clock button label
@@ -1777,7 +1786,7 @@ function applyCustomTime() {
   if (!val) return;
   const [h, m] = val.split(':').map(Number);
   // Mark Özel button active, deactivate presets
-  document.querySelectorAll('#plan-time-row .plan-time-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.plan-time-btn[data-offset]').forEach(b => b.classList.remove('active'));
   document.getElementById('btn-custom-time').classList.add('active');
   const clockBtn = document.getElementById('btnPlanTime');
   if (planMode === 'arrive') {
@@ -1786,7 +1795,8 @@ function applyCustomTime() {
     arriveByMins = _schedFrame(h * 60 + m);
     planOffset = 0;
     if (clockBtn) clockBtn.innerHTML = '⏰ <span style="font-size:.6rem;font-weight:600;opacity:.8">→' + val + '</span>';
-    setHint(t('arriveByLabel', { time: val }));
+    const past = arriveByMins <= _schedNow();  // deadline already behind us (same service day)
+    setHint(past ? t('arriveTimePast') : t('arriveByLabel', { time: val }), past);
     if (originStop && destStop) findRoutes();
     return;
   }
@@ -1976,7 +1986,7 @@ async function findRoutes(){
       settings: SETTINGS,
       nowMins: _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset),
       arriveByMins: arriveActive() ? arriveByMins : null,
-      live: !planOffset && !arriveActive(),   // planning ahead → schedule only, no live buses
+      live: !planningAhead(),                 // planning ahead → schedule only, no live buses
       walkCache: { get: _walkDistGet, set: _walkDistSet },
       isCancelled: () => gen !== _findGen,    // same generation semantics as before
     }),
@@ -1992,10 +2002,14 @@ async function findRoutes(){
   if (!trips.list.length) {
     currentMatches = []; tripMatch = null; selectedMatch = null;
     clearDrawn(); clearBuses();
-    setHint(arriveActive() ? t('noTripInTime') : t('noConnection'), true);
+    // Arrive-by empty states: a deadline already behind us gets its own message
+    // (same-day-only is a design limit, not "no route exists").
+    const noTripMsg = !arriveActive() ? null
+      : (arriveByMins <= _schedNow() ? t('arriveTimePast') : t('noTripInTime'));
+    setHint(noTripMsg || t('noConnection'), true);
     document.getElementById('results').innerHTML =
       '<p style="color:#4a5568;font-size:.8rem;padding:6px 0">'
-      + (arriveActive() ? t('noTripInTime') : t('noConnectionLong')) + '</p>';
+      + (noTripMsg || t('noConnectionLong')) + '</p>';
     hidePanelHandle();
     _appendTaxiCard(); return;
   }
@@ -2790,11 +2804,15 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Live data is only relevant when planning for now; skip it when planOffset > 0
   // Arrive-by trips already picked their bus backward from the deadline — show
   // its concrete leave/board/arrive clocks instead of a (meaningless) wait.
-  const arriveMode = arriveActive() && m._leaveAt != null;
+  // Keyed on the match itself (_leaveAt only exists on arrive-planned trips),
+  // the same predicate the result cards use — never on transient global mode.
+  const arriveMode = m._leaveAt != null;
   let waitMins = 0, waitLabel = '', waitDetail = '';
   if (arriveMode) {
     waitMins   = 0;
-    waitLabel  = t('waitDepart', { time: _fmtSched(m._boardAt) });
+    // Label with the TERMINAL departure (what the schedule chips below show);
+    // _boardAt is the bus's arrival at YOUR stop, terminal + travelToBoard.
+    waitLabel  = t('waitDepart', { time: _fmtSched(m._boardAt - travelToBoard) });
     waitDetail = t('leaveAtArriveAt', { leave: _fmtSched(m._leaveAt), arrive: _fmtSched(m._arriveAt) });
   } else if (!planOffset && atStopReachable) {
     waitMins   = 0;
@@ -2807,10 +2825,8 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   } else if (nextDep) {
     waitMins   = Math.max(0, Math.round(nextDep.boardMins - nowMins));
     waitLabel  = nextDep.tomorrow ? t('waitDepartTomorrow',{time:nextDep.time}) : t('waitDepart',{time:nextDep.time});
-    const arrRaw = nextDep.boardMins % 1440;
-    const arrH = Math.floor(arrRaw / 60).toString().padStart(2,'0');
-    const arrM = Math.floor(arrRaw % 60).toString().padStart(2,'0');
-    waitDetail = nextDep.tomorrow ? t('arrivesAtTomorrow',{time:arrH+':'+arrM}) : t('arrivesAt',{time:arrH+':'+arrM});
+    const arrClock = _fmtSched(nextDep.boardMins);
+    waitDetail = nextDep.tomorrow ? t('arrivesAtTomorrow',{time:arrClock}) : t('arrivesAt',{time:arrClock});
   } else {
     waitMins   = 999;
     waitLabel  = t('schedUnknown');
@@ -2853,7 +2869,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         + '</div>';
 
   // ── Start guided trip ─────────────────────────────────────────────────────
-  html += (planOffset || arriveActive())
+  html += planningAhead()
     ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
     : '<button class="guided-start-btn" onclick="startGuidedTrip()">🧭 '+t('startTrip')+'</button>';
 
@@ -3015,7 +3031,7 @@ function _showMultiLegTripDetail(m) {
   }
 
   // Start guided trip
-  html += (planOffset || arriveActive())
+  html += planningAhead()
     ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
     : '<button class="guided-start-btn" onclick="startGuidedTrip()">🧭 '+t('startTrip')+'</button>';
 
@@ -3115,7 +3131,7 @@ function closeTripDetail() {
 function startGuidedTrip(m) {
   m = m || tripMatch;
   if (!m || !originClick || !destClick || !window._map) return;
-  if (planOffset || arriveActive()) { setHint(t('startTripPlanAhead'), true); return; }
+  if (planningAhead()) { setHint(t('startTripPlanAhead'), true); return; }
   guided = { active: true, m, steps: buildGuidedSteps(m, { lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }, { walkSpeedMpm: SETTINGS.walkSpeedMpm }), idx: 0, group: L.layerGroup().addTo(window._map), timer: null, wakeLock: null, userPanned: false, fetching: false };
 
   // CLEAN SLATE: wipe the planner overview (full route line + every walk) so the
@@ -3390,9 +3406,7 @@ function guidedETA() {
     }
   }
   total = Math.max(0, Math.round(total));
-  const arr = (nowMin + total) % 1440;
-  const time = String(Math.floor(arr / 60)).padStart(2, '0') + ':' + String(Math.round(arr % 60)).padStart(2, '0');
-  return { mins: total, time };
+  return { mins: total, time: _fmtSched(nowMin + total) };
 }
 // HTML for the always-on ETA line in the banner.
 function guidedEtaHtml() {

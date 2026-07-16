@@ -1,4 +1,6 @@
 worker/
 node_modules/
 scripts/node_modules/
-test/
+# The test suite is committed — .github/workflows/test.yml runs it on every push.
+# Only the eyeball dump planner-test writes for manual inspection stays out.
+test/results.txt

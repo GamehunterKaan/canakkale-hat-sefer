@@ -457,9 +457,17 @@ export function pickSchedDir(schedEntry, path) {
   const stops = path.busStopList || [];
   const O = names(stops.slice(0, 4));  // where this path STARTS (its departure terminal)
   const D = names(stops.slice(-4));    // where this path ENDS
+  // MIN_LABEL is 3, not 4: "SSK" is a real block label (Ç3), and disqualifying it
+  // silently zeroed BOTH of that block's scores. Ç3 then tied 1–1 (its only point
+  // coming from a spurious "YURDU" run shared by "ARDES YURDU" and "KIZ YETİŞTİRME
+  // YURDU") and fell through to the index-alignment tie-break — handing kk-dir0,
+  // which departs ARDES YURDU, the SSK block: the opposite direction's timetable.
+  // 3 is the floor that admits SSK while still excluding 2-char noise like "Ç1",
+  // which `stop.includes(l)` would match almost anywhere.
+  const MIN_LABEL = 3;
   const m = (dir, list) => {
     const l = normStr(schedEntry[dir]?.label);
-    if (l.length < 4) return false;
+    if (l.length < MIN_LABEL) return false;
     return list.some(stop => {
       if (stop.includes(l) || l.includes(stop)) return true;
       for (let i = 0; i + 5 <= l.length; i++) if (stop.includes(l.slice(i, i + 5))) return true;

@@ -29,6 +29,8 @@ Each tab lists all routes with departure times split by direction. On today's ta
 
 Each route card has a **🚌 Canlı** button that jumps straight to the live tracker for that line.
 
+Above the cards, a **📄 Open PDF** button links to the original municipality timetable that tab was parsed from, so the source is always one tap away.
+
 ![Schedule tab showing route cards with departure times](screenshots/seferler.png)
 
 ---

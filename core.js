@@ -227,6 +227,7 @@ export const STR = {
     schedError: 'Hata: {err}', schedLoadFail: 'Yüklenemedi: {err}', stopsLoaded: '{n} durak',
     schedRemaining: '{n} sefer kaldı', schedNoneLeft: 'Sefer kalmadı', schedTotal: '{n} sefer',
     schedNoneTodayLong: 'Bugün için sefer kalmadı.', schedNoneForDay: 'Bu gün tipi için sefer bulunamadı.',
+    schedOpenPdf: 'PDF aç', schedOpenPdfTitle: 'Bu tarifenin ulasim.canakkale.bel.tr üzerindeki orijinal PDF’i',
     navSched: '<span>📅</span>Seferler', navPlanner: '<span>🗺</span>Rota &amp; Harita', navStops: '<span>🚏</span>Duraklar',
   },
   en: {
@@ -388,6 +389,7 @@ export const STR = {
     schedError: 'Error: {err}', schedLoadFail: 'Could not load: {err}', stopsLoaded: '{n} stops',
     schedRemaining: '{n} runs left', schedNoneLeft: 'No runs left', schedTotal: '{n} runs',
     schedNoneTodayLong: 'No more runs today.', schedNoneForDay: 'No runs found for this day type.',
+    schedOpenPdf: 'Open PDF', schedOpenPdfTitle: 'The original PDF for this timetable on ulasim.canakkale.bel.tr',
     navSched: '<span>📅</span>Schedules', navPlanner: '<span>🗺</span>Route &amp; Map', navStops: '<span>🚏</span>Stops',
   },
 };

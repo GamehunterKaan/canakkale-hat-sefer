@@ -290,10 +290,33 @@ function renderSchedule() {
     // Pass isActive as the "isToday" flag so the next-departure highlight
     // only runs on today's schedule, not on previewed tabs.
     renderRouteCards(s.routes || {}, panel.id, isActive);
+
+    // renderRouteCards owns the panel's innerHTML, so the PDF link goes in
+    // afterwards, pinned above the cards.
+    const pdfLink = schedPdfLink(s.url);
+    if (pdfLink) panel.insertBefore(pdfLink, panel.firstChild);
   }
 
   switchSchedTab(activeId);
   highlightNextTimes();
+}
+
+// "Open PDF" button linking to the municipality timetable this tab was parsed
+// from (schedule.json carries the source URL per schedule). Built with DOM APIs
+// rather than an innerHTML string because the URL is remote data; the scheme
+// check keeps a tampered feed from smuggling in javascript:/data: links.
+// Returns null when the schedule has no usable URL, so older cached payloads
+// (pre-`url`) simply render without the button.
+function schedPdfLink(url) {
+  if (!/^https?:\/\//i.test(url || '')) return null;
+  const a = document.createElement('a');
+  a.className = 'sched-pdf-btn';
+  a.href      = url;
+  a.target    = '_blank';
+  a.rel       = 'noopener noreferrer';
+  a.title     = t('schedOpenPdfTitle');
+  a.innerHTML = '<span>' + t('schedOpenPdf') + '</span>';
+  return a;
 }
 
 function renderRouteCards(routeMap, panelId, isToday) {

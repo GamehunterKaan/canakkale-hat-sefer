@@ -460,6 +460,81 @@
     }
     #gps-fab:hover { background: #1e3d70; }
     #gps-fab.visible { display: flex; }
+    /* ── Map place search (search a place, then locate/route to it) ── */
+    /* Lives INSIDE the Leaflet container, so it is clipped to the map box and
+       column-flexes: the dropdown can never grow taller than the map itself. */
+    #map-search {
+      position: absolute; top: 10px; left: 10px; z-index: 1100;
+      width: min(420px, calc(100% - 20px)); max-height: calc(100% - 20px);
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .ms-bar {
+      display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+      background: #141a28; border: 1px solid #252d40; border-radius: 11px;
+      box-shadow: 0 3px 14px rgba(0,0,0,.55); padding: 0 5px 0 11px;
+    }
+    .ms-bar:focus-within { border-color: #4a90d9; }
+    .ms-glass { font-size: .92rem; opacity: .8; flex-shrink: 0; }
+    #map-search-input {
+      flex: 1; min-width: 0; padding: 11px 2px; font-size: .88rem;
+      background: none; border: none; outline: none; color: #e6ebf5;
+    }
+    #map-search-input::placeholder { color: #566178; }
+    #ms-spin { display: none; margin: 0 2px 0 0; }
+    #map-search.busy #ms-spin { display: inline-block; }
+    #ms-clear {
+      display: none; background: none; border: none; cursor: pointer;
+      color: #6b7a99; font-size: .92rem; padding: 7px 8px; line-height: 1;
+    }
+    #map-search.filled #ms-clear { display: block; }
+    #ms-clear:hover { color: #e6ebf5; }
+    #ms-results {
+      display: none; margin-top: 6px; flex: 0 1 auto; min-height: 0; overflow-y: auto;
+      background: #141a28; border: 1px solid #252d40; border-radius: 11px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.6);
+    }
+    #ms-results.open { display: block; }
+    .ms-sec {
+      padding: 8px 12px 3px; font-size: .6rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em; color: #4a5568;
+    }
+    .ms-row {
+      display: flex; align-items: center; gap: 9px;
+      border-top: 1px solid #1f2333;
+      padding: 9px 12px; cursor: pointer; color: #c0d0ea;
+    }
+    .ms-sec + .ms-row { border-top: none; }
+    .ms-row:hover, .ms-row.sel { background: #1e2537; }
+    .ms-ico { font-size: 1rem; width: 21px; text-align: center; flex-shrink: 0; }
+    .ms-txt { flex: 1; min-width: 0; }
+    .ms-name { font-size: .84rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ms-sub  { font-size: .7rem; color: #6b7a99; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ms-note { padding: 13px 12px; font-size: .76rem; color: #6b7a99; text-align: center; }
+    /* Result card — narrow enough to leave the GPS FAB tappable, lifted clear
+       of Leaflet's attribution strip. */
+    #ms-card {
+      display: none; position: absolute; left: 10px; bottom: 26px; z-index: 1050;
+      width: min(420px, calc(100% - 78px));
+      background: #141a28; border: 1px solid #252d40; border-radius: 12px;
+      padding: 11px 12px; box-shadow: 0 6px 20px rgba(0,0,0,.6);
+    }
+    #ms-card.open { display: block; }
+    .msc-head { display: flex; align-items: flex-start; gap: 8px; }
+    .msc-name { flex: 1; min-width: 0; font-size: .92rem; font-weight: 700; color: #e6ebf5; }
+    .msc-sub { font-size: .72rem; color: #6b7a99; margin-top: 3px; }
+    .msc-close { background: none; border: none; color: #6b7a99; font-size: .95rem; cursor: pointer; padding: 0 2px; line-height: 1; }
+    .msc-actions { display: flex; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
+    .msc-btn {
+      flex: 1 1 110px; padding: 9px 10px; border-radius: 8px; cursor: pointer;
+      font-size: .78rem; font-weight: 700; background: #161d2e; color: #c0d0ea; border: 1px solid #252d40;
+    }
+    .msc-btn.origin { background: #16233d; color: #9dc4f5; border-color: #2f5c96; }
+    .msc-btn.dest   { background: #14301f; color: #86e0ac; border-color: #2b6b45; }
+    .msc-btn:hover { filter: brightness(1.18); }
+    /* Keep Leaflet's zoom control from sitting under the search bar. */
+    .leaflet-top.leaflet-left .leaflet-control-zoom { margin-top: 62px; }
+    body.guided-active #map-search, body.guided-active #ms-card { display: none !important; }
+    body.guided-active .leaflet-top.leaflet-left .leaflet-control-zoom { margin-top: 10px; }
     /* The moving blue dot, with an optional heading arrow. The wrapper is
        rotated to the GPS course; the dot is rotationally symmetric so only the
        arrow visibly turns. */
@@ -799,6 +874,19 @@
     /* GPS FAB */
     html[data-theme="light"] #gps-fab { background: #2563eb; border-color: #1d4ed8; color: #fff; }
     html[data-theme="light"] #gps-fab:hover { background: #1d4ed8; }
+    html[data-theme="light"] .ms-bar,
+    html[data-theme="light"] #ms-results,
+    html[data-theme="light"] #ms-card { background: #fff; border-color: #e5e7eb; box-shadow: 0 4px 16px rgba(0,0,0,.15); }
+    html[data-theme="light"] #map-search-input { color: #1a1d2e; }
+    html[data-theme="light"] #map-search-input::placeholder { color: #9ca3af; }
+    html[data-theme="light"] .ms-row { color: #1a1d2e; border-top-color: #f3f4f6; }
+    html[data-theme="light"] .ms-row:hover, html[data-theme="light"] .ms-row.sel { background: #f3f4f6; }
+    html[data-theme="light"] .ms-sub, html[data-theme="light"] .ms-note,
+    html[data-theme="light"] .ms-sec, html[data-theme="light"] .msc-sub { color: #6b7280; }
+    html[data-theme="light"] .msc-name { color: #1a1d2e; }
+    html[data-theme="light"] .msc-btn { background: #f3f4f6; color: #1a1d2e; border-color: #e5e7eb; }
+    html[data-theme="light"] .msc-btn.origin { background: #e8f0fe; color: #1d4ed8; border-color: #bfd6f7; }
+    html[data-theme="light"] .msc-btn.dest   { background: #e6f6ec; color: #15803d; border-color: #bde5c9; }
     /* Plan time buttons */
     html[data-theme="light"] .plan-time-btn { background: #f9fafb; color: #6b7280; border-color: #e5e7eb; }
     html[data-theme="light"] .plan-time-btn.active { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
@@ -971,6 +1059,19 @@
       <button class="ph-btn" id="ph-btn"></button>
     </div>
     <div id="map">
+      <div id="map-search">
+        <div class="ms-bar">
+          <span class="ms-glass">🔍</span>
+          <input id="map-search-input" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search"
+                 placeholder="Yer, adres veya durak ara…" data-i18n-ph="mapSearchPh"
+                 role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ms-results"
+                 oninput="onMapSearchInput()" onfocus="onMapSearchFocus()" onkeydown="onMapSearchKey(event)">
+          <span id="ms-spin" class="loading-spin"></span>
+          <button id="ms-clear" onclick="event.stopPropagation();clearMapSearch()" data-i18n-title="msClear" title="Aramayı temizle">✕</button>
+        </div>
+        <div id="ms-results" role="listbox"></div>
+      </div>
+      <div id="ms-card"></div>
       <button id="gps-fab" onclick="useGPS()" title="GPS konumumu kullan">🛰</button>
       <button id="guided-recenter" onclick="event.stopPropagation();guidedRecenter()" title="Recenter">📍</button>
       <div id="map-ripple">

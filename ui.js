@@ -12,14 +12,14 @@
 
 // Headless logic — usable without the page. See ./core.js.
 import {
-  API, GUIDED_ARRIVE_M, GUIDED_BOARDED_M, MAX_NEAR_STOPS, MAX_WAIT_MIN, MINS_PER_STOP,
+  API, GUIDED_ARRIVE_M, GUIDED_BOARDED_M, MAP_BOUNDS, MAX_NEAR_STOPS, MAX_WAIT_MIN, MINS_PER_STOP,
   REACH_GRACE_MIN, SETTINGS_DEFAULTS, STR, TAXI_TARIFF, TRANSFER_CROSS_ROAD_M,
   TRANSFER_ETA_TOLERANCE_MIN, TRANSFER_PENALTY_MIN, TRANSFER_WALK_MAX_M, VALHALLA_HOST,
   WALK_DETOUR_FACTOR, WALK_RELAX_MULT, _clockMin, _isLastSefer, _liveBoardWaitMins,
   _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins,
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
   pickActiveScheduleId, pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath,
-  todayParts, withinM,
+  todayParts, withinM, foldTr as _foldTr,
   QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
   _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
   getActiveRoutes, getActiveSchedule, planTrips,
@@ -28,9 +28,9 @@ import {
 
 const CACHE_KEY = 'canakkale_bus_v7';
 
-// Çanakkale map bounds + zoom range. Tile pre-cache covers exactly this box at
-// every allowed zoom, so panning/zooming inside the box works fully offline.
-const MAP_BOUNDS   = [[39.95, 26.30], [40.25, 26.55]];   // [SW lat,lng], [NE lat,lng]
+// Zoom range for the map. Its bounds (MAP_BOUNDS) come from core.js, shared with
+// the POI build; the tile pre-cache covers exactly that box at every allowed
+// zoom, so panning/zooming inside it works fully offline.
 const MAP_MIN_ZOOM = 13;
 // Interactive zoom goes to 19 so you can separate two stops that sit almost on
 // top of each other. Tiles are only fetched/cached up to MAP_NATIVE_MAX_ZOOM
@@ -516,6 +516,7 @@ function refreshActiveI18n() {
   // Planner guide (shown before any plan): re-render it for the current pick mode.
   try { if (document.getElementById('planner-guide') && (mode === 'origin' || mode === 'dest')) showPlannerGuide(mode); } catch {}
   try { renderBookmarksBar(); renderRecentDests(); } catch {}
+  try { _renderPlaceCard(); } catch {}
   try { if (document.getElementById('scr-stops')?.classList.contains('active')) renderStopsList(); } catch {}
 }
 function setLang(l) {
@@ -909,6 +910,10 @@ function clearRecentsData() {
   recentDests = [];
   saveRecentDests();
   renderRecentDests();
+  // Searched places are recent destinations too — one "clear recents" must
+  // not leave the map-search dropdown still listing where you've been.
+  recentPlaces = [];
+  try { localStorage.removeItem('bm_recent_places_v1'); } catch {}
   alert(t('cleared'));
 }
 function resetOnboarding() {
@@ -953,6 +958,11 @@ async function downloadOfflineMap() {
   _tileDownloadAbort = new AbortController();
   const signal = _tileDownloadAbort.signal;
   btn.textContent = t('cancelBtn');
+  // Pull the POI index into the SW's data cache while we're here. Someone who
+  // primes the map for offline use expects to be able to SEARCH it offline too,
+  // and the index is otherwise only fetched on the first search — which they
+  // may well make with no network.
+  _loadPlaceIndex();
   let done = 0, failed = 0;
   const update = () => { status.textContent = done + ' / ' + total + (failed ? ' (' + failed + ' ' + t('tileErrors') + ')' : ''); };
   update();
@@ -1008,12 +1018,8 @@ function toggleBmDropdown() {
 }
 
 // ── Stop search (Duraklar tab) ──────────────────────────────────────────────
-// Strip Turkish diacritics + lowercase for accent-insensitive search.
-function _foldTr(s) {
-  return (s || '').toLocaleLowerCase('tr')
-    .replace(/ı/g, 'i').replace(/ç/g, 'c').replace(/ğ/g, 'g')
-    .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
-}
+// Accent-insensitive folding is _foldTr, imported from core.js so the POI build
+// keys its dedupe with exactly the fold the user's query goes through.
 
 // Render one stop list item. `distMeters` optional — when omitted and GPS is
 // known, the distance is computed automatically so it shows up in every list.
@@ -1683,7 +1689,7 @@ async function initPlanner() {
     minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM,
   }).setView([40.152,26.41],13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© OpenStreetMap', minZoom: MAP_MIN_ZOOM,
+    attribution:'© OpenStreetMap · Yerler: © Overture Maps', minZoom: MAP_MIN_ZOOM,
     maxZoom: MAP_MAX_ZOOM, maxNativeZoom: MAP_NATIVE_MAX_ZOOM,
   }).addTo(window._map);
   window._map.on('click',e=>{
@@ -1704,6 +1710,13 @@ async function initPlanner() {
     // the map handler (guard now lifted) and re-pick the destination under the
     // button. Stop propagation so banner/FAB taps never touch the map.
     for (const id of ['guided-banner', 'guided-recenter']) {
+      const g = document.getElementById(id);
+      if (g) { L.DomEvent.disableClickPropagation(g); L.DomEvent.disableScrollPropagation(g); }
+    }
+    // Same for the place-search box and its result card: both sit INSIDE the
+    // map, so without this every keystroke-click and every button tap would
+    // also register as a map click and drop a pin behind them.
+    for (const id of ['map-search', 'ms-card']) {
       const g = document.getElementById(id);
       if (g) { L.DomEvent.disableClickPropagation(g); L.DomEvent.disableScrollPropagation(g); }
     }
@@ -1799,6 +1812,9 @@ function estimateWaitMins(routeCode, boardSeq, path) {
 }
 
 function resetPlanner() {
+  // Before the stops-mode branch below returns: X means "clear what's on the
+  // map", and the purple search pin is on the map in every mode.
+  _msReset();
   // If user is in stops-browser mode, X just exits stops without clearing the plan
   if (mode === 'stops') {
     if (stopRefreshTimer) { clearInterval(stopRefreshTimer); stopRefreshTimer = null; }
@@ -2089,16 +2105,18 @@ function applyPoint(lat,lng,which){
   // Never re-pick origin/dest while a guided trip is running (or in the brief
   // window right after End) — a stray tap, GPS, bookmark, or the End-button
   // click bubbling to the map would otherwise move the destination.
-  if (guidedLocksPicks()) return;
+  // Returns true only when the point was accepted, so callers that tore down
+  // their own UI to make room for the pin can put it back when it was refused.
+  if (guidedLocksPicks()) return false;
   // Reject points outside the Çanakkale map bounds (typically GPS picks from
   // outside the city, or stale bookmarks). Map clicks are already constrained
   // by maxBounds so they never trigger this.
   const [[sLat, wLng], [nLat, eLng]] = MAP_BOUNDS;
   if (lat < sLat || lat > nLat || lng < wLng || lng > eLng) {
     setHint(t('outOfBounds'), true);
-    return;
+    return false;
   }
-  const{stop,meters}=nearestStop(lat,lng);if(!stop)return;
+  const{stop,meters}=nearestStop(lat,lng);if(!stop)return false;
   if(which==='origin'){
     originClick={lat,lng};originStop={...stop,meters};
     if(originMarker)window._map.removeLayer(originMarker);if(originPin)window._map.removeLayer(originPin);
@@ -2118,6 +2136,7 @@ function applyPoint(lat,lng,which){
   document.getElementById('swap-row').style.display = (originStop && destStop) ? '' : 'none';
   renderRecentDests();
   if(originStop&&destStop&&!_suppressAutoPlan)findRoutes();
+  return true;
 }
 
 function swapOD() {
@@ -3327,6 +3346,7 @@ function startGuidedTrip(m) {
   // so any in-flight overview walk fetch aborts instead of re-adding a line, and
   // stop the bus-refresh timer. From here, guided draws only the current segment.
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  _msReset();
   guidedWipeMap();
 
   document.body.classList.add('guided-active');
@@ -3451,6 +3471,11 @@ function guidedWipeMap() {
     toWipe.push(l);
   });
   toWipe.forEach(l => { try { window._map.removeLayer(l); } catch {} });
+  // This wipe removes the search pin along with everything else, so it owns
+  // forgetting it too — otherwise _msMarker keeps pointing at a layer that is no
+  // longer on the map, and the card stays open offering to route to it. Every
+  // future map-clearing path gets this for free instead of having to remember.
+  closeSearchPlace();
   drawnLayers.length = 0; busMarkers.length = 0; hideNetworkStops();
 }
 function drawGuidedStep(step) {
@@ -3837,6 +3862,551 @@ function renderStopBuses(stopId,rows){
   }).join('');
 }
 
+// ── Map place search ────────────────────────────────────────────────────────
+// A search box over the map for places that are NOT bus stops: type "Troya
+// Müzesi", "Migros", a street name — anything you'd search in Google Maps —
+// jump the map there, then hand the point to the planner as origin/destination.
+// Without this, reaching somewhere you can't already point at on the map was
+// impossible: every pick came from a map tap.
+//
+// Sources, cheapest first: saved places (⭐ Yerlerim) and bus stops resolve
+// locally (instant, works offline), then Photon — an OSM geocoder whose usage
+// policy explicitly allows as-you-type querying. Nominatim is deliberately NOT
+// used: its policy forbids autocomplete, which is exactly this UI.
+//
+// Every geocoder result is bbox-restricted to MAP_BOUNDS. Anything outside is
+// unroutable anyway (applyPoint rejects it), so offering it would be a dead end.
+const GEOCODE_URL              = 'https://photon.komoot.io/api/';
+const GEOCODE_TIMEOUT_MS       = 7000;
+const GEOCODE_LIMIT            = 8;
+const GEOCODE_CACHE_MAX        = 60;
+const GEOCODE_CACHE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;   // POIs move rarely; a month is plenty
+const MS_DEBOUNCE_MS           = 320;                     // one request per pause, not per keystroke
+const RECENT_PLACES_MAX        = 5;
+
+// Shape-checked, not just parse-checked: storage can hold anything (a stale key
+// from another build, a half-written value). An object here would make
+// `.length` undefined and `.filter` throw out of pickMapSearchRow, so selecting
+// any result would leave no pin and no card.
+let recentPlaces = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('bm_recent_places_v1') || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(r => r && typeof r.name === 'string' && isFinite(r.lat) && isFinite(r.lng))
+              .slice(0, RECENT_PLACES_MAX);
+  } catch { return []; }
+})();
+let _msRows   = [];      // flat, index-addressable list backing the dropdown (keyboard nav + onclick)
+let _msSel    = -1;      // highlighted row, -1 = none
+let _msTimer  = null;    // debounce handle
+let _msGen    = 0;       // generation guard: a stale geocode answer must not paint over a newer query
+let _msPlace  = null;    // the located place (card + marker), or null
+let _msMarker = null;
+
+// Emoji by OSM tag, so a result is recognisable before you read it. Null
+// prototype on purpose: these keys come straight from the geocoder, and a
+// feature tagged `constructor` or `toString` would otherwise resolve up the
+// prototype chain to a function — truthy, so it becomes the icon, then reaches
+// esc() and throws, blanking the entire dropdown.
+const MS_EMOJI = Object.assign(Object.create(null), {
+  supermarket:'🛒', convenience:'🛒', mall:'🛍', marketplace:'🛍', bakery:'🥖', butcher:'🥩',
+  restaurant:'🍽', fast_food:'🍔', cafe:'☕', bar:'🍺', pub:'🍺', ice_cream:'🍦',
+  hospital:'🏥', clinic:'🏥', doctors:'🏥', dentist:'🦷', pharmacy:'💊', veterinary:'🐾',
+  school:'🏫', kindergarten:'🧸', college:'🎓', university:'🎓', library:'📚',
+  bank:'🏦', atm:'🏧', post_office:'📮', police:'👮', fire_station:'🚒', townhall:'🏛',
+  hotel:'🏨', hostel:'🛏', guest_house:'🛏', museum:'🏛', attraction:'📸', viewpoint:'🔭',
+  park:'🌳', garden:'🌳', playground:'🛝', pitch:'⚽', stadium:'🏟', sports_hall:'🏀',
+  sports_centre:'🏋', fitness_centre:'🏋', swimming_pool:'🏊', beach:'🏖', marina:'⛵',
+  fuel:'⛽', parking:'🅿️', car_repair:'🔧', bus_station:'🚌', ferry_terminal:'⛴',
+  aerodrome:'✈️', place_of_worship:'🕌', mosque:'🕌', theatre:'🎭', cinema:'🎬',
+  hairdresser:'💈', laundry:'🧺', toilets:'🚻', drinking_water:'🚰',
+  amenity:'📍', shop:'🛍', tourism:'📸', leisure:'🌳', highway:'🛣', building:'🏢', place:'📍',
+});
+
+function _msEl(id) { return document.getElementById(id); }
+function _msBusy(on) { _msEl('map-search')?.classList.toggle('busy', !!on); }
+function _msClose() {
+  _msEl('ms-results')?.classList.remove('open');
+  const input = _msEl('map-search-input');
+  input?.setAttribute('aria-expanded', 'false');
+  input?.removeAttribute('aria-activedescendant');
+  _msSel = -1;
+}
+
+// Geocode answers are cached in localStorage, keyed by the exact query: a
+// repeated search costs nothing and still resolves when the network is gone.
+function _msCacheGet(q) {
+  try {
+    const e = JSON.parse(localStorage.getItem('bm_geocache_v1') || '{}')[q];
+    if (e && Date.now() - e.ts < GEOCODE_CACHE_MAX_AGE_MS) return e.r;
+  } catch {}
+  return null;
+}
+function _msCachePut(q, r) {
+  try {
+    const store = JSON.parse(localStorage.getItem('bm_geocache_v1') || '{}');
+    store[q] = { r, ts: Date.now() };
+    _evictOldest(store, GEOCODE_CACHE_MAX);
+    localStorage.setItem('bm_geocache_v1', JSON.stringify(store));
+  } catch {}
+}
+
+// One Photon feature → the flat shape the dropdown, card and marker all use.
+function _msPlaceFrom(f) {
+  const p = f?.properties || {}, c = f?.geometry?.coordinates;
+  if (!c || c.length < 2) return null;
+  const lng = +c[0], lat = +c[1];
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  const street = [p.street, p.housenumber].filter(Boolean).join(' ');
+  const name = p.name || street || p.district || p.city || p.county;
+  if (!name) return null;
+  // Context line: the street (only when the name isn't already the street), then
+  // neighbourhood/town — enough to tell two same-named shops apart.
+  const detail = [...new Set([p.name ? street : '', p.district, p.city].filter(v => v && v !== name))].slice(0, 2).join(' · ');
+  return { kind: 'place', name, detail, lat, lng, icon: MS_EMOJI[p.osm_value] || MS_EMOJI[p.osm_key] || '📍' };
+}
+
+// Applied on the way OUT, never before caching: the cache holds what the
+// geocoder said, and a rule shipped next month must take effect on answers
+// cached this month — otherwise the ghost keeps appearing for exactly the people
+// who already searched for it.
+function _denyFilter(rows) {
+  return placeDeny.length ? rows.filter(r => !_placeDenied(r.name, r.lat, r.lng)) : rows;
+}
+
+async function _geocodePlaces(q) {
+  const cached = _msCacheGet(q);
+  if (cached) return _denyFilter(cached);
+  const [[sLat, wLng], [nLat, eLng]] = MAP_BOUNDS;
+  const c = window._map ? window._map.getCenter() : { lat: (sLat + nLat) / 2, lng: (wLng + eLng) / 2 };
+  const url = GEOCODE_URL + '?q=' + encodeURIComponent(q)
+            + '&limit=' + GEOCODE_LIMIT
+            + '&lat=' + c.lat.toFixed(4) + '&lon=' + c.lng.toFixed(4)   // bias: nearest matches first
+            + '&bbox=' + [wLng, sLat, eLng, nLat].join(',');            // hard filter: Çanakkale only
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), GEOCODE_TIMEOUT_MS);
+  let d;
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) throw new Error('geocoder http ' + r.status);
+    d = await r.json();
+  } finally { clearTimeout(timer); }
+  const seen = new Set(), out = [];
+  for (const f of (d?.features || [])) {
+    const pl = _msPlaceFrom(f);
+    if (!pl) continue;
+    // Re-check the box ourselves: bbox is the geocoder's promise, not ours.
+    if (pl.lat < sLat || pl.lat > nLat || pl.lng < wLng || pl.lng > eLng) continue;
+    const k = pl.name + '|' + pl.lat.toFixed(4) + ',' + pl.lng.toFixed(4);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(pl);
+  }
+  _msCachePut(q, out);
+  return _denyFilter(out);
+}
+
+// ── Local place index (Overture Maps) ───────────────────────────────────────
+// data/places.json is a static POI extract for the Çanakkale bbox, rebuilt
+// monthly by GitHub Actions (scripts/build-places.mjs). It exists because the
+// geocoder indexes OpenStreetMap, and OSM does not have most Turkish
+// businesses: "Container Hall Çanakkale" — a real venue 129 m from ŞEHİTLER
+// CAMİ — has ZERO matches in raw OSM across the whole bbox, while Overture
+// carries it at 0.99 confidence (Overture merges Meta, Microsoft, Foursquare
+// and AllThePlaces listings on top of OSM). Being static, it also makes POI
+// search work offline, which no live geocoder can.
+//
+// Loaded lazily on the first search interaction, so it costs the map nothing at
+// startup, and cached by the service worker like the other data files.
+const MS_PLACE_LOCAL = 6;    // local rows before the geocoder's are appended
+const MS_PLACE_MAX   = 8;    // merged cap, so the dropdown stays scannable
+let placeIndex = null;
+let _placeIndexLoad = null;
+// Corrections that must also apply to LIVE geocoder rows. Deleting a closed
+// business from our index is only half the job: the same ghost is usually in
+// OpenStreetMap too, and Photon would serve it right back. Shipped in
+// places.json, sourced from the drop rules in data/places-overrides.json.
+let placeDeny = [];
+// Only for deny rules written before the build began emitting a resolved
+// radius; current places.json files always carry their own nearM.
+const DENY_RADIUS_FALLBACK_M = 400;
+
+function _loadPlaceIndex() {
+  if (placeIndex) return Promise.resolve(placeIndex);
+  if (_placeIndexLoad) return _placeIndexLoad;
+  _placeIndexLoad = fetch('./data/places.json')
+    .then(r => { if (!r.ok) throw new Error('places http ' + r.status); return r.json(); })
+    .then(d => {
+      placeDeny = Array.isArray(d.deny) ? d.deny : [];
+      return (placeIndex = (d.places || []).map(([name, cat, lat, lng, area]) => ({
+        name, cat, lat, lng, area, fold: _foldTr(name),
+      })));
+    })
+    .catch(() => {
+      // Leave placeIndex null and drop the in-flight promise so the NEXT search
+      // retries. Latching [] here would be permanent — [] is truthy, so every
+      // later call short-circuits and all 6,400 POIs plus every deny rule stay
+      // unavailable for the rest of the session, including after the network
+      // returns, and including when downloadOfflineMap() warms the index over a
+      // flaky connection before the user has searched even once.
+      _placeIndexLoad = null;
+      return [];
+    });
+  return _placeIndexLoad;
+}
+
+// Overture has ~2000 leaf categories, so match on substrings: that covers the
+// long tail ("fast_food_restaurant", "seafood_restaurant" → 🍽) without a lookup
+// table that would need revisiting every release. Order matters — the first
+// pattern to match wins.
+const PLACE_CAT_EMOJI = [
+  [/pharmac|drugstore/,                                   '💊'],
+  [/hospital|health|medical|dentist|clinic|doctor/,       '🏥'],
+  [/school|education|university|college|kindergarten/,    '🎓'],
+  [/librar/,                                              '📚'],
+  [/bank|atm|financial|insurance/,                        '🏦'],
+  [/hotel|hostel|motel|lodging|accommodation/,            '🏨'],
+  [/museum|landmark|historical|monument|memorial/,        '🏛'],
+  [/park$|park_|garden|forest|nature/,                    '🌳'],
+  [/beach|marina|harbor|harbour/,                         '🏖'],
+  [/gym|fitness|sport|stadium|athletic/,                  '🏋'],
+  [/mosque|church|religio|worship|cemetery/,              '🕌'],
+  [/gas_station|fuel|petrol|charging/,                    '⛽'],
+  [/parking/,                                             '🅿️'],
+  [/bus|transit|transport|taxi|airport|ferry|terminal/,   '🚌'],
+  [/bakery|patisserie|dessert|ice_cream|pastry/,          '🥐'],
+  [/cafe|coffee|tea_/,                                    '☕'],
+  [/bar$|bar_|pub|nightlife|night_club|brewery|wine/,     '🍺'],
+  [/restaurant|food|dining|kebab|pizzeria|steak/,         '🍽'],
+  [/grocery|supermarket|market|deli|butcher|greengrocer/, '🛒'],
+  [/hair|barber|beauty|spa|nail/,                         '💈'],
+  [/shipping|cargo|courier|freight|logistics/,            '📦'],
+  [/post_office|postal/,                                  '📮'],
+  [/police|fire_station|government|municipal|court|post/,  '🏛'],
+  [/car_|automotive|vehicle|tire|mechanic|repair/,        '🔧'],
+  [/theatre|theater|cinema|entertainment|art/,            '🎭'],
+  [/office|service|agency|contractor|consult|corporate/,  '🏢'],
+  [/store|shop|retail|boutique|sales/,                    '🛍'],
+];
+function _placeEmoji(cat) {
+  const c = (cat || '').toLowerCase();
+  for (const [re, emoji] of PLACE_CAT_EMOJI) if (re.test(c)) return emoji;
+  return '📍';
+}
+// Categories are ASCII English slugs, so plain-case the first letter — the
+// Turkish locale would turn "ice_cream" into "İce cream".
+function _placeCatLabel(cat) {
+  if (!cat) return '';
+  const s = cat.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// A deny rule kills a row by name, optionally scoped to one spot so a rule
+// about a closed branch can't erase a live branch of the same chain.
+function _placeDenied(name, lat, lng) {
+  if (!placeDeny.length) return false;
+  const f = _foldTr(name);
+  for (const d of placeDeny) {
+    if (_foldTr(d.name) !== f) continue;
+    if (!Array.isArray(d.near)) return true;
+    // `??`, not `||`: the build ships the resolved radius, and nearM 0 means
+    // "this exact pin only" — `||` would silently widen that to 400 m and take
+    // out a live branch of the same chain down the street.
+    if (haversine(d.near[0], d.near[1], lat, lng) <= (d.nearM ?? DENY_RADIUS_FALLBACK_M)) return true;
+  }
+  return false;
+}
+
+function _searchPlaceIndex(foldedQ, limit) {
+  if (!placeIndex?.length || !foldedQ) return [];
+  // No early cut-off. The index is name-sorted, so capping the scan keeps the
+  // first N matches ALPHABETICALLY and discards the ones that rank best: for
+  // "market", every "Akçay Marketi" ahead of a shop actually called "Market
+  // Yeri" would crowd it out before ranking ever ran. 6,400 substring scans are
+  // sub-millisecond, so correctness is free here.
+  const items = [];
+  for (const p of placeIndex) {
+    const i = p.fold.indexOf(foldedQ);
+    if (i < 0) continue;
+    // Name starts with the query > a word inside it does > matches anywhere.
+    items.push({ p, rank: i === 0 ? 0 : p.fold[i - 1] === ' ' ? 1 : 2 });
+  }
+  // Shorter names win inside a rank: for "container", "Container Hall Çanakkale"
+  // should beat "Kale Eko Yaşam Konteyner … San Tic Ltd Şti".
+  items.sort((a, b) => a.rank - b.rank || a.p.name.length - b.p.name.length
+                    || a.p.name.localeCompare(b.p.name, 'tr'));
+  return items.slice(0, limit).map(({ p }) => ({
+    kind: 'place', name: p.name, lat: p.lat, lng: p.lng, icon: _placeEmoji(p.cat),
+    detail: [_placeCatLabel(p.cat), p.area].filter(Boolean).join(' · '),
+  }));
+}
+
+// Local index first (instant, offline, POI-dense), geocoder after it (streets
+// and addresses the POI extract has no concept of). A geocoder row naming the
+// same place as a local one is dropped rather than shown twice.
+function _mergePlaceResults(local, geocoded) {
+  const out = local.slice();
+  for (const g of geocoded) {
+    const gf = _foldTr(g.name);
+    if (out.some(l => _foldTr(l.name) === gf && haversine(l.lat, l.lng, g.lat, g.lng) < 200)) continue;
+    out.push(g);
+  }
+  return out.slice(0, MS_PLACE_MAX);
+}
+
+function _msLocalMatches(q) {
+  const f = _foldTr(q);
+  // Saved places live in localStorage and owe nothing to stops.json, so they
+  // must resolve before it loads — and when it fails outright, which is exactly
+  // the offline case this feature advertises.
+  const saved = bookmarks
+    .filter(b => _foldTr(b.name).includes(f))
+    .slice(0, 3)
+    .map(b => ({ kind: 'saved', name: b.name, detail: '', lat: b.lat, lng: b.lng, icon: '⭐' }));
+  const stops = (allStops?.size ? _searchStops(f, 5) : []).map(s => ({
+    kind: 'stop', name: s.stopName, detail: '#' + s.stopId, lat: s.lat, lng: s.lng, stopId: s.stopId, icon: '🚏',
+  }));
+  return { saved, stops };
+}
+
+// role=option + a stable id per row: the input keeps focus (combobox pattern)
+// and points at the highlighted row through aria-activedescendant, which is what
+// makes the arrow keys audible to a screen reader instead of just moving a
+// colour class nobody is told about.
+function _msRowHtml(row, i) {
+  return '<div class="ms-row" role="option" id="ms-opt-' + i + '" aria-selected="false"'
+       +      ' onclick="event.stopPropagation();pickMapSearchRow(' + i + ')">'
+       +   '<div class="ms-ico">' + esc(String(row.icon || '📍')) + '</div>'
+       +   '<div class="ms-txt">'
+       +     '<div class="ms-name">' + esc(row.name) + '</div>'
+       +     (row.detail ? '<div class="ms-sub">' + esc(row.detail) + '</div>' : '')
+       +   '</div>'
+       + '</div>';
+}
+
+// Paint the dropdown from a model of already-resolved sections. _msRows is
+// rebuilt in render order, so a row index means the same thing to the onclick
+// handler and to the arrow keys.
+function _msRender(model) {
+  const box = _msEl('ms-results');
+  if (!box) return;
+  _msRows = [];
+  const parts = [];
+  const push = (title, rows) => {
+    if (!rows || !rows.length) return;
+    parts.push('<div class="ms-sec">' + esc(title) + '</div>');
+    for (const r of rows) { _msRows.push(r); parts.push(_msRowHtml(r, _msRows.length - 1)); }
+  };
+  push(t('msRecent'), model.recent);
+  push(t('msSaved'),  model.saved);
+  push(t('msStops'),  model.stops);
+  push(t('msPlaces'), model.places);
+  if (model.note) parts.push('<div class="ms-note">' + esc(model.note) + '</div>');
+  if (!parts.length) { _msClose(); return; }
+  box.innerHTML = parts.join('');
+  box.classList.add('open');
+  _msEl('map-search-input')?.setAttribute('aria-expanded', 'true');
+  if (_msSel >= _msRows.length) _msSel = -1;
+  _msPaintSel();
+}
+
+function _msPaintSel() {
+  const rows = _msEl('ms-results')?.querySelectorAll('.ms-row') || [];
+  rows.forEach((el, i) => {
+    const on = i === _msSel;
+    el.classList.toggle('sel', on);
+    el.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const input = _msEl('map-search-input');
+  if (_msSel >= 0) {
+    rows[_msSel]?.scrollIntoView({ block: 'nearest' });
+    input?.setAttribute('aria-activedescendant', 'ms-opt-' + _msSel);
+  } else {
+    input?.removeAttribute('aria-activedescendant');
+  }
+}
+
+function _msShowRecent() {
+  if (!recentPlaces.length) { _msClose(); return; }
+  _msRender({ recent: recentPlaces });
+}
+
+function onMapSearchInput() {
+  const q = (_msEl('map-search-input')?.value || '').trim();
+  _msEl('map-search')?.classList.toggle('filled', !!q);
+  _msSel = -1;
+  clearTimeout(_msTimer);
+  const gen = ++_msGen;   // invalidates any geocode still in flight
+  if (!q) { _msBusy(false); _msShowRecent(); return; }
+
+  // Everything local paints immediately — saved places, stops, and (once the
+  // index has loaded) the Overture POIs. The geocoder only ever adds to them.
+  const f = _foldTr(q);
+  const { saved, stops } = _msLocalMatches(q);
+  const indexAtPaint = placeIndex;
+  const localAtPaint = _searchPlaceIndex(f, MS_PLACE_LOCAL);
+  if (q.length < 2) { _msBusy(false); _msRender({ saved, stops, places: localAtPaint }); return; }
+  _msRender({ saved, stops, places: localAtPaint, note: t('msSearching') });
+  _msBusy(true);
+
+  _msTimer = setTimeout(async () => {
+    if (gen !== _msGen) return;
+    await _loadPlaceIndex();      // first search only; instant every time after
+    if (gen !== _msGen) return;
+    // Re-scan only if the index actually arrived during the await; otherwise the
+    // paint above already produced this exact array.
+    const local = placeIndex === indexAtPaint ? localAtPaint : _searchPlaceIndex(f, MS_PLACE_LOCAL);
+    let geocoded = null, failed = false;
+    try { geocoded = await _geocodePlaces(q); } catch { failed = true; }
+    if (gen !== _msGen) return;   // the user kept typing; that render owns the box now
+    _msBusy(false);
+    const places = _mergePlaceResults(local, geocoded || []);
+    // A dead geocoder is only worth reporting when it left us with nothing —
+    // with local hits on screen, a banner would just be noise.
+    const note = (saved.length + stops.length + places.length) ? null
+      : failed ? (document.body.classList.contains('is-offline') ? t('msOffline') : t('msFailed'))
+      : t('msNoResult');
+    _msRender({ saved, stops, places, note });
+  }, MS_DEBOUNCE_MS);
+}
+
+function onMapSearchFocus() {
+  _loadPlaceIndex();   // warm the index while they type the first letter
+  const q = (_msEl('map-search-input')?.value || '').trim();
+  if (q) onMapSearchInput();
+  else _msShowRecent();
+}
+
+function onMapSearchKey(e) {
+  const open = _msEl('ms-results')?.classList.contains('open');
+  if (e.key === 'Escape') { _msClose(); _msEl('map-search-input')?.blur(); return; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (open && _msRows.length) pickMapSearchRow(_msSel >= 0 ? _msSel : 0);
+    return;
+  }
+  if (!open || !_msRows.length) return;
+  if (e.key === 'ArrowDown')    { e.preventDefault(); _msSel = (_msSel + 1) % _msRows.length; _msPaintSel(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _msSel = (_msSel <= 0 ? _msRows.length : _msSel) - 1; _msPaintSel(); }
+}
+
+function pickMapSearchRow(i) {
+  const row = _msRows[i];
+  if (!row) return;
+  // Cancel the pending debounce AND bump the generation. Without this, the
+  // geocode armed by the last keystroke lands about half a second after the
+  // click and re-opens the dropdown over the result card, hiding its buttons.
+  clearTimeout(_msTimer);
+  _msTimer = null;
+  _msGen++;
+  _msBusy(false);
+  const input = _msEl('map-search-input');
+  if (input) { input.value = row.name; input.blur(); }
+  _msEl('map-search')?.classList.add('filled');
+  _msClose();
+  _msRememberPlace(row);
+  showSearchPlace(row);
+}
+
+function _msRememberPlace(row) {
+  const e = { kind: row.kind, name: row.name, detail: row.detail, lat: row.lat, lng: row.lng, icon: row.icon };
+  if (row.stopId) e.stopId = row.stopId;
+  recentPlaces = [e, ...recentPlaces.filter(r => Math.abs(r.lat - e.lat) > 1e-6 || Math.abs(r.lng - e.lng) > 1e-6)]
+                   .slice(0, RECENT_PLACES_MAX);
+  try { localStorage.setItem('bm_recent_places_v1', JSON.stringify(recentPlaces)); } catch {}
+}
+
+// Fly to a located place: a purple pin (distinct from the blue origin / green
+// destination pins) plus a card offering the two things you can do with it.
+function showSearchPlace(place) {
+  if (!window._map || !place) return;
+  _msPlace = place;
+  clearSearchMarker();
+  _msMarker = L.marker([place.lat, place.lng], { icon: mkPinIcon('#a855f7'), zIndexOffset: 1400 })
+    .bindTooltip(esc(place.name), { permanent: true, direction: 'top', offset: [0, -38] })
+    .addTo(window._map);
+  // On mobile the results panel can be covering the map — drop back to the map
+  // so the place we just flew to is actually visible.
+  if (_msEl('map')?.classList.contains('panel-full')) collapsePanel();
+  window._map.setView([place.lat, place.lng], Math.max(window._map.getZoom(), 17));
+  _renderPlaceCard();
+}
+
+// Every control in here stops propagation explicitly. Leaflet's
+// disableClickPropagation is not enough: these handlers rewrite the card's
+// innerHTML, which detaches the clicked button BEFORE the event finishes
+// bubbling — so Leaflet's `_isClickDisabled` walk up from e.target no longer
+// reaches #ms-card's guard flag, the map handles the click as its own, and the
+// pin lands under the button instead of on the searched place.
+function _renderPlaceCard() {
+  const card = _msEl('ms-card');
+  if (!card) return;
+  const p = _msPlace;
+  if (!p) { card.classList.remove('open'); card.innerHTML = ''; return; }
+  const near = allStops.size ? nearestStop(p.lat, p.lng) : null;
+  const sub = [
+    p.detail ? esc(p.detail) : '',
+    near?.stop ? esc(t('msNearest', { name: near.stop.stopName, dist: fmtDist(near.meters) })) : esc(t('msNoStopNear')),
+  ].filter(Boolean).join('<br>');
+  card.innerHTML =
+      '<div class="msc-head">'
+    +   '<div class="msc-name">' + esc(p.name) + '</div>'
+    +   '<button class="msc-close" onclick="event.stopPropagation();closeSearchPlace()" title="' + esc(t('msClose')) + '">✕</button>'
+    + '</div>'
+    + '<div class="msc-sub">' + sub + '</div>'
+    + '<div class="msc-actions">'
+    +   '<button class="msc-btn origin" onclick="event.stopPropagation();useSearchPlace(\'origin\')">' + t('msSetOrigin') + '</button>'
+    +   '<button class="msc-btn dest" onclick="event.stopPropagation();useSearchPlace(\'dest\')">' + t('msSetDest') + '</button>'
+    +   (p.stopId ? '<button class="msc-btn" onclick="event.stopPropagation();viewStopInDuraklar(\'' + p.stopId + '\')">' + t('msOpenStop') + '</button>' : '')
+    + '</div>';
+  card.classList.add('open');
+}
+
+// Hand the located place to the planner. The search pin goes away first so it
+// doesn't sit on top of the origin/destination pin applyPoint is about to drop.
+function useSearchPlace(which) {
+  const p = _msPlace;
+  if (!p) return;
+  // In the stops browser the results panel is hidden, so a plan made from here
+  // would render into a panel nobody can see. Leave that mode first.
+  if (mode === 'stops') setMode(which);
+  // Hand the point over BEFORE dismissing the card. applyPoint can refuse — a
+  // guided trip locks picks, and a saved place just outside MAP_BOUNDS is
+  // rejected — and tearing the card down first would leave the user with no pin,
+  // no card and nothing selected, with no way to retry but to search again.
+  if (applyPoint(p.lat, p.lng, which)) closeSearchPlace();
+}
+
+function clearSearchMarker() {
+  if (_msMarker && window._map) { try { window._map.removeLayer(_msMarker); } catch {} }
+  _msMarker = null;
+}
+function closeSearchPlace() { _msPlace = null; clearSearchMarker(); _renderPlaceCard(); }
+
+// Wipe the query + located place without touching focus — used by ✕ (reset)
+// and by Start Trip, where a stray search pin would otherwise survive the map
+// wipe with no card left to dismiss it.
+function _msReset() {
+  const input = _msEl('map-search-input');
+  if (input) input.value = '';
+  _msEl('map-search')?.classList.remove('filled');
+  clearTimeout(_msTimer); _msGen++; _msSel = -1;
+  _msBusy(false); _msClose();
+  closeSearchPlace();
+}
+function clearMapSearch() {
+  _msReset();
+  _msEl('map-search-input')?.focus();
+  _msShowRecent();
+}
+
+// Any tap outside the search box closes the dropdown (map taps included — the
+// map's own click handler runs too, which is what you want: pick a point).
+document.addEventListener('click', e => {
+  if (!_msEl('ms-results')?.classList.contains('open')) return;
+  if (!_msEl('map-search')?.contains(e.target)) _msClose();
+});
+
 // ── Inline handler bridge ───────────────────────────────────────────────────
 // index.html's inline on*= handlers (onclick="setMode('origin')") resolve their
 // identifiers against the GLOBAL scope. In a classic <script> every top-level
@@ -3856,4 +4426,7 @@ applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStop
   setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
   toggleBmDropdown, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
   useRecentDest, viewStopInDuraklar,
+  // map place search
+  clearMapSearch, closeSearchPlace, onMapSearchFocus, onMapSearchInput, onMapSearchKey,
+  pickMapSearchRow, useSearchPlace,
 });

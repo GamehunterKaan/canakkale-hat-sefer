@@ -1,0 +1,51 @@
+{
+  "_readme": [
+    "Hand corrections applied on top of the Overture extract by scripts/build-places.mjs.",
+    "Re-applied on every monthly rebuild, so upstream mistakes stay fixed.",
+    "",
+    "  drop: [{ name, near?: [lat, lng], reason }]                              remove a ghost listing",
+    "  fix:  [{ name, near?: [lat, lng], lat?, lng?, cat?, area?, rename?, reason }]   correct a field",
+    "  add:  [{ name, lat, lng, cat?, area? }]                     add something upstream doesn't have",
+    "",
+    "`near` scopes a rule to one branch (default 400 m, override with nearM), so a rule about the",
+    "Kepez Migros can't hit the Iskele one. Without it, the rule applies to every same-named row.",
+    "A rule that stops matching is reported by the build as 'override matched nothing' — that means",
+    "upstream has changed and the rule should be re-checked or deleted.",
+    "",
+    "Note: stale listings (nothing upstream has confirmed in over a year) are dropped automatically",
+    "by MAX_SOURCE_AGE_DAYS, so a closed business usually needs no rule here."
+  ],
+  "drop": [
+    {
+      "name": "Sürat Kargo 18 MART",
+      "near": [
+        40.13972,
+        26.40822
+      ],
+      "reason": "Branch is gone (confirmed on the ground; absent from Google Maps). It survived in two places: a Foursquare record last confirmed 2025-06-21, now cut by the freshness filter, and OpenStreetMap node 8804890101 (tagged amenity=post_office), which the live geocoder still serves — hence this rule, which is exported to places.json as a deny rule the app applies to geocoder results too. The real fix is upstream: the OSM node should be deleted. Remove this rule once it is."
+    }
+  ],
+  "fix": [
+    {
+      "name": "Container Hall Çanakkale",
+      "near": [
+        40.15789,
+        26.4147
+      ],
+      "lat": 40.15077,
+      "lng": 26.40548,
+      "area": "Mehmetçik Bulvarı 27 (Halk Bahçesi)",
+      "reason": "Meta's listing is current (refreshed 2026-08-10, confidence 0.99) but its address was geocoded onto the wrong street: it reads 'Mehmet Kaptan Sokak 27', and the pin sat mid-way along Mehmet Kaptan Sokak, 1.1 km from the venue. The real address is 'Cevat Paşa, Mehmetçik Blv. No:27' per iticket.com.tr and biletinial. Coordinate here is the centroid of five other venues in this same extract that list Mehmetçik Bulvarı 27 — two of them as 'Halk Bahçesi İçi' — and it agrees with Nominatim's position for that boulevard. Nearest stop goes from ŞEHİTLER CAMİ to HALKBAHÇESİ."
+    }
+  ],
+  "add": [
+    {
+      "name": "Sürat Kargo Truva Şubesi",
+      "cat": "shipping_center",
+      "lat": 40.14789,
+      "lng": 26.44424,
+      "area": "56. Sokak 4 (Egepark Evleri)",
+      "reason": "Open in İsmetpaşa and visited on the ground 2026-09-02, but in neither source: not in Overture, and Photon/OSM has only other companies' TRUVA branches. Looks like the 18 Mart branch relocated here. Address 'İsmetpaşa Mh. 56. Sokak No:4, Egepark Evleri Sitesi' and phone 0286 230 0112 agree across two branch directories; the coordinate is theirs, and it checks out: 51 m from OSM's 56. Sokak centreline, and 99 m from the EGEPARK stop, whose name matches the housing estate in the address."
+    }
+  ]
+}

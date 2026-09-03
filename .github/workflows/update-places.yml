@@ -1,0 +1,55 @@
+name: Update Places Data
+
+# The POI index behind the map search box. Separate from Update Transit Data
+# because it moves on a completely different clock: Overture cuts one release a
+# month, while schedules and stops change daily. Running this hourly would burn
+# minutes downloading a dataset that cannot have changed.
+on:
+  schedule:
+    - cron: '0 4 8 * *'      # 8th of the month — after Overture's monthly release lands
+  workflow_dispatch:          # manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Official Overture CLI: reads the release's cloud parquet directly and
+      # prunes to the bbox via row-group statistics, so this pulls a few MB
+      # rather than the multi-gigabyte global places theme.
+      - name: Install Overture CLI
+        run: pip install overturemaps
+
+      # The bbox comes from the script (which derives it from core.js MAP_BOUNDS)
+      # rather than being restated here — a third copy would silently keep
+      # clipping to the old box if the map's bounds ever changed.
+      - name: Download Overture places for the Çanakkale bbox
+        run: |
+          BBOX=$(node scripts/build-places.mjs --print-bbox)
+          echo "Clipping to $BBOX"
+          overturemaps download --bbox="$BBOX" --type=place -f geojson -o /tmp/overture-places.geojson
+
+      - name: Validate builder logic (self-test)
+        run: node scripts/build-places.mjs --self-test
+
+      - name: Build data/places.json
+        run: node scripts/build-places.mjs /tmp/overture-places.geojson data/places.json
+
+      - name: Commit updated places
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/places.json
+          git diff --staged --quiet || git commit -m "chore: update places data $(date -u '+%Y-%m-%d')" && git push

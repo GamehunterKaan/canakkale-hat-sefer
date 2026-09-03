@@ -59,6 +59,25 @@ export function pickActiveScheduleId(schedules, today) {
 // ══════════════════════════════════════════════════════════════
 export const API    = 'https://service.kentkart.com/rl1/';
 
+// ── Shared geography + text folding ─────────────────────────────────────────
+// The Çanakkale bounding box, in ONE place. Three consumers must agree on it or
+// the app breaks quietly: the browser map clamps panning to it, applyPoint
+// rejects picks outside it, and the monthly POI build clips its Overture extract
+// to it. Widen it in a private copy and the rebuild keeps silently discarding
+// places inside the new area.
+export const MAP_BOUNDS = [[39.95, 26.30], [40.25, 26.55]];   // [SW lat,lng], [NE lat,lng]
+
+// Strip Turkish diacritics and lowercase, for accent-insensitive matching.
+// Shared for the same reason: the POI build folds place names to key its dedupe,
+// and the app folds the user's query to match against them. Two copies that
+// drift apart desynchronise the dedupe from the search, and duplicate rows
+// quietly reappear.
+export function foldTr(s) {
+  return (s || '').toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i').replace(/ç/g, 'c').replace(/ğ/g, 'g')
+    .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
+}
+
 // User-configurable preferences. Loaded once at startup; defaults below.
 export const SETTINGS_DEFAULTS = { walkRadius: 900, walkSpeedMpm: 72, theme: 'dark' };
 
@@ -209,6 +228,15 @@ export const STR = {
     distAwayM: '{d} m uzakta', distAwayKm: '{d} km uzakta', routesCount: '{n} hat', noData: 'Veri yok', locWord: 'Konum',
     cardOrigin: 'Konum — En yakın durak', cardDest: 'Hedef — En yakın durak', saveBtn: '☆ Kaydet', saveBtnTitle: 'Kaydet', savedBtn: '★ Kaydedildi',
     searchLoading: 'Durak verisi yükleniyor…',
+    // ── Map place search ──
+    mapSearchPh: 'Yer, adres veya durak ara…',
+    msStops: 'Duraklar', msPlaces: 'Yerler', msSaved: 'Kayıtlı yerler', msRecent: 'Son aramalar',
+    msSearching: 'Yerler aranıyor…', msNoResult: 'Sonuç bulunamadı.',
+    msOffline: 'Çevrimdışı — şimdilik yalnızca duraklarda arama yapılabiliyor.',
+    msFailed: 'Yer araması şu an kullanılamıyor.',
+    msClear: 'Aramayı temizle', msClose: 'Kapat',
+    msSetOrigin: '📍 Buradan başla', msSetDest: '🏁 Buraya git', msOpenStop: '🚏 Durak detayı',
+    msNearest: 'En yakın durak: {name} · {dist}', msNoStopNear: 'Yakında durak yok.',
     // ── Settings ──
     setTitle: 'Ayarlar', setBack: '← Geri',
     setAppearance: 'Görünüm', themeDark: '🌙 Karanlık', themeLight: '☀️ Aydınlık', themeSystem: '📱 Sistem',
@@ -373,6 +401,15 @@ export const STR = {
     distAwayM: '{d} m away', distAwayKm: '{d} km away', routesCount: '{n} lines', noData: 'No data', locWord: 'Location',
     cardOrigin: 'From — Nearest stop', cardDest: 'To — Nearest stop', saveBtn: '☆ Save', saveBtnTitle: 'Save', savedBtn: '★ Saved',
     searchLoading: 'Loading stop data…',
+    // ── Map place search ──
+    mapSearchPh: 'Search a place, address or stop…',
+    msStops: 'Stops', msPlaces: 'Places', msSaved: 'Saved places', msRecent: 'Recent searches',
+    msSearching: 'Searching places…', msNoResult: 'No results found.',
+    msOffline: 'Offline — only stops can be searched right now.',
+    msFailed: 'Place search is unavailable right now.',
+    msClear: 'Clear search', msClose: 'Close',
+    msSetOrigin: '📍 Start here', msSetDest: '🏁 Go here', msOpenStop: '🚏 Stop details',
+    msNearest: 'Nearest stop: {name} · {dist}', msNoStopNear: 'No stop nearby.',
     setTitle: 'Settings', setBack: '← Back',
     setAppearance: 'Appearance', themeDark: '🌙 Dark', themeLight: '☀️ Light', themeSystem: '📱 System',
     setLangLabel: 'Language / Dil',

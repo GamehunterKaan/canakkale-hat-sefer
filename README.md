@@ -45,6 +45,7 @@ Tap the map (or use GPS) to set your starting point and destination. The planner
 - **Plan ahead** — use the time offset buttons (+30 dk, +1 sa, +2 sa) to plan for later
 - **Live bus data** — shows which buses are approaching your boarding stop right now. Tap a bus to see its current stop and where it's heading next
 - **Scheduled fallback** — when no live data is available, the ETA falls back to today's active timetable. On Bayram, Arefe, or any dated special day, the planner automatically consults the matching schedule instead of the regular weekday one
+- **Search for a place** — a search bar sits over the map for destinations you can't point at: type *Container Hall*, *Migros*, a street name, or a stop, pick a result, and the map flies there with a pin. The card that opens shows the nearest bus stop and hands the point straight to the planner as **📍 Buradan başla** or **🏁 Buraya git**. Saved places, stops and 6,400+ local businesses and venues match instantly **and offline** from a bundled index; an online geocoder adds streets and addresses on top. Everything is restricted to the Çanakkale map area, and recent searches are remembered
 - **Tap a stop to pick it** — while in Konum or Hedef pick mode, tapping any stop circle on the map snaps your pin to that stop exactly
 - **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
 
@@ -158,15 +159,15 @@ A gear icon in the header opens a settings screen with:
 ## Architecture
 
 ```
-GitHub Actions (hourly cron, fast-skip if unchanged)
-────────────────────────────────────────────────────
-fetch-schedule.mjs              fetch-stops.mjs
-  ↓ download PDFs                 ↓ kentkart bulk fetch
-  ↓ parse with pdf.js             ↓ strip live bus data
-  ↓                               ↓
-data/schedule.json          data/stops.json
-        │                         │
-        └──────────┬──────────────┘
+GitHub Actions (hourly cron, fast-skip if unchanged)      (monthly cron)
+──────────────────────────────────────────────────────────────────────────
+fetch-schedule.mjs              fetch-stops.mjs         build-places.mjs
+  ↓ download PDFs                 ↓ kentkart bulk fetch    ↓ Overture bbox extract
+  ↓ parse with pdf.js             ↓ strip live bus data    ↓ confidence + dedupe
+  ↓                               ↓                        ↓
+data/schedule.json          data/stops.json          data/places.json
+        │                         │                         │
+        └──────────┬──────────────┴─────────────────────────┘
                    ↓
              GitHub Pages
              index.html + sw.js + manifest
@@ -236,6 +237,8 @@ Headlessness isn't a convention here, it's enforced: `test/core-test.mjs` import
 - **Maps** — [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles, all vector layers sharing one explicit `L.canvas` renderer (avoids the multi-canvas event-stacking pitfall that breaks hit-testing)
 - **Offline** — Service worker precaches the app shell + Leaflet CDN, stale-while-revalidates the JSON data, and cache-firsts OSM tiles with a FIFO cap. An on-demand tile downloader fetches every tile in the Çanakkale bbox at the allowed zoom range so the map works fully offline once primed
 - **Live data** — [Kentkart](https://kentkart.com) public API fetched directly by the browser (same data used by physical stop displays). A 15s connectivity probe drives the offline indicator
+- **Place search — two sources, on purpose.** `data/places.json` is a static [Overture Maps](https://overturemaps.org/) POI extract for the Çanakkale bbox (~6,400 places, 162 KB gzipped), rebuilt monthly by Actions and searched locally, so it is instant and works with no network at all. It exists because OpenStreetMap alone does not have most Turkish businesses — *Container Hall Çanakkale*, a real venue 129 m from ŞEHİTLER CAMİ, has **zero** matches in raw OSM across the entire bbox, while Overture carries it at 0.99 confidence (Overture merges Meta, Microsoft, Foursquare and AllThePlaces listings over OSM). On top of that, [Photon](https://photon.komoot.io/) geocodes streets and addresses live, bbox-restricted and biased to the map centre — Photon rather than Nominatim because its usage policy explicitly allows the as-you-type querying a search box does; its answers are cached in localStorage. Google Places is deliberately not used: its terms tie results to a Google basemap, and a static site cannot hide an API key
+- **Keeping the POI index honest.** Crowd-sourced business data has two distinct failure modes, and the build handles them separately. *Ghost listings* — shops that closed and were never retired — are dropped by freshness: any row no upstream provider has confirmed in over a year is cut, which is 3% of the extract. The staleness is not evenly spread, which is what makes the rule cheap: Meta and AllThePlaces refresh constantly (median 24-28 days, 0% over a year) while Foursquare (median 484 days, 65% over a year) and Microsoft (926 days, 81%) carry the whole tail. Note that every row also has an *Overture* source stamped with the release date — count that one and everything looks fresh. *Wrong coordinates on current listings* can't be filtered at all: Meta had Container Hall at 0.99 confidence, refreshed three weeks earlier, geocoded onto the wrong street 1.1 km away because "Mehmetçik Blv." fuzzy-matched "Mehmet Kaptan Sokak". Those are corrected by hand in `data/places-overrides.json` (`drop` / `fix` / `add`), which is re-applied on top of every rebuild; a rule that stops matching is reported by the build so it can be retired once upstream catches up. `drop` rules are also shipped to the app as a deny list applied to *live geocoder* results, because deleting a ghost from this index is only half the job — the same closed branch is usually a node in OSM too, where no freshness rule of ours can reach it, and Photon would serve it straight back
 - **Walking & driving directions** — [Valhalla](https://valhalla.openstreetmap.org/) pedestrian routing decides which stops are reachable and how long each walk takes, batched through its distance-matrix API so the whole plan needs only a few requests. The taxi estimate uses Valhalla's shortest-path car route, since a meter bills distance driven. Straight-line + walk-speed fallback when the service is unreachable. The public OSRM demo is deliberately avoided — its `/foot/` endpoint actually returns car routing, which inflated short pedestrian moves and hid reachable stops
 - **Push** — Web Push (RFC 8030/8291/8292) via Cloudflare Workers + KV
 - **Zero runtime dependencies** — no frameworks, no build step

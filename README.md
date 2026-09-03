@@ -45,13 +45,29 @@ Tap the map (or use GPS) to set your starting point and destination. The planner
 - **Plan ahead** — use the time offset buttons (+30 dk, +1 sa, +2 sa) to plan for later
 - **Live bus data** — shows which buses are approaching your boarding stop right now. Tap a bus to see its current stop and where it's heading next
 - **Scheduled fallback** — when no live data is available, the ETA falls back to today's active timetable. On Bayram, Arefe, or any dated special day, the planner automatically consults the matching schedule instead of the regular weekday one
-- **Search for a place** — a search bar sits over the map for destinations you can't point at: type *Container Hall*, *Migros*, a street name, or a stop, pick a result, and the map flies there with a pin. The card that opens shows the nearest bus stop and hands the point straight to the planner as **📍 Buradan başla** or **🏁 Buraya git**. Saved places, stops and 6,400+ local businesses and venues match instantly **and offline** from a bundled index; an online geocoder adds streets and addresses on top. Everything is restricted to the Çanakkale map area, and recent searches are remembered
+- **Search for a place** — can't point at your destination because you don't know where it is? Search it by name and hand it to the planner in one tap (see **Yer Ara** below)
 - **Tap a stop to pick it** — while in Konum or Hedef pick mode, tapping any stop circle on the map snaps your pin to that stop exactly
 - **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
 
 <p>
   <img src="screenshots/planner.png" width="49%" alt="Trip planner showing route options sorted by ETA">
   <img src="screenshots/one-transfer.png" width="49%" alt="One transfer trip map view">
+</p>
+
+---
+
+### 🔎 Yer Ara — Place Search
+
+A search bar sits over the map for the destinations you can't already point at. Type a venue, a shop, a street or a stop — *Container Hall*, *Migros*, *Kordon* — pick a result, and the map flies there and drops a pin. The card that opens names the nearest bus stop with its distance and hands the point straight to the planner as **📍 Buradan başla** or **🏁 Buraya git**.
+
+- **Two sources, merged into one list** — saved places, bus stops and 6,400+ local businesses and venues match instantly from a bundled index that needs **no network at all**; an online geocoder adds the streets and addresses a POI extract has no concept of. Results are de-duplicated across the two, Turkish-folded (`kordon` finds *Kordon*), and ranked so a place actually called *Container Hall* beats a long company name that merely contains the word
+- **Why bundle an index at all** — OpenStreetMap alone doesn't have most Turkish businesses. *Container Hall Çanakkale* — a real venue 129 m from a stop — has **zero** matches in raw OSM across the entire Çanakkale bbox, while [Overture Maps](https://overturemaps.org/) carries it at 0.99 confidence. So the app ships a monthly Overture extract next to the live geocoder
+- **Restricted to the map area** — anything outside the Çanakkale bounding box is unroutable by the planner anyway, so it never appears in the list
+- **Remembers** — your last 5 searched places come back when you focus the empty box
+
+<p>
+  <img src="screenshots/search.png" width="49%" alt="Search dropdown showing a matching stop above local places from the bundled index">
+  <img src="screenshots/search-place.png" width="49%" alt="A searched place pinned on the map with its nearest stop and the two planner actions">
 </p>
 
 ---
@@ -223,6 +239,7 @@ list[0];  // → { path, route, board, alight, walkB, walkA, _wait, _eta, … }
 - `init()` — self-fetches from the deployed site by default. `init({ baseUrl })` points at your own host; `init({ schedule, stops })` injects pre-parsed data and does zero I/O (this is what `ui.js` and the tests use).
 - `planTrips(origin, dest, opts)` — returns `{ list, relaxed }`, or `null` if `isCancelled()` tripped. Pass `live: false` to plan off the timetable alone, and inject `fetchLive` / `walkMatrix` / `walkCache` to keep it deterministic offline.
 - Also exported: `findSchedEntry` / `pickSchedDir` / `schedTimesForPath` (which timetable block a route direction uses), `buildGuidedSteps` + `guidedStepMet` (turn-by-turn state), `_taxiEstimate`, `haversine`, the service-day time helpers, and the `STR` TR/EN dictionary via `createT`.
+- `MAP_BOUNDS` and `foldTr` live here too, because three things have to agree on them: the browser map clamps to the box and rejects picks outside it, `scripts/build-places.mjs` clips its POI extract to it, and the refresh workflow asks the script for it. `foldTr` is shared for the same reason — the POI build folds place names to key its dedupe, and the app folds your query to match them, so two copies drifting apart would silently resurrect duplicate rows.
 
 > **Note:** import from the GitHub Pages URL, not `raw.githubusercontent.com` — raw serves `text/plain`, which browsers reject for ES modules. In Node, vendor the file.
 

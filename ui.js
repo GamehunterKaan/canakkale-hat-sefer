@@ -638,7 +638,9 @@ function applyDeepLink() {
 // back to a normal plan for the same inputs so the link still lands somewhere useful.
 // Async (walk-distance fetch) and deliberately un-awaited by applyDeepLink.
 async function _applyTripDeepLink() {
-  if (!window._map || !allStops.size || !getPathCache().length) return; // retried on the post-load call
+  // Stops and the timetable load independently. Leave the link pending until
+  // both are ready; otherwise an empty dayData makes a valid trip look gone.
+  if (!window._map || !allStops.size || !getPathCache().length || !getActiveSchedule()) return;
   const spec = _pendingTripDeepLink;
   _pendingTripDeepLink = null;
 

@@ -4,6 +4,6 @@
   "type": "module",
   "description": "Çanakkale public bus PWA. core.js is the headless logic module; ui.js is the browser/Leaflet layer.",
   "scripts": {
-    "test": "node test/core-test.mjs && node test/handlers-test.mjs && node test/planner-test.mjs"
+    "test": "node test/core-test.mjs && node test/handlers-test.mjs && node test/planner-test.mjs && node test/trip-link-test.mjs"
   }
 }

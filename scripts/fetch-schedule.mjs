@@ -1,6 +1,6 @@
 /**
  * Fetches the municipality's PDF timetables and parses them into schedule.json.
- * Runs in GitHub Actions daily at midnight Turkey time.
+ * Runs in GitHub Actions on the transit-data refresh schedule.
  */
 
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -20,6 +20,21 @@ const MUN_URL = 'https://ulasim.canakkale.bel.tr/rehber/hatlar-otobus-saatleri/'
 // "KÜTÜPHANE SEFERLERİ" are tiny 1–2 page PDFs that parse into a route or two
 // and pollute the Seferler tabs. Skip PDFs below this page count.
 const MIN_PDF_PAGES = 6;
+const ROUTE_RE = /^(Ç-?\d+[A-ZÇŞĞÜÖİ]*|ÇT-?\d+|\d+[ÇGK])/;
+const normalizeRouteName = name => name.replace(/^Ç(T?)-(?=\d)/, 'Ç$1');
+
+function isDosyaSubheading(text, x, y, items) {
+  return /EKSPRES/i.test(text) && items.some(it =>
+    Math.abs(it.x - x) < 30 && it.y < y && it.y > y - 22 && /DOSYA/i.test(it.text));
+}
+
+function samePublishedData(a, b) {
+  const content = data => JSON.stringify({
+    schedules: data?.schedules || [], routes: data?.routes || [],
+    skippedUrls: data?.skippedUrls || [],
+  });
+  return content(a) === content(b);
+}
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
@@ -211,7 +226,8 @@ async function parsePDF(buffer) {
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer), disableFontFace: true }).promise;
   if (pdf.numPages < MIN_PDF_PAGES) return { routes: {}, numPages: pdf.numPages, skipped: true };
   const routeMap = {};
-  const ROUTE_RE  = /^(Ç\d+[A-ZÇŞĞÜÖİ]*|ÇT\d+|\d+[ÇGK]|960)/;
+  // Newer PDFs print many route codes with a hyphen (Ç-1, Ç-960, ÇT-1),
+  // while older ones use Ç1/Ç960/ÇT1. Accept both and store one stable code.
   const TIME_RE   = /^\d{2}:\d{2}$/;
   const DEPART_RE = /^(KALKIŞ|.*\sKALKIŞ|HAREKET|.*\sHAREKET)$/i;
   const KEYWORD_RE= /KALKIŞ|HAREKET|VARIŞ/i;
@@ -224,7 +240,7 @@ async function parsePDF(buffer) {
   // Footnote / annotation words that never appear in real route names. Lines
   // like "Ç1 OLARAK BAŞLAYACAKTIR" (will start as Ç1) match ROUTE_RE but are
   // notes, not routes; if we accept them they steal times from the route above.
-  const NOT_A_ROUTE = /\b(OLARAK|BAŞLAYACAK|DEVAM\s*EDECEK|EDECEKTIR|YAPILACAK|GEÇERL[İI]|İPTAL|YOK|TATİL|GÜZERGAH)\b/i;
+  const NOT_A_ROUTE = /\b(OLARAK|BAŞLAYACAK|DEVAM\s*EDECEK|EDECEKTIR|YAPILACAK|GEÇERL[İI]|İPTAL|YOK|TATİL|GÜZERGAH|DOSYA)\b/i;
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
@@ -254,11 +270,12 @@ async function parsePDF(buffer) {
       if (!ROUTE_RE.test(text)) continue;
       if (NOT_A_ROUTE.test(text)) continue;
       const code = text.split(/\s+/)[0];
+      // A table subsection can have a route-like heading, e.g. "Ç-11" with
+      // "EKSPRES 2.DOSYA" on the next line. It must not split the parent route.
+      if (isDosyaSubheading(text, items[0].x, y, allItems)) continue;
       if (seenCodes.has(code)) continue;
       const hasDept  = allItems.some(it => DEPART_RE.test(it.text) && Math.abs(it.y - y) <= 150);
       if (!hasDept) continue;
-      const hasDosya = allItems.some(it => /DOSYA/i.test(it.text) && it.y < y && it.y > y - 30);
-      if (hasDosya) continue;
       seenCodes.add(code);
       routeHeaders.push({ y, firstWord: code });
     }
@@ -281,25 +298,25 @@ async function parsePDF(buffer) {
                      !TIME_RE.test(i.text) && !ROUTE_RE.test(i.text) &&
                      !/KALKIŞ|VARIŞ|HAREKET|DÖNÜŞ|GİDİŞ|DURAK|DURAĞ/i.test(i.text))
         .sort((a, b) => b.y - a.y).map(i => i.text.trim()).filter(Boolean);
-      const routeName = [(routeItem?.text || routeCode), ...line2].join(' ').trim();
+      const routeName = normalizeRouteName([(routeItem?.text || routeCode), ...line2].join(' ').trim());
       const mapKey    = routeName.split(/\s+/).slice(0, 3).join(' ');
 
       // Departure markers
       let deptItems = band
         .filter(it => isDeptCol(it) && Math.abs(it.y - headerY) <= 150)
-        .sort((a, b) => a.x - b.x);
+        .sort((a, b) => b.y - a.y);
       const deduped = [];
       for (const d of deptItems) {
         if (!deduped.some(e => Math.abs(e.x - d.x) < 20)) deduped.push(d);
       }
-      deptItems = deduped;
+      deptItems = deduped.sort((a, b) => a.x - b.x);
       if (deptItems.length < 2) {
-        const fb = band.filter(it => isDeptCol(it)).sort((a, b) => a.x - b.x);
+        const fb = band.filter(it => isDeptCol(it)).sort((a, b) => b.y - a.y);
         const fb2 = [];
         for (const d of fb) {
           if (!fb2.some(e => Math.abs(e.x - d.x) < 20)) fb2.push(d);
         }
-        if (fb2.length >= 2) deptItems = fb2;
+        if (fb2.length >= 2) deptItems = fb2.sort((a, b) => a.x - b.x);
         else if (fb2.length === 1 && deptItems.length === 0) deptItems = fb2;
       }
 
@@ -307,8 +324,9 @@ async function parsePDF(buffer) {
         const selfPart = kItem.text.replace(/\s*(KALKIŞ|HAREKET)\s*$/i, '').trim();
         const above = band
           .filter(i => Math.abs(i.x - kItem.x) < 30 && i.y > kItem.y &&
-                       Math.abs(i.y - headerY) <= 120 &&
-                       !KEYWORD_RE.test(i.text) && !TIME_RE.test(i.text))
+                       i.y <= kItem.y + 30 &&
+                       !KEYWORD_RE.test(i.text) && !/\d{1,2}:\d{2}/.test(i.text) &&
+                       !/^\d+$/.test(i.text))
           .sort((a, b) => b.y - a.y);
         const sp = TIME_RE.test(selfPart) ? '' : selfPart;
         let label = [...above.map(i => i.text.trim()), sp].filter(Boolean).join(' ');
@@ -332,12 +350,22 @@ async function parsePDF(buffer) {
       // off from the time column beneath it (weekend Ç11G: header x128 vs times
       // x149), which the tight ±20 tolerance below would otherwise miss entirely
       // — leaving that whole direction empty. Columns sit ≥50pt apart, so the
-      // nearest dense time-cluster within 28pt of a marker is unambiguously that
-      // marker's own column; snapping to it keeps the tolerance tight and honest.
-      const timeXs = band.filter(it => /^\d{1,2}:\d{2}\b/.test(it.text)).map(it => it.x);
+      // nearest dense time-cluster within 35pt of a marker is unambiguously that
+      // marker's own column. Some HAREKET headers are farther left; only when
+      // no close column exists do we use the densest column within 65pt.
+      const timeXs = band.filter(it => /^\d{1,2}:\d{2}\b/.test(it.text)).map(it => it.x).sort((a, b) => a - b);
       const snapCol = x => {
-        const near = timeXs.filter(tx => Math.abs(tx - x) <= 28).sort((a, b) => a - b);
-        return near.length ? near[Math.floor(near.length / 2)] : x;
+        const near = timeXs.filter(tx => Math.abs(tx - x) <= 35);
+        if (near.length) return near[Math.floor(near.length / 2)];
+        const clusters = [];
+        for (const tx of timeXs) {
+          const last = clusters.at(-1);
+          if (last && tx - last.at(-1) <= 12) last.push(tx);
+          else clusters.push([tx]);
+        }
+        const candidates = clusters.filter(c => Math.abs(c[Math.floor(c.length / 2)] - x) <= 65)
+          .sort((a, b) => b.length - a.length);
+        return candidates[0]?.[Math.floor(candidates[0].length / 2)] ?? x;
       };
       const deptColXs = deptItems.map(d => snapCol(d.x));
 
@@ -374,6 +402,20 @@ async function parsePDF(buffer) {
         if (deptColXs.length && !deptColXs.some(cx => Math.abs(cx - it.x) <= 20)) continue;
         const time = tm[1].length === 4 ? '0' + tm[1] : tm[1];
         (splitX !== null && it.x >= splitX ? dir1 : dir0).add(time);
+      }
+      // ÇT2's morning trip is printed under "KEPEZ 144 TOKİ" without a
+      // KALKIŞ marker; its evening trip has the usual marker. Preserve both.
+      if (routeName.startsWith('ÇT2 ') && deptItems.length === 1) {
+        const other = band.find(it => /KEPEZ 144 TOKİ/i.test(it.text) &&
+          Math.abs(it.y - deptItems[0].y) < 20 && it.x > deptItems[0].x + 80);
+        if (other) {
+          for (const it of band) {
+            const tm = it.text.match(/^(\d{1,2}:\d{2})\b/);
+            if (tm && it.y < other.y && Math.abs(it.x - other.x) <= 25)
+              dir1.add(tm[1].length === 4 ? '0' + tm[1] : tm[1]);
+          }
+          dir1Lbl = other.text;
+        }
       }
 
       if (!routeMap[mapKey])
@@ -443,6 +485,7 @@ function validateOutput(schedules, links, prev, quiet) {
     const tag = `[${s.kind}] ${s.id}`;
     if (!quiet) console.log(`  ${tag}: ${st.routeCount} routes, ${st.totalTimes} times` + (st.emptyRoutes ? `, ${st.emptyRoutes} empty` : ''));
     if (st.badTimes) fatal.push(`${tag}: ${st.badTimes} malformed time value(s)`);
+    if (st.emptyRoutes) fatal.push(`${tag}: ${st.emptyRoutes} route(s) have no departure times`);
     if (REGULAR_KINDS.has(s.kind)) {
       if (st.routeCount < MIN_REGULAR_ROUTES) fatal.push(`${tag}: only ${st.routeCount} routes (expected ≥ ${MIN_REGULAR_ROUTES})`);
       if (st.totalTimes < MIN_REGULAR_TIMES)  fatal.push(`${tag}: only ${st.totalTimes} departure times (expected ≥ ${MIN_REGULAR_TIMES})`);
@@ -456,6 +499,14 @@ function validateOutput(schedules, links, prev, quiet) {
       const pc = scheduleStats(p).routeCount;
       if (pc > 0 && st.routeCount < pc * DRIFT_DROP_RATIO)
         fatal.push(`${tag}: route count dropped ${pc} → ${st.routeCount} vs last run (possible PDF format drift)`);
+      for (const [key, current] of Object.entries(s.routes || {})) {
+        const old = p.routes?.[key];
+        if (!old) continue;
+        const oldTimes = (old.dir0?.times?.length || 0) + (old.dir1?.times?.length || 0);
+        const newTimes = (current.dir0?.times?.length || 0) + (current.dir1?.times?.length || 0);
+        if (oldTimes >= 10 && newTimes < oldTimes * 0.25)
+          fatal.push(`${tag}: ${key} departure count dropped ${oldTimes} → ${newTimes} (possible column drift)`);
+      }
     }
   }
   return { fatal, warn };
@@ -479,6 +530,21 @@ function selfTest() {
   ck('small special schedule → ok',       v([mk('special', manyRoutes(2))], [{ kind: 'special', id: 'special', label: 's' }], null).fatal.length === 0);
   ck('empty special → fatal',             v([mk('special', {})], [{ kind: 'special', id: 'special', label: 's' }], null).fatal.length > 0);
   ck('many empty routes → warn',          v([mk('weekday', { ...manyRoutes(8), E1: route([], []), E2: route([], []), E3: route([], []), E4: route([], []), E5: route([], []), E6: route([], []) })], wlink, null).warn.length > 0);
+  ck('hyphenated route codes', ROUTE_RE.test('Ç-1 ESENLER') && ROUTE_RE.test('ÇT-2 144 TOKİ') &&
+    normalizeRouteName('Ç-11K EKSPRES') === 'Ç11K EKSPRES' &&
+    normalizeRouteName('ÇT-2 144 TOKİ') === 'ÇT2 144 TOKİ');
+  ck('page title is not a route', !ROUTE_RE.test('960 Toki 5A'));
+  ck('DOSYA subsection is not a route', isDosyaSubheading('Ç-11 EKSPRES', 110, 585,
+    [{ x: 116, y: 580, text: '2.DOSYA' }]) &&
+    !isDosyaSubheading('Ç11Ç ÇINARLI', 123, 549, [{ x: 111, y: 528, text: 'K-11 3.Dosya' }]));
+  ck('changed PDF content at same URL is detected', !samePublishedData(
+    { schedules: [{ url: 'same.pdf', routes: { A: route(['08:00'], []) } }] },
+    { schedules: [{ url: 'same.pdf', routes: { A: route(['09:00'], []) } }] }));
+  ck('unchanged data ignores fetchedAt', samePublishedData(
+    { schedules: [], routes: [], fetchedAt: 1 }, { schedules: [], routes: [], fetchedAt: 2 }));
+  ck('route time collapse is fatal', v([mk('weekday', { ...manyRoutes(11), R0: route(['08:00'], []) })],
+    wlink, { schedules: [mk('weekday', { ...manyRoutes(11), R0: route(Array(12).fill('08:00'), []) })] }
+  ).fatal.some(f => /departure count dropped/.test(f)));
 
   console.log(`self-test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
@@ -497,21 +563,9 @@ async function main() {
     console.log(`  [${l.kind}] ${l.id}  "${l.label}"  dates={${[...l.dates].join(',')}}  ${l.url}`);
   }
 
-  // Previous run's output — used for both fast-skip and the drift guard.
+  // Previous run's output is used for the drift guard and change detection.
   let prev = null;
   try { prev = JSON.parse(readFileSync('data/schedule.json', 'utf8')); } catch {}
-
-  // Fast-skip: if the sorted URL list matches the previous run, nothing changed.
-  // Compare against both the schedules we kept AND the small PDFs we skipped, so
-  // a page-skipped PDF (e.g. the library shuttle) doesn't force a re-parse forever.
-  const urlList = links.map(l => l.url).sort();
-  if (prev) {
-    const prevUrls = [...(prev.schedules || []).map(s => s.url), ...(prev.skippedUrls || [])].sort();
-    if (prevUrls.length === urlList.length && prevUrls.every((u, i) => u === urlList[i])) {
-      console.log('PDF URL list unchanged since last run — skipping parse.');
-      return;
-    }
-  }
 
   console.log('Downloading & parsing each PDF…');
   const schedules = [];
@@ -554,16 +608,22 @@ async function main() {
 
   // Fetch kentkart route list for colors (used by Seferler tab badges)
   console.log('Fetching kentkart route colors…');
-  let routes = [];
+  let routes = prev?.routes || [];
   try {
     const kr = await fetch('https://service.kentkart.com/rl1/web/nearest/find?region=007&lang=tr&authType=4&resultType=111');
     const kd = await kr.json();
-    routes = kd.routeList || [];
+    if (Array.isArray(kd.routeList) && kd.routeList.length) routes = kd.routeList;
     console.log(`  → ${routes.length} routes`);
   } catch (e) { console.warn('  kentkart fetch failed:', e.message); }
 
   const out = { schedules, routes, fetchedAt: Date.now() };
-  if (skippedUrls.length) out.skippedUrls = skippedUrls; // remembered so fast-skip stays accurate
+  if (skippedUrls.length) out.skippedUrls = skippedUrls;
+  // A municipality can replace a PDF at the same URL. Parse on every run, but
+  // keep fetchedAt and the file unchanged if the published content is identical.
+  if (prev && samePublishedData(prev, out)) {
+    console.log('Schedule data unchanged — keeping schedule.json.');
+    return;
+  }
   writeFileSync('data/schedule.json', JSON.stringify(out));
   console.log(`✅ schedule.json written (${schedules.length} schedules${skippedUrls.length ? `, ${skippedUrls.length} skipped` : ''})`);
 }

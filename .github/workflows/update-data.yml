@@ -2,7 +2,7 @@ name: Update Transit Data
 
 on:
   schedule:
-    - cron: '0 * * * *'    # every hour; scripts fast-skip when nothing changed
+    - cron: '0 * * * *'    # every hour; scripts keep files unchanged when source data matches
   workflow_dispatch:         # manual trigger from GitHub UI
 
 permissions:

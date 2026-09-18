@@ -322,9 +322,9 @@ function testScheduleHelpers() {
     blockLabelFor('Ç7', 'PARK17').startsWith('PARK17'), blockLabelFor('Ç7', 'PARK17'));
   // Ç3 regression: its "SSK" label is 3 chars. While the label floor was 4 that
   // block scored 0 against both endpoints, Ç3 tied, and the tie-break gave the
-  // ARDES-YURDU-departing path the SSK (opposite direction) timetable.
-  check('pickSchedDir: Ç3 departing ARDES YURDU takes the ARDES YURDU block, not SSK',
-    blockLabelFor('Ç3', 'ELBİKYK').startsWith('ARDESYURDU'), blockLabelFor('Ç3', 'ELBİKYK'));
+  // ELBİ-YURDU-departing path the SSK (opposite direction) timetable.
+  check('pickSchedDir: Ç3 departing ELBİ YURDU takes the ELBİ YURDU block, not SSK',
+    blockLabelFor('Ç3', 'ELBİKYK').includes('ELBİYURT'), blockLabelFor('Ç3', 'ELBİKYK'));
 
   // The invariant the algorithm is built on: scoring both endpoints symmetrically
   // means the two kk directions agree on orientation, so a route's two paths can

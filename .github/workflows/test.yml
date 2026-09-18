@@ -22,6 +22,13 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install pinned parser dependencies
+        run: npm ci
+        working-directory: scripts
+
+      - name: PDF parser and refresh regression tests (offline)
+        run: node scripts/fetch-schedule.mjs --self-test
+
       # Importing core.js under bare node IS the headless proof: node has no
       # document/window/localStorage/L, so a browser dependency creeping into
       # core fails here rather than silently making it page-only again.
@@ -32,6 +39,9 @@ jobs:
       # the thing that silently breaks when app code moves into an ES module.
       - name: Inline handler contract
         run: node test/handlers-test.mjs
+
+      - name: Shared trip cold-start regression
+        run: node test/trip-link-test.mjs
 
       # Planner/schedule logic against the committed data. Hits Valhalla, so it
       # is the step expected to flake on an upstream outage — keep it last and

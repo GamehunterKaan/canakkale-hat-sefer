@@ -19,7 +19,7 @@ import {
   _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins,
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
   pickActiveScheduleId, pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath,
-  todayParts, withinM, foldTr as _foldTr,
+  todayParts, withinM, foldTr as _foldTr, scheduleHealth,
   QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
   _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
   getActiveRoutes, getActiveSchedule, planTrips,
@@ -27,6 +27,7 @@ import {
 } from './core.js';
 
 const CACHE_KEY = 'canakkale_bus_v7';
+const STATUS_CACHE_KEY = 'canakkale_schedule_status_v1';
 
 // Zoom range for the map. Its bounds (MAP_BOUNDS) come from core.js, shared with
 // the POI build; the tile pre-cache covers exactly that box at every allowed
@@ -176,6 +177,61 @@ function applyScheduleData(data) {
   }
 }
 
+// Independent of schedule.json: failures must reach users even when the last
+// good timetable is deliberately left unchanged. Persist the server timestamp
+// so an offline load cannot make old verification look fresh.
+let scheduleStatus = null;
+let statusLoading = false;
+async function loadScheduleStatus() {
+  if (statusLoading) return;
+  statusLoading = true;
+  if (!scheduleStatus) {
+    try { scheduleStatus = JSON.parse(localStorage.getItem(STATUS_CACHE_KEY) || 'null'); } catch {}
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const response = await fetch('./data/schedule-status.json?_=' + Date.now(), { cache: 'no-store', signal: ctrl.signal });
+    if (!response.ok) throw new Error('Schedule status unavailable');
+    const status = await response.json();
+    if (status.version !== 1 || !['ok', 'error'].includes(status.state) || !Number.isFinite(status.checkedAt))
+      throw new Error('Invalid schedule status');
+    scheduleStatus = status;
+    try { localStorage.setItem(STATUS_CACHE_KEY, JSON.stringify(status)); } catch {}
+  } catch { /* Cached verification retains its original age. */ }
+  finally {
+    clearTimeout(timer);
+    statusLoading = false;
+    renderScheduleHealth();
+  }
+  // Valid services can advance even when another source is failing.
+  if (Number.isFinite(scheduleStatus?.dataFetchedAt) && scheduleStatus.dataFetchedAt > (getSchedule()?.fetchedAt || 0))
+    await refreshScheduleInBackground(getSchedule()?.fetchedAt);
+}
+
+function renderScheduleHealth() {
+  const element = document.getElementById('scheduleHealth');
+  if (!element) return;
+  const health = scheduleHealth(scheduleStatus, getSchedule());
+  element.hidden = !health;
+  element.replaceChildren();
+  if (!health) return;
+  const message = document.createElement('div');
+  message.textContent = t('schedHealth' + health[0].toUpperCase() + health.slice(1));
+  element.appendChild(message);
+  const sources = [{ label:t('schedCurrentSources'), url:'https://ulasim.canakkale.bel.tr/rehber/hatlar-otobus-saatleri/' },
+    ...(Array.isArray(scheduleStatus?.sources) ? scheduleStatus.sources : [])];
+  for (const source of sources) {
+    if (!/^https?:\/\//i.test(source.url || '')) continue;
+    const link = document.createElement('a');
+    link.href = source.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = source.label || 'PDF';
+    element.appendChild(link);
+  }
+}
+
 // Fetch the freshest schedule.json straight from the network. The cache-busting
 // query + no-store dodges both the HTTP cache and the service worker's
 // stale-while-revalidate (which would otherwise hand back the cached copy).
@@ -234,12 +290,13 @@ async function loadScheduleData(forceRefresh) {
 // Fire-and-forget: pull the newest schedule.json and, if its build is newer
 // than what's shown, swap it in and re-render the Seferler tab (keeping the
 // user's open tab). Silent on failure so offline users keep the cached copy.
-let _schedBgRefreshed = false;
+let _schedBgRefreshing = false;
 async function refreshScheduleInBackground(shownFetchedAt) {
-  if (_schedBgRefreshed) return;   // at most once per page load
-  _schedBgRefreshed = true;
+  if (_schedBgRefreshing) return;
+  _schedBgRefreshing = true;
   let data;
   try { data = await fetchScheduleFresh(); } catch { return; }
+  finally { _schedBgRefreshing = false; }
   if (!(data.fetchedAt > (shownFetchedAt || 0))) return; // nothing newer
   applyScheduleData(data);
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
@@ -248,6 +305,8 @@ async function refreshScheduleInBackground(shownFetchedAt) {
     renderSchedule();
     if (keep && document.getElementById('routes-' + keep)) switchSchedTab(keep);
   }
+  renderScheduleHealth();
+  applyDeepLink();
 }
 
 function setSchedProgress(pct, msg, isError) {
@@ -260,6 +319,7 @@ function setSchedProgress(pct, msg, isError) {
 
 // ── Render schedule ───────────────────────────────────────────────────────────
 function renderSchedule() {
+  renderScheduleHealth();
   if (!getSchedule()?.schedules?.length) {
     setSchedProgress(100, t('schedNoData'), true);
     return;
@@ -289,7 +349,11 @@ function renderSchedule() {
 
     // Pass isActive as the "isToday" flag so the next-departure highlight
     // only runs on today's schedule, not on previewed tabs.
-    renderRouteCards(s.routes || {}, panel.id, isActive);
+    if (s.unavailable) {
+      const message = document.createElement('p');
+      message.textContent = t('schedUnavailable');
+      panel.appendChild(message);
+    } else renderRouteCards(s.routes || {}, panel.id, isActive);
 
     // renderRouteCards owns the panel's innerHTML, so the PDF link goes in
     // afterwards, pinned above the cards.
@@ -425,6 +489,7 @@ function highlightNextTimes() {
 }
 
 async function refreshSchedule() {
+  loadScheduleStatus();
   document.getElementById('schedLoading').style.display = '';
   document.querySelectorAll('.sched-content').forEach(el => el.classList.remove('visible'));
   try {
@@ -443,6 +508,7 @@ async function refreshSchedule() {
 // ("Cannot access 'STR' before initialization"), which silently stranded the
 // schedule on a cold load (first visit / private tab / cleared cache).
 setTimeout(async () => {
+  loadScheduleStatus();
   try {
     await loadScheduleData(false);
     renderSchedule();
@@ -454,10 +520,7 @@ setTimeout(async () => {
 
 setInterval(highlightNextTimes, 60000);
 
-setInterval(() => {
-  if (!getSchedule()) return;
-  const age = Math.round((Date.now() - getSchedule().fetchedAt) / 60000);
-}, 60000);
+setInterval(() => { if (!document.hidden) loadScheduleStatus(); }, 5 * 60000);
 
 // Auto-refresh at midnight each day
 function scheduleMidnightRefresh() {

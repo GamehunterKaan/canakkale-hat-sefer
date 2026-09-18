@@ -4,3 +4,4 @@ scripts/node_modules/
 # The test suite is committed — .github/workflows/test.yml runs it on every push.
 # Only the eyeball dump planner-test writes for manual inspection stays out.
 test/results.txt
+/tmp/schedule-parser/

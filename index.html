@@ -67,6 +67,10 @@
     body.is-offline #offline-badge { display: inline-flex; }
     html[data-theme="light"] #offline-badge { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
     html[data-theme="light"] #offline-badge::before { background: #92400e; }
+    #scheduleHealth { flex-shrink: 0; padding: 8px 12px; max-height: 25dvh; overflow-y: auto;
+      background: #332507; color: #fde68a; border-bottom: 1px solid #806014; font-size: .78rem; line-height: 1.5; }
+    #scheduleHealth a { color: inherit; display: inline-block; margin: 3px 14px 0 0; text-decoration: underline; }
+    html[data-theme="light"] #scheduleHealth { background: #fffbeb; color: #854d0e; border-color: #fcd34d; }
     #bm-dropdown {
       display: none; position: fixed; top: 44px; right: 12px;
       background: #1a1d2e; border: 1px solid #252d40; border-radius: 8px;
@@ -994,6 +998,7 @@
   </div>
 </div>
 
+<div id="scheduleHealth" role="status" aria-live="polite" hidden></div>
 <div id="screenWrap">
 
   <!-- SCHEDULE SCREEN -->

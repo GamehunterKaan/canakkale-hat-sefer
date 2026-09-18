@@ -325,6 +325,10 @@ function testScheduleHelpers() {
   // ELBİ-YURDU-departing path the SSK (opposite direction) timetable.
   check('pickSchedDir: Ç3 departing ELBİ YURDU takes the ELBİ YURDU block, not SSK',
     blockLabelFor('Ç3', 'ELBİKYK').includes('ELBİYURT'), blockLabelFor('Ç3', 'ELBİKYK'));
+  check('pickSchedDir: Ç10 departing ARDES does not match NUSRAT through YURDU',
+    blockLabelFor('Ç10', 'ARDES').startsWith('ARDES'), blockLabelFor('Ç10', 'ARDES'));
+  check('pickSchedDir: Ç10 departing NUSRAT uses the NUSRAT block',
+    blockLabelFor('Ç10', 'NUSRAT').startsWith('NUSRAT'), blockLabelFor('Ç10', 'NUSRAT'));
 
   // The invariant the algorithm is built on: scoring both endpoints symmetrically
   // means the two kk directions agree on orientation, so a route's two paths can

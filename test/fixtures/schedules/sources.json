@@ -1,0 +1,38 @@
+[
+  {
+    "name": "weekday-2026-08-27",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/27-AGUSTOS-1.pdf",
+    "sha256": "6a7cc883b1ae0f1fe6c282823a7a8ae625210af142b18ea264f92e24970afac9",
+    "bytes": 1673132
+  },
+  {
+    "name": "weekday-2026-09-17",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/17-EYLUL-15.pdf",
+    "sha256": "c016ae4977cbe91ef395f83104ae35a7c6b50106f4fea2d433bdfe11a96bcba8",
+    "bytes": 1979079
+  },
+  {
+    "name": "weekend-2026-09-12",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/12-EYLUL-11.pdf",
+    "sha256": "aab36b44ca53cfc900309f82c040dd96e7ff3ad0a743d4205b1e13c22270c691",
+    "bytes": 1303868
+  },
+  {
+    "name": "weekday-2026-09-17-r18",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/17-EYLUL-18.pdf",
+    "sha256": "d89e04b69f033c3ad29994ff4b4223fa629c6fbfcf8a9bddf54f064ece68219a",
+    "bytes": 1983632
+  },
+  {
+    "name": "weekend-2026-09-19",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/19-EYLUL-5.pdf",
+    "sha256": "789e602ffc68ef6a9ca7683976d252d4047b18c86d0c6740c01aec6cfc0601d3",
+    "bytes": 1652879
+  },
+  {
+    "name": "weekday-2026-09-21",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/21-EYLUL-9.pdf",
+    "sha256": "7d4ecc0cc9858d5c298bdcd4e6d42ffcbb63b358f67f74b8a91e8cf09fc451fb",
+    "bytes": 1993544
+  }
+]

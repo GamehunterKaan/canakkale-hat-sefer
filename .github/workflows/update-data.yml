@@ -7,13 +7,19 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+concurrency:
+  group: transit-data-update
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -22,21 +28,60 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         working-directory: scripts
 
       - name: Validate parser logic (self-test)
         run: node scripts/fetch-schedule.mjs --self-test
 
       - name: Fetch schedule data (PDFs → JSON)
+        id: schedules
+        continue-on-error: true
         run: node scripts/fetch-schedule.mjs
 
       - name: Fetch stops data (kentkart API → JSON)
+        id: stops
+        continue-on-error: true
         run: node scripts/fetch-stops.mjs
 
+      - name: Preserve failing timetable evidence
+        if: steps.schedules.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: timetable-diagnostics
+          path: tmp/schedule-parser/last-refresh/
+          retention-days: 7
+
       - name: Commit updated data
+        id: commit
+        # Publish the warning even if one source failed. Never turn a failure
+        # into a green run: the final step below restores the failing outcome.
+        if: always() && !cancelled() && (steps.schedules.outcome == 'success' || steps.schedules.outcome == 'failure')
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/schedule.json data/stops.json
-          git diff --staged --quiet || git commit -m "chore: update transit data $(date -u '+%Y-%m-%d')" && git push
+          git add data/schedule.json data/schedule-status.json data/stops.json
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update transit data $(date -u '+%Y-%m-%d')"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
+
+      - name: Request Pages build when deployment is behind
+        # GITHUB_TOKEN pushes do not trigger a branch-based Pages build.
+        # Also retry a missed/failed build when this run has no data changes.
+        if: always() && !cancelled() && steps.commit.outcome == 'success' && github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/pages/builds/latest" --jq '[.commit, .status] | @tsv')"
+          read -r deployed status <<< "$latest"
+          if [[ "$deployed" != "$(git rev-parse HEAD)" || "$status" == "errored" ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds" --silent
+          fi
+
+      - name: Report upstream failures
+        if: always() && (steps.schedules.outcome == 'failure' || steps.stops.outcome == 'failure')
+        run: |
+          echo "::error::A transit source could not be verified. See the summary and timetable-diagnostics artifact."
+          exit 1

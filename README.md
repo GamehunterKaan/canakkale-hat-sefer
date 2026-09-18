@@ -211,6 +211,27 @@ data/schedule.json          data/stops.json          data/places.json
 
 Everything except the notification worker runs entirely in the browser. No backend, no database, no user accounts. The hourly Actions cron checks the municipality PDFs and rewrites cached static data when their content changes, including when a PDF is replaced at the same URL.
 
+### Timetable verification and recovery
+
+The refresh discovers links from the municipality's timetable page on every run. Filenames are never hardcoded. Downloads bypass caches and have bounded retries, timeouts and size limits. The parser reconstructs text cells from PDF geometry, follows each table's departure headings, and aligns repeated sections by terminal name when columns switch sides.
+
+Every parsed PDF is checked against its own route index, departure headings, terminal labels and clock values. Unknown tables, missing routes, scanned PDFs, conflicting links and unreadable advertised specials produce explicit failures. Legitimate seasonal changes do not have to satisfy an old route-count or page-count threshold. There is no force option to bypass validation.
+
+Each service updates independently: a failing weekend PDF preserves that service's last verified data while valid weekday PDFs can update. A new special with no verified data gets an unavailable entry, preventing the planner from silently substituting regular weekday times. Writes use temporary files and atomic replacement. School services with day-specific restrictions, the unnumbered Kalabaklı shuttle, and separately linked cemetery/library services remain available through the source PDFs; they are not included in the city-route parser.
+
+`data/schedule-status.json` records source URLs, hashes, individual source outcomes, errors, the last verification and the data version. Its heartbeat updates at least every 12 hours without rewriting an unchanged timetable. The app fetches this independently of timetable data, shows a warning across all tabs after a failed check or 48 hours without verification, and links to the currently advertised PDFs. Offline copies retain the original verification timestamp.
+
+The hourly workflow commits valid data and failure status, saves failing PDFs and a detailed report in the **timetable-diagnostics** artifact for seven days, and still finishes with a failed result when any source is unverified. It explicitly requests a Pages rebuild when the deployment is behind: [GitHub token commits alone do not trigger branch-based Pages builds](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#troubleshooting-publishing-from-a-branch).
+
+Run the parser checks entirely offline:
+
+```sh
+npm ci --prefix scripts
+node scripts/fetch-schedule.mjs --self-test
+```
+
+`npm test` also runs the core, handler, shared-trip and planner tests. See [the fixture notes](test/fixtures/schedules/README.md) for the six original municipal PDFs and the known incomplete source. To investigate a new failure, inspect `report.json` and the matching source PDF from the CI artifact (locally: `tmp/schedule-parser/last-refresh/`), add the source as a regression fixture, and repair or extend the parser without bypassing completeness checks.
+
 ---
 
 ## Using the logic without the app — `core.js`

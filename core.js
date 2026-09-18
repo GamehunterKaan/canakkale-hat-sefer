@@ -25,6 +25,18 @@ export function todayParts() {
   };
 }
 
+// Freshness comes from successful source verification, not the timetable's age:
+// an unchanged seasonal timetable can legitimately remain current for months.
+export function scheduleHealth(status, data, now = Date.now()) {
+  if (status?.version !== 1 || !['ok', 'error'].includes(status.state) ||
+      !Number.isFinite(status.checkedAt) || status.checkedAt > now + 300000) return 'unknown';
+  if (status.state === 'error') return 'failed';
+  if (now - status.checkedAt > 48 * 60 * 60 * 1000) return 'overdue';
+  if (!Number.isFinite(status.dataFetchedAt)) return 'unknown';
+  if (!data || status.dataFetchedAt > (data.fetchedAt || 0)) return 'outdated';
+  return null;
+}
+
 // Pick today's active schedule id from scheduleData.schedules.
 // Same priority as the CI picker: dated special → effective-from → weekday/weekend.
 export function pickActiveScheduleId(schedules, today) {
@@ -256,6 +268,12 @@ export const STR = {
     schedRemaining: '{n} sefer kaldı', schedNoneLeft: 'Sefer kalmadı', schedTotal: '{n} sefer',
     schedNoneTodayLong: 'Bugün için sefer kalmadı.', schedNoneForDay: 'Bu gün tipi için sefer bulunamadı.',
     schedOpenPdf: 'PDF aç', schedOpenPdfTitle: 'Bu tarifenin ulasim.canakkale.bel.tr üzerindeki orijinal PDF’i',
+    schedHealthFailed: 'Bazı sefer tarifeleri güncellenemedi. Gösterilen saatler eski olabilir.',
+    schedHealthOverdue: 'Seferler son 48 saatte doğrulanamadı. Saatleri belediyenin güncel tarifesinden kontrol edin.',
+    schedHealthUnknown: 'Seferlerin güncelliği doğrulanamadı. Saatleri belediyenin güncel tarifesinden kontrol edin.',
+    schedHealthOutdated: 'Yeni tarife var. Gösterilen saatler henüz güncellenmedi.',
+    schedCurrentSources: 'Belediyenin güncel tarifeleri',
+    schedUnavailable: 'Bu tarife şu anda gösterilemiyor. Güncel saatler için PDF’i açın.',
     navSched: '<span>📅</span>Seferler', navPlanner: '<span>🗺</span>Rota &amp; Harita', navStops: '<span>🚏</span>Duraklar',
   },
   en: {
@@ -427,6 +445,12 @@ export const STR = {
     schedRemaining: '{n} runs left', schedNoneLeft: 'No runs left', schedTotal: '{n} runs',
     schedNoneTodayLong: 'No more runs today.', schedNoneForDay: 'No runs found for this day type.',
     schedOpenPdf: 'Open PDF', schedOpenPdfTitle: 'The original PDF for this timetable on ulasim.canakkale.bel.tr',
+    schedHealthFailed: 'Some timetables could not be updated. Displayed times may be outdated.',
+    schedHealthOverdue: 'Timetables have not been verified in 48 hours. Check the current municipal timetable.',
+    schedHealthUnknown: 'Timetable freshness could not be verified. Check the current municipal timetable.',
+    schedHealthOutdated: 'A new timetable is available. Displayed times have not updated yet.',
+    schedCurrentSources: 'Current municipal timetables',
+    schedUnavailable: 'This timetable is currently unavailable. Open the PDF for current times.',
     navSched: '<span>📅</span>Schedules', navPlanner: '<span>🗺</span>Route &amp; Map', navStops: '<span>🚏</span>Stops',
   },
 };
@@ -499,7 +523,10 @@ export function pickSchedDir(schedEntry, path) {
   const has = d => schedEntry[d] && (schedEntry[d].times || []).length;
   const def = String(path.direction) === '1' ? 'dir1' : 'dir0';   // usual kk dirN ↔ PDF dirN
   const oth = def === 'dir0' ? 'dir1' : 'dir0';
-  const normStr = s => (s || '').toUpperCase().replace(/[^A-ZÇĞIİÖŞÜ0-9]/g, '');
+  // Generic terminal suffixes are not evidence of a match. In particular,
+  // ARDES YURDU and NUSRAT YURDU must never match through "YURDU" alone.
+  const normStr = s => foldTr(s).toUpperCase()
+    .replace(/\b(?:YURDU|YURT|DURAGI|DURAK|KYK)\b/g, '').replace(/[^A-Z0-9]/g, '');
   const names = arr => arr.map(s => normStr(s.stopName)).filter(x => x.length >= 4);
   const stops = path.busStopList || [];
   const O = names(stops.slice(0, 4));  // where this path STARTS (its departure terminal)

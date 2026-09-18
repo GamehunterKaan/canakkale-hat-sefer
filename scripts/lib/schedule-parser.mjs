@@ -158,7 +158,11 @@ export function parsePages(rawPages) {
   if (rawPages.some(p => !(p.width > 0 && p.height > 0) || p.items.some(i =>
     ![i.x, i.y, i.w, i.h].every(Number.isFinite)))) throw new Error('Invalid PDF text geometry');
   const pages = rawPages.map(preparePage);
-  const diagnostics = { pages: [], expectedRoutes: [], parsedRoutes: [], errors: [], warnings: [], ignored: [] };
+  const diagnostics = { pages: [], expectedRoutes: [], parsedRoutes: [], indexOnlyRoutes: [],
+    errors: [], warnings: [], ignored: [] };
+  const pageNumbers = pages.map(page => page.number);
+  for (let number = Math.min(...pageNumbers); number < Math.max(...pageNumbers); number++)
+    if (!pageNumbers.includes(number)) diagnostics.errors.push(`PDF page ${number} was not extracted`);
   const routes = new Map();
   const manifest = new Map();
   const namedManifest = new Set();
@@ -271,12 +275,18 @@ export function parsePages(rawPages) {
   for (const label of namedManifest) {
     const route = [...routes.values()].find(r => fold(r.name).includes(label));
     if (route) manifest.set(route.id, route.name);
-    else diagnostics.errors.push(`Route ${label} is listed in the PDF index but was not parsed`);
+    else diagnostics.warnings.push(`Route ${label} is listed in the PDF index but has no timetable table`);
   }
   diagnostics.expectedRoutes = [...manifest.keys()].sort();
   diagnostics.parsedRoutes = [...routes.keys()].sort();
-  for (const id of manifest.keys()) if (!routes.has(id)) diagnostics.errors.push(`Route ${id} is listed in the PDF index but was not parsed`);
-  for (const id of routes.keys()) if (manifest.size && !manifest.has(id)) diagnostics.errors.push(`Parsed route ${id} is absent from the PDF index`);
+  // The cover may be copied from another edition. Publish every real table
+  // that parsed cleanly, while retaining index-only entries as diagnostics.
+  for (const id of manifest.keys()) if (!routes.has(id)) {
+    diagnostics.indexOnlyRoutes.push(id);
+    diagnostics.warnings.push(`Route ${id} is listed in the PDF index but has no timetable table`);
+  }
+  for (const id of routes.keys()) if (manifest.size && !manifest.has(id))
+    diagnostics.warnings.push(`Parsed route ${id} is absent from the PDF index`);
   if (!routes.size) diagnostics.errors.push('No timetable routes were parsed');
   const result = {};
   for (const route of routes.values()) {

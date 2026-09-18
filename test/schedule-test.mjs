@@ -27,9 +27,8 @@ counts.push({ 'Ç1':[26,26], 'Ç3':[26,26], 'Ç7':[25,26], 'Ç8':[18,18], 'Ç8 E
   'Ç9':[35,35], 'Ç960':[25,25], 'ÇT3':[26,25], 'Ç11K':[19,17], 'Ç11K EKSPRES':[86,91],
   'Ç11G':[26,26], 'Ç11Ç':[6,8], 'ÇT1':[4,4] });
 counts.push({ ...counts[3], 'ÇT3':[51,52] });
-// The publisher's 19 September PDF really lists Ç2 without a Ç2 table.
-// Preserve it as a failing-source fixture, never weaken coverage to accept it.
-const expectedErrors = index => index === 4 ? ['Route Ç2 is listed in the PDF index but was not parsed'] : [];
+// The publisher's 19 September PDF lists Ç2 without a Ç2 table.
+const expectedIndexOnly = index => index === 4 ? ['Ç2'] : [];
 const getRoute = (result, id) => Object.values(result.routes).find(r => routeHeading(r.name).id === id);
 for (const [index, fixture] of fixtures.entries()) {
   await test(fixture.name + ' extraction and complete route/direction counts', async () => {
@@ -38,7 +37,8 @@ for (const [index, fixture] of fixtures.entries()) {
     assert.equal(createHash('sha256').update(bytes).digest('hex'), fixture.sha256);
     pages[index] = await extractPdf(bytes);
     parsed[index] = parsePages(pages[index]);
-    assert.deepEqual(parsed[index].diagnostics.errors, expectedErrors(index));
+    assert.deepEqual(parsed[index].diagnostics.errors, []);
+    assert.deepEqual(parsed[index].diagnostics.indexOnlyRoutes, expectedIndexOnly(index));
     assert.deepEqual(parsed[index].diagnostics.expectedRoutes.filter(id => index !== 4 || id !== 'Ç2'), parsed[index].diagnostics.parsedRoutes);
     assert.deepEqual(Object.fromEntries(Object.values(parsed[index].routes).map(r =>
       [routeHeading(r.name).id, [r.dir0.times.length, r.dir1.times.length]])), counts[index]);
@@ -56,7 +56,8 @@ for (const [index, fixture] of fixtures.entries()) {
     }) })],
   ]) await test(fixture.name + ': ' + name, () => {
     const result = parsePages(pages[index].map(transform));
-    assert.deepEqual(result.diagnostics.errors, expectedErrors(index));
+    assert.deepEqual(result.diagnostics.errors, []);
+    assert.deepEqual(result.diagnostics.indexOnlyRoutes, expectedIndexOnly(index));
     assert.deepEqual(result.routes, parsed[index].routes);
   });
 }
@@ -76,9 +77,10 @@ await test('annotated departures remain; arrivals, end-of-service and village sh
   assert.deepEqual(getRoute(parsed[2], 'Ç11Ç').dir1.times, '07:20 08:50 10:15 12:40 14:15 16:15 18:15 18:50'.split(' '));
   assert.deepEqual(getRoute(parsed[1], 'ÇT2').dir1.times, ['08:00']);
 });
-await test('missing whole route/page is rejected against PDF index', () => {
+await test('missing extracted page is rejected even when its route is index-only', () => {
   const result = parsePages(pages[1].filter(p => p.number !== 10));
-  assert.ok(result.diagnostics.errors.some(e => /Ç10.*not parsed/.test(e)));
+  assert.ok(result.diagnostics.errors.some(e => /PDF page 10 was not extracted/.test(e)));
+  assert.deepEqual(result.diagnostics.indexOnlyRoutes, ['Ç10']);
 });
 await test('removed departure headings do not silently drop a route', () => {
   const altered = structuredClone(pages[1]);

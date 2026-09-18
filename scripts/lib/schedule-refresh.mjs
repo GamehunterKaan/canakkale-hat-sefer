@@ -81,13 +81,16 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
         report.sources[index].diagnostics = parsed.diagnostics;
         if (!parsed.diagnostics || parsed.diagnostics.errors.length)
           throw new Error(parsed.diagnostics?.errors.join('\n') || 'Parser did not produce a completeness report');
+        if (parsed.diagnostics.indexOnlyRoutes?.length)
+          report.sources[index].indexOnlyRoutes = parsed.diagnostics.indexOnlyRoutes;
         const schedule = { ...link, source: { sha256: hash, pages: parsed.numPages }, routes: parsed.routes };
         const errors = validateBundle([schedule], [link]);
         if (errors.length) throw new Error(errors.join('\n'));
         schedules.push(schedule);
         report.sources[index].state = 'ok';
+        for (const warning of parsed.diagnostics.warnings || []) report.warnings.push(`${link.id}: ${warning}`);
         for (const ignored of parsed.diagnostics.ignored || []) report.warnings.push(`${link.id}: page ${ignored.page}: ${ignored.reason}`);
-        log(`  ${Object.keys(parsed.routes).length} routes; all source coverage checks passed`);
+        log(`  ${Object.keys(parsed.routes).length} timetable routes parsed`);
       } catch (e) {
         report.sources[index].state = 'error';
         report.errors.push(`${link.id}: ${e.message}`);
@@ -130,8 +133,8 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     version: 1, state: ok ? 'ok' : 'error', checkedAt: now,
     lastSuccessAt: ok ? now : oldStatus?.lastSuccessAt || null,
     dataFetchedAt, sourcePage: MUNICIPALITY_URL,
-    sources: report.sources.length ? report.sources.map(({ id, label, url, sha256, state }) =>
-      ({ id, label, url, ...(sha256 ? { sha256 } : {}), ...(state ? { state } : {}) }))
+    sources: report.sources.length ? report.sources.map(({ id, label, url, sha256, state, indexOnlyRoutes }) =>
+      ({ id, label, url, ...(sha256 ? { sha256 } : {}), ...(state ? { state } : {}), ...(indexOnlyRoutes?.length ? { indexOnlyRoutes } : {}) }))
       : oldStatus?.sources || (previous?.schedules || []).map(({ id, label, url }) => ({ id, label, url })),
     errors: report.errors,
   };

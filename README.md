@@ -215,7 +215,7 @@ Everything except the notification worker runs entirely in the browser. No backe
 
 The refresh discovers links from the municipality's timetable page on every run. Filenames are never hardcoded. Downloads bypass caches and have bounded retries, timeouts and size limits. The parser reconstructs text cells from PDF geometry, follows each table's departure headings, and aligns repeated sections by terminal name when columns switch sides.
 
-Every parsed PDF is checked against its own route index, departure headings, terminal labels and clock values. Unknown tables, missing routes, scanned PDFs, conflicting links and unreadable advertised specials produce explicit failures. Legitimate seasonal changes do not have to satisfy an old route-count or page-count threshold. There is no force option to bypass validation.
+Every parsed PDF is checked against its own route index, departure headings, terminal labels and clock values. An index entry without a timetable table is recorded as a diagnostic; actual timetable tables can still publish. Unknown tables, missing extracted pages, malformed departure tables, scanned PDFs, conflicting links and unreadable advertised specials produce explicit failures. Legitimate seasonal changes do not have to satisfy an old route-count or page-count threshold. There is no force option to bypass validation.
 
 Each service updates independently: a failing weekend PDF preserves that service's last verified data while valid weekday PDFs can update. A new special with no verified data gets an unavailable entry, preventing the planner from silently substituting regular weekday times. Writes use temporary files and atomic replacement. School services with day-specific restrictions, the unnumbered Kalabaklı shuttle, and separately linked cemetery/library services remain available through the source PDFs; they are not included in the city-route parser.
 
@@ -230,7 +230,7 @@ npm ci --prefix scripts
 node scripts/fetch-schedule.mjs --self-test
 ```
 
-`npm test` also runs the core, handler, shared-trip and planner tests. See [the fixture notes](test/fixtures/schedules/README.md) for the six original municipal PDFs and the known incomplete source. To investigate a new failure, inspect `report.json` and the matching source PDF from the CI artifact (locally: `tmp/schedule-parser/last-refresh/`), add the source as a regression fixture, and repair or extend the parser without bypassing completeness checks.
+`npm test` also runs the core, handler, shared-trip and planner tests. See [the fixture notes](test/fixtures/schedules/README.md) for the six original municipal PDFs and the index-only route case. To investigate a new failure, inspect `report.json` and the matching source PDF from the CI artifact (locally: `tmp/schedule-parser/last-refresh/`), add the source as a regression fixture, and repair or extend the parser without bypassing timetable-table validation.
 
 ---
 

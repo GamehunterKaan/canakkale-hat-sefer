@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import vm from 'node:vm';
 import { refreshSchedules, sameSchedule } from '../scripts/lib/schedule-refresh.mjs';
+import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL } from '../scripts/lib/schedule-source.mjs';
 import { scheduleHealth, STR, pickActiveScheduleId } from '../core.js';
 
@@ -51,6 +53,34 @@ try {
     assert.equal((await h.run({ now:now + 2 })).changed, true);
     assert.notEqual(JSON.parse(h.bytes()).schedules[0].source.sha256, before);
     assert.ok(JSON.parse(h.bytes()).schedules[0].routes['Ç1 MERKEZ'].dir0.times.includes('10:00'));
+  });
+  await test('index-only route in a real PDF updates the timetable without a warning banner', async () => {
+    const h = harness();
+    await h.run();
+    const currentUrl = 'https://example.test/19-EYLUL-5.pdf';
+    const pdf = gunzipSync(readFileSync(new URL('./fixtures/schedules/weekend-2026-09-19.pdf.gz', import.meta.url)));
+    h.state.html = page().replace(weekendUrl, currentUrl);
+    const fetchBytes = h.options.fetchBytes, parsePdf = h.options.parsePdf;
+    let currentBytes = pdf;
+    h.options.fetchBytes = url => url === currentUrl ? currentBytes : fetchBytes(url);
+    h.options.parsePdf = bytes => bytes.length > 1000 ? parsePDF(bytes) : parsePdf(bytes);
+    const first = await h.run({ now:now + 1 });
+    const data = JSON.parse(h.bytes());
+    assert.equal(first.ok, true);
+    assert.equal(first.status.state, 'ok');
+    assert.deepEqual(first.status.errors, []);
+    assert.deepEqual(first.status.sources[1].indexOnlyRoutes, ['Ç2']);
+    assert.ok(first.report.warnings.some(w => /Ç2.*no timetable table/.test(w)));
+    assert.equal(data.schedules[1].url, currentUrl);
+    assert.equal(Object.keys(data.schedules[1].routes).length, 13);
+    assert.equal(Object.keys(data.schedules[1].routes).some(name => name.startsWith('Ç2 ')), false);
+    assert.equal(scheduleHealth(first.status, data, now + 1), null);
+    // A changed file with the same omission must follow the same general rule.
+    currentBytes = Buffer.concat([pdf, Buffer.from('\n% revised')]);
+    const second = await h.run({ now:now + 2 });
+    assert.equal(second.ok, true);
+    assert.notEqual(second.status.sources[1].sha256, first.status.sources[1].sha256);
+    assert.deepEqual(second.status.sources[1].indexOnlyRoutes, ['Ç2']);
   });
   await test('no-change verification preserves timetable timestamp and emits bounded heartbeat', async () => {
     const h = harness();

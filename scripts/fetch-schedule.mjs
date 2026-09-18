@@ -14,8 +14,10 @@ async function main() {
   for (const error of result.report.errors) console.error(error);
   if (process.env.GITHUB_STEP_SUMMARY) {
     const sourceLines = result.report.sources.map(s => `- [${s.label}](${s.url})`).join('\n');
+    const omissions = result.report.sources.filter(s => s.indexOnlyRoutes?.length)
+      .map(s => `- ${s.label}: index-only routes without timetable tables: ${s.indexOnlyRoutes.join(', ')}`);
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Timetable verification: ${result.ok ? 'passed' : 'FAILED'}\n\n${sourceLines}\n\n` +
-      result.report.errors.map(e => `- ${e.replace(/\n/g, '; ')}`).join('\n') + '\n');
+      [...omissions, ...result.report.errors.map(e => `- ${e.replace(/\n/g, '; ')}`)].join('\n') + '\n');
   }
   if (!result.ok) process.exitCode = 1;
 }

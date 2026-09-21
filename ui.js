@@ -604,10 +604,11 @@ let arriveByMins = null;
 const arriveActive = () => planMode === 'arrive' && arriveByMins != null;
 
 // "Planning ahead" = anything other than leaving right now (a departure offset
-// OR an arrive-by deadline). This single predicate gates every live-only
-// affordance — guided trip, live wait lines, the live-bus planner pass — so a
-// new mode can't silently slip past one of the guards.
+// OR an arrive-by deadline). It keeps live-only planner data disabled. A trip
+// restored from a shared link is still allowed into step-by-step mode because
+// following that pinned itinerary is the purpose of the link.
 const planningAhead = () => planOffset > 0 || arriveActive();
+const canStartGuidedTrip = m => !!m && (!planningAhead() || m._restoredFromTripLink === true);
 
 // Set while a shared-trip deep link restores origin/dest through applyPoint:
 // the pinned trip must render, not the auto re-plan that "both points set"
@@ -764,7 +765,7 @@ async function _applyTripDeepLink() {
   // notification history). In that case the normal current-time floor makes
   // every pinned bus unreachable and rejects an otherwise valid link. Rebuild
   // from the start of the service day so the exact timetable trip can still be
-  // shown; planning-ahead mode already keeps live/guided controls disabled.
+  // shown.
   const restoreNowMins = arriveActive() && arriveByMins <= _schedNow()
     ? _schedFrame(4 * 60)
     : _schedFrame(new Date().getHours() * 60 + new Date().getMinutes() + planOffset);
@@ -775,6 +776,7 @@ async function _applyTripDeepLink() {
     walkB, walkA,
   });
   if (!m) { setHint(t('tripLinkGone'), true); findRoutes(); return; }
+  m._restoredFromTripLink = true;
   currentMatches = [m];
   hidePlannerGuide();
   setHint(t('tripLinkRestored'));
@@ -3148,7 +3150,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         + '</div>';
 
   // ── Start guided trip ─────────────────────────────────────────────────────
-  html += planningAhead()
+  html += !canStartGuidedTrip(m)
     ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
     : '<button class="guided-start-btn" onclick="startGuidedTrip()">🧭 '+t('startTrip')+'</button>';
 
@@ -3311,7 +3313,7 @@ function _showMultiLegTripDetail(m) {
   }
 
   // Start guided trip
-  html += planningAhead()
+  html += !canStartGuidedTrip(m)
     ? '<p class="guided-start-hint">'+t('startTripPlanAhead')+'</p>'
     : '<button class="guided-start-btn" onclick="startGuidedTrip()">🧭 '+t('startTrip')+'</button>';
 
@@ -3411,7 +3413,7 @@ function closeTripDetail() {
 function startGuidedTrip(m) {
   m = m || tripMatch;
   if (!m || !originClick || !destClick || !window._map) return;
-  if (planningAhead()) { setHint(t('startTripPlanAhead'), true); return; }
+  if (!canStartGuidedTrip(m)) { setHint(t('startTripPlanAhead'), true); return; }
   guided = { active: true, m, steps: buildGuidedSteps(m, { lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }, { walkSpeedMpm: SETTINGS.walkSpeedMpm }), idx: 0, group: L.layerGroup().addTo(window._map), timer: null, wakeLock: null, userPanned: false, fetching: false };
 
   // CLEAN SLATE: wipe the planner overview (full route line + every walk) so the

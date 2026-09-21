@@ -21,6 +21,7 @@ const pathCache = [{ path: { displayRouteCode: '1', direction: 0, busStopList: [
 let schedule = null;
 let rebuilt = 0;
 let opened = 0;
+let openedMatch = null;
 const context = vm.createContext({
   window: { location: { search: url.search }, _map: {} }, URLSearchParams,
   allStops: new Map([[101, board], [102, alight]]), getPathCache: () => pathCache,
@@ -42,7 +43,7 @@ const context = vm.createContext({
     return { trip: true };
   },
   setHint() {}, hidePlannerGuide() {}, renderPlannerResults() {}, expandPanel() {},
-  showTripDetail(m) { assert.equal(m.trip, true); opened++; },
+  showTripDetail(m) { assert.equal(m.trip, true); openedMatch = m; opened++; },
   SETTINGS: {}, t: key => key,
   planMode: 'depart', arriveByMins: null, planOffset: 0,
   originClick: null, destClick: null, currentMatches: [],
@@ -50,6 +51,10 @@ const context = vm.createContext({
   arriveActive: () => context.planMode === 'arrive' && context.arriveByMins != null,
   Date,
 });
+const guidedHelper = source.match(/const canStartGuidedTrip =[^;]+;/)?.[0];
+assert.ok(guidedHelper, 'guided-trip policy helper found');
+context.planningAhead = () => true;
+vm.runInContext(guidedHelper, context);
 vm.runInContext(source.slice(start, end), context);
 
 vm.runInContext('applyDeepLink()', context);
@@ -62,6 +67,12 @@ vm.runInContext('applyDeepLink()', context);
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(rebuilt, 1, 'trip rebuilt after timetable loads');
 assert.equal(opened, 1, 'trip detail opened');
+assert.equal(openedMatch?._restoredFromTripLink, true,
+  'restored trip is marked as safe to follow step by step');
+assert.equal(vm.runInContext('canStartGuidedTrip(currentMatches[0])', context), true,
+  'planning-ahead shared trip keeps guided mode available');
+assert.equal(vm.runInContext('canStartGuidedTrip({})', context), false,
+  'ordinary planning-ahead trip remains blocked from guided mode');
 assert.equal(vm.runInContext('_pendingTripDeepLink', context), null);
 
-console.log('trip link cold-load order and expired arrival restore: passed');
+console.log('trip link cold-load, expired arrival restore, and guided mode: passed');

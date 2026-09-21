@@ -760,9 +760,17 @@ async function _applyTripDeepLink() {
   }
 
   // 4. Rebuild the exact trip; fall back to a fresh plan if it no longer exists.
+  // An arrive-by link can be opened after its deadline (for example from phone
+  // notification history). In that case the normal current-time floor makes
+  // every pinned bus unreachable and rejects an otherwise valid link. Rebuild
+  // from the start of the service day so the exact timetable trip can still be
+  // shown; planning-ahead mode already keeps live/guided controls disabled.
+  const restoreNowMins = arriveActive() && arriveByMins <= _schedNow()
+    ? _schedFrame(4 * 60)
+    : _schedFrame(new Date().getHours() * 60 + new Date().getMinutes() + planOffset);
   const m = buildTripFromSpec({ origin: spec.o, dest: spec.d, legs: spec.legs }, {
     pathCache: getPathCache(), dayData: getActiveRoutes(), settings: SETTINGS,
-    nowMins: _schedFrame(new Date().getHours() * 60 + new Date().getMinutes() + planOffset),
+    nowMins: restoreNowMins,
     arriveByMins: arriveActive() ? arriveByMins : null,
     walkB, walkA,
   });

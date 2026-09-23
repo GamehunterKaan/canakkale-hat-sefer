@@ -673,12 +673,23 @@ let _pendingTripDeepLink = (() => {
   try {
     const q = new URLSearchParams(window.location.search);
     if (q.get('trip') !== '1') return null;
+    // MacroDroid's Open Website action can encode an already-encoded query
+    // value once more. URLSearchParams removes the outer layer, leaving values
+    // such as "40.15%2C26.41" and "1%7C0%7C101%7C102". Decode that remaining
+    // layer when present while leaving ordinary shared links unchanged.
+    const param = key => {
+      const value = q.get(key);
+      if (value == null) return null;
+      try { return decodeURIComponent(value); }
+      catch { return value; }
+    };
     const pt = s => { const [lat, lng] = (s || '').split(',').map(Number); return isFinite(lat) && isFinite(lng) ? { lat, lng } : null; };
     const leg = s => { const [code, dir, board, alight] = (s || '').split('|'); return code && dir != null && board && alight ? { code, dir, board, alight } : null; };
-    const o = pt(q.get('o')), d = pt(q.get('d'));
-    const m = q.get('m') === 'arrive' ? 'arrive' : 'depart';
-    const tm = /^\d{1,2}:\d{2}$/.test(q.get('t') || '') ? q.get('t') : null;
-    const legs = [leg(q.get('l1')), leg(q.get('l2'))].filter(Boolean);
+    const o = pt(param('o')), d = pt(param('d'));
+    const m = param('m') === 'arrive' ? 'arrive' : 'depart';
+    const rawTime = param('t');
+    const tm = /^\d{1,2}:\d{2}$/.test(rawTime || '') ? rawTime : null;
+    const legs = [leg(param('l1')), leg(param('l2'))].filter(Boolean);
     if (!o || !d || !tm || !legs.length) return null;
     return { o, d, m, t: tm, legs };
   } catch { return null; }

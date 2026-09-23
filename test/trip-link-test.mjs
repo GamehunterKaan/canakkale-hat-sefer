@@ -9,11 +9,14 @@ const start = source.indexOf('let _pendingStopDeepLink =');
 const end = source.indexOf('// Build the share URL', start);
 assert.ok(start >= 0 && end > start, 'trip-link UI functions found');
 
+// Reproduce the URL opened by MacroDroid: its Open Website action encoded the
+// link's already-encoded values a second time (%2C -> %252C, etc.).
 const url = new URL('https://example.test/?trip=1');
 for (const [key, value] of Object.entries({
-  o: '40.15000,26.41000', d: '40.16000,26.42000', m: 'arrive', t: '08:55',
-  l1: '1|0|101|102',
+  o: '40.15000%2C26.41000', d: '40.16000%2C26.42000', m: 'arrive', t: '08%3A55',
+  l1: '1%7C0%7C101%7C102',
 })) url.searchParams.set(key, value);
+assert.match(url.search, /40\.15000%252C26\.41000/, 'test URL is double encoded');
 
 const board = { stopId: 101, lat: 40.15, lng: 26.41 };
 const alight = { stopId: 102, lat: 40.16, lng: 26.42 };
@@ -75,4 +78,4 @@ assert.equal(vm.runInContext('canStartGuidedTrip({})', context), false,
   'ordinary planning-ahead trip remains blocked from guided mode');
 assert.equal(vm.runInContext('_pendingTripDeepLink', context), null);
 
-console.log('trip link cold-load, expired arrival restore, and guided mode: passed');
+console.log('trip link double-decode, cold-load, expired arrival restore, and guided mode: passed');

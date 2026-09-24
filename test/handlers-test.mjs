@@ -70,7 +70,11 @@ const generatedSrc = hasUi ? uiSrc : inlineScript;
 // dynamic-arg rule below handle.
 function handlersIn(src, region) {
   const out = [];
-  for (const m of src.matchAll(/\son([a-z]+)=\\?"([^"]*)"/g)) {
+  // Generated attributes can begin a fresh JS string chunk, for example
+  // `+ 'onclick="selectTrackPath(...)"'`, so the character before `on*` is
+  // not always whitespace. Include string delimiters to keep those handlers
+  // inside the global-bridge contract too.
+  for (const m of src.matchAll(/(?:\s|['"`])on([a-z]+)=\\?"([^"]*)"/g)) {
     out.push({ event: m[1], body: m[2], region });
   }
   return out;
@@ -133,6 +137,7 @@ console.log(`\n── inline handler contract (${mode}) ──\n`);
 
 ck('found the app script block', hasInlineApp || hasUi);
 ck('found inline handlers', handlers.length > 20, `${handlers.length} found`);
+ck('found generated tracker direction handler', handlers.some(h => h.body.includes('selectTrackPath(')));
 
 const missing = [];
 for (const h of handlers) {

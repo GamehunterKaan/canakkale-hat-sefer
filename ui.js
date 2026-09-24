@@ -4508,9 +4508,9 @@ applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStop
   closeTrackPanel, closeTripDetail, deleteBookmark, dismissOnboarding, downloadOfflineMap,
   endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail,
   removeRecentDest, renderStopsList, requestNearbyOnce, resetOnboarding, resetPlanner,
-  resetWalkRadius, resetWalkSpeed, saveLocationBookmark, setLang, setMode, setPlanMode, setPlanOffset,
+  resetWalkRadius, resetWalkSpeed, saveLocationBookmark, selectTrackPath, setLang, setMode, setPlanMode, setPlanOffset,
   setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
-  toggleBmDropdown, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
+  toggleBmDropdown, toggleBusNotify, toggleFavStop, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
   useRecentDest, viewStopInDuraklar,
   // map place search
   clearMapSearch, closeSearchPlace, onMapSearchFocus, onMapSearchInput, onMapSearchKey,

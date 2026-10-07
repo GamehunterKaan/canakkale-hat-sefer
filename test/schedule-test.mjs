@@ -29,7 +29,10 @@ counts.push({ 'Ç1':[26,26], 'Ç3':[26,26], 'Ç7':[25,26], 'Ç8':[18,18], 'Ç8 E
 counts.push({ ...counts[3], 'ÇT3':[51,52] });
 counts.push({ 'Ç1':[36,37], 'Ç3':[36,37], 'Ç3 EKSPRES':[51,54], 'Ç4':[90,89], 'Ç5':[4,0],
   'Ç7':[41,43], 'Ç8':[37,36], 'Ç9':[35,35], 'Ç10':[23,19], 'Ç960':[35,35], 'ÇT3':[52,52],
-  'Ç11K':[20,20], 'Ç11K EKSPRES':[62,12], 'Ç11G':[24,25], 'Ç11Ç':[7,7], 'ÇT1':[12,11], 'ÇT2':[1,1] });
+  'Ç11K':[20,20], 'Ç11K EKSPRES':[58,62], 'Ç11G':[24,25], 'Ç11Ç':[7,7], 'ÇT1':[12,11], 'ÇT2':[1,1] });
+counts.push({ ...counts[6], 'Ç4':[93,89], 'Ç11K EKSPRES':[58,63] });
+counts.push({ 'Ç4':[66,65] });
+counts.push({ 'Ç11K EKSPRES':[76,81], 'Ç11K':[20,20], 'Ç11Ç':[7,7] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table.
 const expectedIndexOnly = index => index === 4 ? ['Ç2'] : [];
 const getRoute = (result, id) => Object.values(result.routes).find(r => routeHeading(r.name).id === id);
@@ -42,7 +45,8 @@ for (const [index, fixture] of fixtures.entries()) {
     parsed[index] = parsePages(pages[index]);
     assert.deepEqual(parsed[index].diagnostics.errors, []);
     assert.deepEqual(parsed[index].diagnostics.indexOnlyRoutes, expectedIndexOnly(index));
-    assert.deepEqual(parsed[index].diagnostics.expectedRoutes.filter(id => index !== 4 || id !== 'Ç2'), parsed[index].diagnostics.parsedRoutes);
+    if (parsed[index].diagnostics.expectedRoutes.length)
+      assert.deepEqual(parsed[index].diagnostics.expectedRoutes.filter(id => index !== 4 || id !== 'Ç2'), parsed[index].diagnostics.parsedRoutes);
     assert.deepEqual(Object.fromEntries(Object.values(parsed[index].routes).map(r =>
       [routeHeading(r.name).id, [r.dir0.times.length, r.dir1.times.length]])), counts[index]);
   });
@@ -64,6 +68,15 @@ for (const [index, fixture] of fixtures.entries()) {
     assert.deepEqual(result.routes, parsed[index].routes);
   });
 }
+await test('Friday Kepez express retains both departure origins despite the small route caption', () => {
+  const r = getRoute(parsed[9], 'Ç11K EKSPRES');
+  assert.equal(r.dir0.label, 'DARDANOS');
+  assert.equal(r.dir1.label, 'GAZİ OKULU');
+  for (const t of ['07:20','08:05','12:25','19:35','19:55','23:35']) assert.ok(r.dir0.times.includes(t));
+  for (const t of ['07:30','07:40','14:40','19:35','00:00']) assert.ok(r.dir1.times.includes(t));
+  assert.equal(r.dir0.times.includes('07:00'), false, 'Kepez intermediate-stop time is not a Dardanos departure');
+  assert.equal(r.dir0.times.includes('00:00'), false, 'Gazi departure is not copied to Dardanos');
+});
 await test('Ç4 repeated wide terminal header preserves evening departures', () => {
   const r = getRoute(parsed[6], 'Ç4');
   assert.match(r.dir0.label, /HÜSEYİN ELBİ/);
@@ -161,6 +174,41 @@ await test('impossible departure clocks fail instead of being dropped', () => {
 });
 
 const baseHtml = '<a href="/weekday.pdf">HAFTA İÇİ SEFER SAATLERİ</a><a href="/weekend.pdf">HAFTA SONU SEFER SAATLERİ</a>';
+await test('current municipality page discovers both Friday supplements and the future weekday PDF', () => {
+  const html = gunzipSync(readFileSync(new URL('./fixtures/schedules/municipality-2026-10-07.html.gz', import.meta.url))).toString('utf8');
+  const result = discoverPdfLinks(html);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.links.length, 5);
+  assert.equal(result.links.find(s => s.kind === 'effective-weekday').effectiveFrom, '10-08');
+  const recurring = result.links.filter(s => s.kind === 'recurring');
+  assert.equal(recurring.length, 2);
+  for (const link of recurring) assert.deepEqual(link.weekdays, [5]);
+});
+await test('all named weekdays, ranges, lists and filename fallback have explicit activation days', () => {
+  for (const [day, index] of [['Pazar',0],['Pazartesi',1],['Salı',2],['Çarşamba',3],['Perşembe',4],['Cuma',5],['Cumartesi',6]]) {
+    const result = discoverPdfLinks(baseHtml + '<a href="/route.pdf">Ç4 Hattı ' + day + ' Günü Sefer Saatleri</a>');
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.links[2].weekdays, [index]);
+  }
+  for (const [label, days] of [['Pazartesi-Cuma Sefer Saatleri',[1,2,3,4,5]],['Salı ve Cuma Günü Sefer Saatleri',[2,5]]]) {
+    assert.deepEqual(discoverPdfLinks(baseHtml + '<a href="/route.pdf">' + label + '</a>').links[2].weekdays, days);
+  }
+  const filename = discoverPdfLinks(baseHtml + '<a href="/C4-HATTI-CUMA-SEFERLERI.pdf">PDF</a>');
+  assert.deepEqual(filename.errors, []);
+  assert.deepEqual(filename.links[2].weekdays, [5]);
+  const market = discoverPdfLinks(baseHtml + '<a href="/route.pdf">Cuma Pazarı Hattı Sefer Saatleri</a>');
+  assert.equal(market.links[2].kind, 'unknown', 'a market name does not imply Friday service');
+});
+await test('recurring service identity survives renamed PDFs and rejects contradictory weekday labels', () => {
+  const html = baseHtml + '<a href="/friday.pdf">Ç4 Hattı Cuma Seferleri</a>';
+  const renamed = discoverPdfLinks(html.replace('/friday.pdf','/14-EKIM-3.pdf')).links[2];
+  assert.equal(discoverPdfLinks(html).links[2].id, renamed.id);
+  assert.deepEqual(renamed.dates, [], 'a publication date in the URL does not restrict a weekly service');
+  const effective = discoverPdfLinks(baseHtml + '<a href="/other.pdf">8 Ekim itibariyle Ç4 Hattı Cuma Seferleri</a>').links[2];
+  assert.equal(effective.effectiveFrom, '10-08');
+  const conflict = discoverPdfLinks(html + '<a href="/friday.pdf">Ç4 Hattı Perşembe Seferleri</a>');
+  assert.ok(conflict.pageErrors.some(e => /Conflicting labels/.test(e)));
+});
 await test('HTML parsing handles attributes, entities, nested text, relative URLs and queries', () => {
   const result = discoverPdfLinks("<a class=x HREF='/new.PDF?v=2&amp;x=3#page=1'><b>HAFTA</b><br>İÇİ SEFER SAATLERİ</a>" +
     '<a href=//example.test/weekend.pdf><span>HAFTA SONU</span> SEFER SAATLERİ</a>', 'https://example.test/index');

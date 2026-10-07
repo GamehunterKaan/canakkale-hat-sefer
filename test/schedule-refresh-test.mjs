@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import { refreshSchedules, sameSchedule } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL } from '../scripts/lib/schedule-source.mjs';
-import { scheduleHealth, STR, pickActiveScheduleId } from '../core.js';
+import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay } from '../core.js';
 
 let passed = 0;
 async function test(name, fn) {
@@ -106,6 +106,133 @@ try {
     assert.ok(route.dir0.times.includes('22:00'));
     assert.ok(route.dir1.times.includes('22:20'));
     assert.equal(scheduleHealth(result.status, data, checkedAt), null);
+  });
+  await test('current page and real Friday PDFs publish and replace only their routes on Fridays', async () => {
+    const h = harness();
+    h.state.html = gunzipSync(readFileSync(new URL('./fixtures/schedules/municipality-2026-10-07.html.gz', import.meta.url))).toString('utf8');
+    const fixtures = JSON.parse(readFileSync(new URL('./fixtures/schedules/sources.json', import.meta.url)));
+    const pdfs = new Map(fixtures.slice(7).map(f => [f.url,
+      gunzipSync(readFileSync(new URL('./fixtures/schedules/' + f.name + '.pdf.gz', import.meta.url)))]));
+    const fetchBytes = h.options.fetchBytes, parsePdf = h.options.parsePdf;
+    h.options.fetchBytes = url => pdfs.get(url) || fetchBytes(url);
+    h.options.parsePdf = bytes => bytes.length > 1000 ? parsePDF(bytes) : parsePdf(bytes);
+    const checkedAt = Date.UTC(2026, 9, 7, 17);
+    const result = await h.run({ now:checkedAt });
+    const data = JSON.parse(h.bytes()), before = JSON.stringify(data);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.status.errors, []);
+    assert.equal(result.status.sources.length, 5);
+    assert.ok(result.status.sources.every(s => s.state === 'ok'));
+    const thursday = scheduleForDay(data.schedules, { year:2026, mmdd:'10-08', isWeekend:false });
+    const friday = scheduleForDay(data.schedules, { year:2026, mmdd:'10-09', isWeekend:false });
+    const laterFriday = scheduleForDay(data.schedules, { year:2026, mmdd:'10-16', isWeekend:false });
+    assert.equal(thursday.id, 'effective-weekday-x-10-08');
+    assert.equal(Object.keys(friday.routes).length, 17);
+    assert.equal(thursday.routes['Ç4 ESENLER'].dir0.times.includes('14:37'), false);
+    assert.equal(friday.routes['Ç4 ESENLER'].dir0.times.includes('14:37'), true);
+    assert.equal(friday.routes['Ç4 ESENLER'].dir0.times.length, 66);
+    assert.equal(friday.routes['Ç11K EKSPRES'].dir0.times.length, 76);
+    assert.equal(friday.routes['Ç11K EKSPRES'].dir1.times.length, 81);
+    for (const [key, route] of Object.entries(thursday.routes))
+      if (!/^Ç(?:4\s|11K\s|11Ç\s)/.test(key)) assert.deepEqual(friday.routes[key], route, key + ' keeps its regular times');
+    assert.deepEqual(laterFriday.routes, friday.routes);
+    assert.equal(friday.appliedOverrides.length, 2);
+    assert.equal(scheduleForDay(data.schedules, { year:2026, mmdd:'10-10', isWeekend:true }).appliedOverrides, undefined);
+    assert.equal(JSON.stringify(data), before, 'selection does not mutate saved base timetables');
+    assert.equal(scheduleHealth(result.status, data, checkedAt), null);
+
+    // Exercise the shipped schedule renderer: today's full tab must use the
+    // same merged routes as the planner and link to each applied PDF.
+    const elements = new Map(), rendered = [];
+    class Element {
+      children = []; dataset = {}; style = {};
+      set innerHTML(_) { this.children = []; }
+      get firstChild() { return this.children[0] || null; }
+      appendChild(child) { this.children.push(child); if (child.id) elements.set(child.id, child); }
+      insertBefore(child, before) {
+        const index = this.children.indexOf(before);
+        this.children.splice(index < 0 ? this.children.length : index, 0, child);
+      }
+    }
+    for (const id of ['schedLoading','schedTabs','schedPanels']) elements.set(id, new Element());
+    let day = { year:2026, mmdd:'10-09', isWeekend:false }, activeTab;
+    const context = vm.createContext({
+      document:{ getElementById:id => elements.get(id), createElement:() => new Element() },
+      getSchedule:() => data, scheduleForDay, todayParts:() => day,
+      renderScheduleHealth() {}, highlightNextTimes() {}, schedDayLabel:label => label,
+      switchSchedTab:id => { activeTab = id; }, t:key => STR.tr[key],
+      renderRouteCards:(routes, id, isToday) => { rendered.push({ routes, id, isToday }); },
+    });
+    const ui = readFileSync(new URL('../ui.js', import.meta.url), 'utf8');
+    const start = ui.indexOf('function renderSchedule()'), end = ui.indexOf('function renderRouteCards(', start);
+    assert.ok(start >= 0 && end > start);
+    vm.runInContext(ui.slice(start, end), context);
+    vm.runInContext('renderSchedule()', context);
+    assert.equal(activeTab, friday.id);
+    assert.deepEqual(rendered.find(r => r.isToday).routes, friday.routes);
+    assert.deepEqual(elements.get('routes-' + activeTab).children.map(a => a.href),
+      [friday.url, ...friday.appliedOverrides.map(s => s.url)]);
+    day = { year:2026, mmdd:'10-08', isWeekend:false };
+    rendered.length = 0;
+    vm.runInContext('renderSchedule()', context);
+    assert.deepEqual(rendered.find(r => r.isToday).routes, thursday.routes);
+  });
+  await test('Friday route replacements match route identity and leave dated holidays in control', () => {
+    const route = (name, time) => ({ name, dir0:{ label:'MERKEZ', times:[time] }, dir1:{ label:'KAMPÜS', times:[] } });
+    const base = { id:'weekday', kind:'weekday', routes:{
+      'Ç4 OLD NAME':route('Ç4 OLD NAME','08:00'), 'Ç11K NORMAL':route('Ç11K NORMAL','09:00'),
+      'Ç11K OLD EKSPRES':route('Ç11K OLD EKSPRES','10:00'),
+    } };
+    const weekly = { id:'weekly', kind:'recurring', weekdays:[5], dates:[], year:null, routes:{
+      'Ç4 NEW NAME':route('Ç4 NEW NAME','08:15'), 'Ç11K EKSPRES':route('Ç11K EKSPRES','10:15'),
+    } };
+    const friday = { year:2026, mmdd:'10-09', isWeekend:false };
+    const result = scheduleForDay([base, weekly], friday);
+    assert.equal(result.routes['Ç4 OLD NAME'], undefined);
+    assert.equal(result.routes['Ç11K OLD EKSPRES'], undefined);
+    assert.equal(result.routes['Ç11K NORMAL'].dir0.times[0], '09:00');
+    assert.equal(result.routes['Ç4 NEW NAME'].dir0.times[0], '08:15');
+    const holiday = { id:'bayram', kind:'special', dates:['10-09'], year:2026, routes:base.routes };
+    assert.equal(scheduleForDay([base, weekly, holiday], friday), holiday);
+    assert.equal(scheduleForDay([base, { ...weekly, year:2025 }], friday), base);
+    assert.equal(scheduleForDay([base, { ...weekly, effectiveFrom:'10-16' }], friday), base);
+    assert.equal(scheduleForDay([base, { ...weekly, dates:['10-16'] }], friday), base);
+    const failed = scheduleForDay([base, { ...weekly, unavailable:true, routes:{} }], friday);
+    assert.equal(failed.unavailable, true);
+    assert.deepEqual(failed.routes, {});
+  });
+  await test('an unrecognized extra source cannot freeze valid weekday and weekend updates', async () => {
+    const h = harness();
+    await h.run();
+    h.state.html = page(newUrl) + '<a href="https://example.test/other.pdf">Yeni Tarife</a>';
+    h.state.parsed.routes['Ç1 MERKEZ'].dir0.times.push('10:00');
+    const result = await h.run({ now:now + 1 });
+    const data = JSON.parse(h.bytes());
+    assert.equal(result.ok, false, 'unknown applicability remains explicit');
+    assert.equal(result.changed, true);
+    assert.equal(data.schedules[0].url, newUrl);
+    assert.ok(data.schedules[0].routes['Ç1 MERKEZ'].dir0.times.includes('10:00'));
+    assert.ok(data.schedules[1].routes['Ç1 MERKEZ'].dir0.times.includes('10:00'));
+    assert.ok(data.schedules[2].unavailable);
+    assert.equal(result.status.sources[0].state, 'ok');
+    assert.equal(result.status.sources[1].state, 'ok');
+    assert.equal(result.status.sources[2].state, 'error');
+  });
+  await test('a changed weekly PDF URL retains its last verified routes during a download failure', async () => {
+    const h = harness(), old = 'https://example.test/friday.pdf', next = 'https://example.test/14-EKIM-3.pdf';
+    const extra = url => '<a href="' + url + '">Cuma Günü Sefer Saatleri</a>';
+    h.state.html = page() + extra(old);
+    await h.run();
+    const saved = JSON.parse(h.bytes()).schedules[2];
+    h.state.html = page(newUrl) + extra(next);
+    h.state.fail = next;
+    const result = await h.run({ now:now + 1 });
+    const data = JSON.parse(h.bytes());
+    assert.equal(result.ok, false);
+    assert.equal(data.schedules[0].url, newUrl);
+    assert.deepEqual(data.schedules[2], saved);
+    assert.equal(result.status.sources[2].url, next);
+    assert.equal(result.status.sources[2].state, 'error');
   });
   await test('no-change verification preserves timetable timestamp and emits bounded heartbeat', async () => {
     const h = harness();

@@ -217,7 +217,9 @@ The refresh discovers links from the municipality's timetable page on every run.
 
 Every parsed PDF is checked against its own route index, departure headings, terminal labels and clock values. An index entry without a timetable table is recorded as a diagnostic; actual timetable tables can still publish. Unknown tables, missing extracted pages, malformed departure tables, scanned PDFs, conflicting links and unreadable advertised specials produce explicit failures. Legitimate seasonal changes do not have to satisfy an old route-count or page-count threshold. There is no force option to bypass validation.
 
-Each service updates independently: a failing weekend PDF preserves that service's last verified data while valid weekday PDFs can update. A new special with no verified data gets an unavailable entry, preventing the planner from silently substituting regular weekday times. Writes use temporary files and atomic replacement. School services with day-specific restrictions, the unnumbered Kalabaklı shuttle, and separately linked cemetery/library services remain available through the source PDFs; they are not included in the city-route parser.
+Each service updates independently: a failing weekend PDF or an unrecognized supplemental link preserves that service's last verified data while valid weekday PDFs can update. A new special with no verified data gets an unavailable entry, preventing the planner from silently substituting regular weekday times. Writes use temporary files and atomic replacement. School services with day-specific restrictions, the unnumbered Kalabaklı shuttle, and separately linked cemetery/library services remain available through the source PDFs; they are not included in the city-route parser.
+
+PDFs labelled with named weekdays (including day lists and ranges) are recurring route overrides. On those days, both the planner and today's schedule tab replace only the routes in those PDFs, preserving all other routes from the active regular or effective-from timetable. Dated holiday timetables take precedence. Each applied PDF stays linked from the active tab. A publication date in a recurring PDF's filename does not limit its weekday applicability.
 
 `data/schedule-status.json` records source URLs, hashes, individual source outcomes, errors, the last verification and the data version. Its heartbeat updates at least every 12 hours without rewriting an unchanged timetable. The app fetches this independently of timetable data, shows a warning across all tabs after a failed check or 48 hours without verification, and links to the currently advertised PDFs. Offline copies retain the original verification timestamp.
 
@@ -230,7 +232,7 @@ npm ci --prefix scripts
 node scripts/fetch-schedule.mjs --self-test
 ```
 
-`npm test` also runs the core, handler, shared-trip and planner tests. See [the fixture notes](test/fixtures/schedules/README.md) for the six original municipal PDFs and the index-only route case. To investigate a new failure, inspect `report.json` and the matching source PDF from the CI artifact (locally: `tmp/schedule-parser/last-refresh/`), add the source as a regression fixture, and repair or extend the parser without bypassing timetable-table validation.
+`npm test` also runs the core, handler, shared-trip and planner tests. See [the fixture notes](test/fixtures/schedules/README.md) for the original municipal PDFs, the index-only route case, and Friday timetable overrides. To investigate a new failure, inspect `report.json` and the matching source PDF from the CI artifact (locally: `tmp/schedule-parser/last-refresh/`), add the source as a regression fixture, and repair or extend the parser without bypassing timetable-table validation.
 
 ---
 

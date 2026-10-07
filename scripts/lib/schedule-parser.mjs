@@ -101,6 +101,7 @@ function headerColumns(items, group, route, width) {
   const minY = Math.min(...group.markers.map(i => i.y));
   const maxY = Math.max(...group.markers.map(i => i.y));
   const candidates = items.filter(i => i.y >= minY - h * 0.5 && i.y <= maxY + h * 3 &&
+    i.h >= h * 0.55 &&
     !hasTime(i.text) && !/^\d+$/.test(i.text) && !routeHeading(i.text) &&
     i.w < width * 0.3 && !/^(?:BLD|DOSYA|SAYFA)|DONEMI|HAFTA|KAMPUS\s*-\s*KEPEZ|KEPEZ\s*-\s*KAMPUS/.test(fold(i.text)) &&
     (!route || centre(i) > route.x + route.w));
@@ -250,6 +251,8 @@ export function parsePages(rawPages) {
           const implicit = columns.filter(c => !c.departure && !/VARIS/.test(fold(c.label)) &&
             arrivals.some(a => matchesTerminal(arrivalName(a), c.label)));
           if (implicit.length === 1) implicit[0].departure = true;
+          else if (implicit.length > 1)
+            diagnostics.errors.push(`Page ${page.number}: ambiguous reciprocal departure origin for ${heading.id}`);
         }
       }
       columns.forEach(c => { c.times = []; });

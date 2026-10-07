@@ -44,6 +44,7 @@ import {
   WALK_RELAX_MULT, MAX_NEAR_STOPS, TRANSFER_ETA_TOLERANCE_MIN,
   TRANSFER_CROSS_ROAD_M, REACH_GRACE_MIN, WALK_DETOUR_FACTOR,
   GUIDED_ARRIVE_M, GUIDED_BOARDED_M,
+  scheduleForDay, todayParts,
 } from '../core.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,31 +59,8 @@ const pathCache = stopsData.paths.map(pe => ({ path: pe.path, route: pe.route ||
 // ── Settings (match the app defaults) ────────────────────────────────────────
 const SETTINGS = { walkRadius: 900, walkSpeedMpm: 72 };
 
-// ── Active-schedule selection — mirror of getActiveSchedule()/pickActiveScheduleId
-function todayParts() {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-  const get = k => parts.find(p => p.type === k).value;
-  const y = +get('year'), m = +get('month'), d = +get('day');
-  const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
-  return { mmdd: `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`, year: y, isWeekend: dow === 0 || dow === 6 };
-}
-function pickActiveScheduleId(schedules, today) {
-  if (!schedules?.length) return null;
-  const specials = schedules.filter(s => s.kind === 'special').filter(s => s.year == null || s.year === today.year)
-    .filter(s => Array.isArray(s.dates) && s.dates.includes(today.mmdd))
-    .sort((a, b) => { const pri = id => /arefe/.test(id) ? 0 : /bayram/.test(id) ? 1 : 2; const pa = pri(a.id), pb = pri(b.id); if (pa !== pb) return pa - pb; return a.dates.length - b.dates.length; });
-  if (specials.length) return specials[0].id;
-  const wantKind = today.isWeekend ? 'effective-weekend' : 'effective-weekday';
-  const eff = schedules.filter(s => s.kind === wantKind).filter(s => s.year == null || s.year === today.year)
-    .filter(s => s.effectiveFrom && s.effectiveFrom <= today.mmdd).sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
-  if (eff.length) return eff[0].id;
-  const reg = schedules.find(s => s.kind === (today.isWeekend ? 'weekend' : 'weekday'));
-  return reg?.id || schedules[0].id;
-}
-function getActiveSchedule() {
-  const id = pickActiveScheduleId(scheduleData.schedules, todayParts());
-  return scheduleData.schedules.find(s => s.id === id) || scheduleData.schedules.find(s => s.kind === 'weekday') || scheduleData.schedules[0];
-}
+// Use the shipped selector, including route-specific weekly timetables.
+const getActiveSchedule = () => scheduleForDay(scheduleData.schedules, todayParts());
 const getActiveRoutes = () => getActiveSchedule()?.routes || {};
 
 // (schedCodeNorm / findSchedEntry / pickSchedDir / schedTimesForPath are imported

@@ -18,7 +18,7 @@ import {
   WALK_DETOUR_FACTOR, WALK_RELAX_MULT, _clockMin, _isLastSefer, _liveBoardWaitMins,
   _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins,
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
-  pickActiveScheduleId, pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath,
+  pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath, scheduleForDay,
   todayParts, withinM, foldTr as _foldTr, scheduleHealth,
   QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
   _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
@@ -327,14 +327,16 @@ function renderSchedule() {
 
   document.getElementById('schedLoading').style.display = 'none';
 
-  const activeId = pickActiveScheduleId(getSchedule().schedules, todayParts());
+  const active = scheduleForDay(getSchedule().schedules, todayParts());
+  const activeId = active?.id;
   const tabRow   = document.getElementById('schedTabs');
   const panels   = document.getElementById('schedPanels');
   tabRow.innerHTML = '';
   panels.innerHTML = '';
 
-  for (const s of getSchedule().schedules) {
-    const isActive = s.id === activeId;
+  for (const source of getSchedule().schedules) {
+    const isActive = source.id === activeId;
+    const s = isActive ? active : source;
     const btn = document.createElement('button');
     btn.className   = 's-tab-btn';
     btn.dataset.sid = s.id;
@@ -357,8 +359,10 @@ function renderSchedule() {
 
     // renderRouteCards owns the panel's innerHTML, so the PDF link goes in
     // afterwards, pinned above the cards.
-    const pdfLink = schedPdfLink(s.url);
-    if (pdfLink) panel.insertBefore(pdfLink, panel.firstChild);
+    for (const source of [{ url:s.url }, ...(s.appliedOverrides || [])].reverse()) {
+      const pdfLink = schedPdfLink(source.url, source.label);
+      if (pdfLink) panel.insertBefore(pdfLink, panel.firstChild);
+    }
   }
 
   switchSchedTab(activeId);
@@ -371,7 +375,7 @@ function renderSchedule() {
 // check keeps a tampered feed from smuggling in javascript:/data: links.
 // Returns null when the schedule has no usable URL, so older cached payloads
 // (pre-`url`) simply render without the button.
-function schedPdfLink(url) {
+function schedPdfLink(url, label) {
   if (!/^https?:\/\//i.test(url || '')) return null;
   const a = document.createElement('a');
   a.className = 'sched-pdf-btn';
@@ -379,7 +383,9 @@ function schedPdfLink(url) {
   a.target    = '_blank';
   a.rel       = 'noopener noreferrer';
   a.title     = t('schedOpenPdfTitle');
-  a.innerHTML = '<span>' + t('schedOpenPdf') + '</span>';
+  const caption = document.createElement('span');
+  caption.textContent = t('schedOpenPdf') + (label ? ' · ' + schedDayLabel(label) : '');
+  a.appendChild(caption);
   return a;
 }
 

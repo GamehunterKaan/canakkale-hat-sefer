@@ -36,6 +36,9 @@ export function validateBundle(schedules, links) {
   for (const schedule of schedules) {
     if (ids.has(schedule.id)) errors.push(`Duplicate schedule id: ${schedule.id}`);
     ids.add(schedule.id);
+    if (schedule.kind === 'recurring' && (!schedule.weekdays?.length ||
+        schedule.weekdays.some(day => !Number.isInteger(day) || day < 0 || day > 6)))
+      errors.push(`${schedule.id}: missing or invalid service weekdays`);
     if (!Object.keys(schedule.routes || {}).length) errors.push(`${schedule.id}: no routes`);
     for (const [key, route] of Object.entries(schedule.routes || {})) {
       let count = 0;
@@ -67,11 +70,15 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     links = discovery.links;
     report.ignoredLinks = discovery.ignored;
     report.sources = links.map(({ id, label, url }) => ({ id, label, url }));
-    if (discovery.errors.length) throw new Error(discovery.errors.join('\n'));
+    if (discovery.pageErrors.length) throw new Error(discovery.pageErrors.join('\n'));
     for (let index = 0; index < links.length; index++) {
       const link = links[index];
       log(`Checking ${link.label}: ${link.url}`);
       try {
+        // A supplemental source with an invalid label/date cannot block the
+        // regular PDFs. Its own service still retains explicit failure status.
+        const sourceErrors = discovery.sourceErrors.filter(e => e.url === link.url);
+        if (sourceErrors.length) throw new Error(sourceErrors.map(e => e.message).join('\n'));
         const bytes = await fetchBytes(link.url);
         const hash = createHash('sha256').update(bytes).digest('hex');
         report.sources[index].sha256 = hash;
@@ -95,7 +102,8 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
         report.sources[index].state = 'error';
         report.errors.push(`${link.id}: ${e.message}`);
         let saved = previous?.schedules?.find(s => s.id === link.id && s.kind === link.kind &&
-          (['weekday', 'weekend'].includes(link.kind) || stable(s.dates) === stable(link.dates) && s.year === link.year));
+          (['weekday', 'weekend'].includes(link.kind) || stable(s.dates) === stable(link.dates) && s.year === link.year &&
+            stable(s.weekdays) === stable(link.weekdays) && s.effectiveFrom === link.effectiveFrom));
         // Upgrade legacy cached output once with the new parser. Its source
         // remains explicitly old; this must never mark the new PDF verified.
         if (saved?.url && !saved.source && !saved.unavailable) {

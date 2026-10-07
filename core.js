@@ -21,6 +21,7 @@ export function todayParts() {
     ymd:  `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
     mmdd: `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
     year: y,
+    dayOfWeek: dow,
     isWeekend: dow === 0 || dow === 6,
   };
 }
@@ -64,6 +65,32 @@ export function pickActiveScheduleId(schedules, today) {
   // 3. Regular weekday / weekend
   const reg = schedules.find(s => s.kind === (today.isWeekend ? 'weekend' : 'weekday'));
   return reg?.id || schedules[0].id;
+}
+
+// A route-specific weekday PDF replaces those routes on the named days.
+// Other routes keep the selected regular/effective timetable. A dated holiday
+// timetable takes precedence over the normal weekly service.
+export function scheduleForDay(schedules, today) {
+  const base = schedules?.find(s => s.id === pickActiveScheduleId(schedules, today));
+  if (!base || base.kind === 'special' || base.unavailable) return base || null;
+  const day = today.dayOfWeek ?? new Date(`${today.year}-${today.mmdd}T12:00:00Z`).getUTCDay();
+  const overrides = schedules.filter(s => s.kind === 'recurring' && s.weekdays?.includes(day) &&
+    (s.year == null || s.year === today.year) &&
+    (!s.effectiveFrom || s.effectiveFrom <= today.mmdd) &&
+    (s.effectiveFrom || !s.dates?.length || s.dates.includes(today.mmdd)));
+  if (!overrides.length) return base;
+  // Without a last verified copy we cannot safely infer which routes an
+  // unreadable supplement changes. Keep the affected day's data unavailable.
+  if (overrides.some(s => s.unavailable)) return { ...base, routes:{}, unavailable:true, appliedOverrides:overrides };
+  const routes = { ...base.routes };
+  const identity = (name, route) => schedCodeNorm((route.name || name).split(/\s+/)[0]) +
+    (/EKSPRES/i.test(route.name || name) ? '-E' : '');
+  for (const override of overrides) for (const [name, route] of Object.entries(override.routes || {})) {
+    const id = identity(name, route);
+    for (const [key, saved] of Object.entries(routes)) if (identity(key, saved) === id) delete routes[key];
+    routes[name] = route;
+  }
+  return { ...base, routes, appliedOverrides:overrides };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -802,11 +829,7 @@ export async function init({ baseUrl, schedule, stops, fetchImpl, signal } = {})
 }
 
 export function getActiveSchedule() {
-  if (!_schedule?.schedules?.length) return null;
-  const id = pickActiveScheduleId(_schedule.schedules, todayParts());
-  return _schedule.schedules.find(s => s.id === id)
-      || _schedule.schedules.find(s => s.kind === 'weekday')
-      || _schedule.schedules[0];
+  return scheduleForDay(_schedule?.schedules, todayParts());
 }
 
 export function getActiveRoutes() { return getActiveSchedule()?.routes || {}; }

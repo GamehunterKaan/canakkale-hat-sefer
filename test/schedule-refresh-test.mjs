@@ -82,6 +82,31 @@ try {
     assert.notEqual(second.status.sources[1].sha256, first.status.sources[1].sha256);
     assert.deepEqual(second.status.sources[1].indexOnlyRoutes, ['Ç2']);
   });
+  await test('7 October effective timetable verifies and publishes its evening continuation', async () => {
+    const h = harness();
+    await h.run();
+    const currentUrl = 'https://example.test/7-EKIM-4.pdf';
+    const pdf = gunzipSync(readFileSync(new URL('./fixtures/schedules/weekday-2026-10-07.pdf.gz', import.meta.url)));
+    h.state.html = page() + '<a href="' + currentUrl + '">7 Ekim İtibariyle Hafta İçi Sefer Saatleri</a>';
+    const fetchBytes = h.options.fetchBytes, parsePdf = h.options.parsePdf;
+    h.options.fetchBytes = url => url === currentUrl ? pdf : fetchBytes(url);
+    h.options.parsePdf = bytes => bytes.length > 1000 ? parsePDF(bytes) : parsePdf(bytes);
+    const checkedAt = Date.UTC(2026, 9, 7, 12);
+    const result = await h.run({ now:checkedAt });
+    const data = JSON.parse(h.bytes());
+    assert.equal(result.ok, true);
+    assert.equal(result.status.state, 'ok');
+    assert.deepEqual(result.status.errors, []);
+    const active = data.schedules.find(s => s.id === pickActiveScheduleId(data.schedules,
+      { year:2026, mmdd:'10-07', isWeekend:false }));
+    assert.equal(active.url, currentUrl);
+    assert.equal(active.unavailable, undefined);
+    const route = active.routes['Ç4 ESENLER'];
+    assert.deepEqual([route.dir0.times.length, route.dir1.times.length], [90,89]);
+    assert.ok(route.dir0.times.includes('22:00'));
+    assert.ok(route.dir1.times.includes('22:20'));
+    assert.equal(scheduleHealth(result.status, data, checkedAt), null);
+  });
   await test('no-change verification preserves timetable timestamp and emits bounded heartbeat', async () => {
     const h = harness();
     await h.run();

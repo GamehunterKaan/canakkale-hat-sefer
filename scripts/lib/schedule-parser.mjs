@@ -210,8 +210,13 @@ export function parsePages(rawPages) {
         routeCell = { ...routeItem, w: Math.max(routeItem.x + routeItem.w, ...extra.map(i => i.x + i.w)) - routeItem.x };
         lastRoute = heading;
       } else {
+        // A wide terminal caption may start left of its departure marker.
+        // Exempt it only when its centre is in the header area AND its name
+        // matches a known terminal. Width alone must not hide a new title.
+        const knownTerminals = routes.get(lastRoute?.id)?.directions.flatMap(d => d.labels) || [];
         const otherTitle = items.find(i => i.x < firstX - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
-          /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)));
+          /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)) &&
+          !(centre(i) >= firstX - h * 3 && knownTerminals.some(label => matchesTerminal(label, i.text))));
         if (otherTitle) {
           // This village shuttle has no route identifier in the city network.
           // An unfamiliar title must never be swallowed into the preceding route.

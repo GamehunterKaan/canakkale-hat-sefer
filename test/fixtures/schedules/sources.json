@@ -34,5 +34,11 @@
     "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/21-EYLUL-9.pdf",
     "sha256": "7d4ecc0cc9858d5c298bdcd4e6d42ffcbb63b358f67f74b8a91e8cf09fc451fb",
     "bytes": 1993544
+  },
+  {
+    "name": "weekday-2026-10-07",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/7-EKIM-4.pdf",
+    "sha256": "808452cd6765847557c7860d63f3cf8a25b540c13f6b289d23255f93cf3c3a40",
+    "bytes": 2048432
   }
 ]

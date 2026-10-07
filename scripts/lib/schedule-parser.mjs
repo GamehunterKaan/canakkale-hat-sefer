@@ -210,7 +210,9 @@ export function parsePages(rawPages) {
         routeCell = { ...routeItem, w: Math.max(routeItem.x + routeItem.w, ...extra.map(i => i.x + i.w)) - routeItem.x };
         lastRoute = heading;
       } else {
-        const otherTitle = items.find(i => i.x < firstX - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
+        // Wide, centred terminal labels can start left of their departure
+        // marker. Compare centres so a repeated header stays in its column.
+        const otherTitle = items.find(i => centre(i) < firstX - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
           /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)));
         if (otherTitle) {
           // This village shuttle has no route identifier in the city network.

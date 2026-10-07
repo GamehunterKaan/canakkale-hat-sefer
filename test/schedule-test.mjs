@@ -27,6 +27,9 @@ counts.push({ 'Ç1':[26,26], 'Ç3':[26,26], 'Ç7':[25,26], 'Ç8':[18,18], 'Ç8 E
   'Ç9':[35,35], 'Ç960':[25,25], 'ÇT3':[26,25], 'Ç11K':[19,17], 'Ç11K EKSPRES':[86,91],
   'Ç11G':[26,26], 'Ç11Ç':[6,8], 'ÇT1':[4,4] });
 counts.push({ ...counts[3], 'ÇT3':[51,52] });
+counts.push({ 'Ç1':[36,37], 'Ç3':[36,37], 'Ç3 EKSPRES':[51,54], 'Ç4':[90,89], 'Ç5':[4,0],
+  'Ç7':[41,43], 'Ç8':[37,36], 'Ç9':[35,35], 'Ç10':[23,19], 'Ç960':[35,35], 'ÇT3':[52,52],
+  'Ç11K':[20,20], 'Ç11K EKSPRES':[62,12], 'Ç11G':[24,25], 'Ç11Ç':[7,7], 'ÇT1':[12,11], 'ÇT2':[1,1] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table.
 const expectedIndexOnly = index => index === 4 ? ['Ç2'] : [];
 const getRoute = (result, id) => Object.values(result.routes).find(r => routeHeading(r.name).id === id);
@@ -61,6 +64,54 @@ for (const [index, fixture] of fixtures.entries()) {
     assert.deepEqual(result.routes, parsed[index].routes);
   });
 }
+await test('Ç4 repeated wide terminal header preserves evening departures', () => {
+  const r = getRoute(parsed[6], 'Ç4');
+  assert.match(r.dir0.label, /HÜSEYİN ELBİ/);
+  assert.deepEqual(r.dir0.times.filter(t => t >= '18:20'),
+    '18:20 18:40 19:00 19:20 19:40 20:00 20:20 20:40 21:00 21:20 21:40 22:00'.split(' '));
+  assert.deepEqual(r.dir1.times.filter(t => t >= '19:00'),
+    '19:00 19:20 19:40 20:00 20:20 20:40 21:00 21:20 21:40 22:00 22:20'.split(' '));
+  assert.equal(parsed[6].diagnostics.pages.find(p => p.page === 6).tables.length, 2);
+});
+// Use the repeated header's actual geometry, not a route-name exception.
+const eveningHeader = () => pages[6].find(p => p.number === 6).items.find(i =>
+  /YURT KALKIŞ/u.test(i.text) && i.y < pages[6][5].height / 2);
+for (const [name, factor, offset] of [
+  ['wider', 3, 0], ['shifted left', 1.7, -8], ['shifted right', 1.7, 8],
+]) await test('repeated terminal caption ' + name + ' keeps the same departures', () => {
+  const altered = structuredClone(pages[6]), header = eveningHeader();
+  for (const i of altered.find(p => p.number === 6).items) {
+    if (/HÜSEYİN ELBİ/u.test(i.text) && i.y > header.y && i.y < header.y + header.h * 2) {
+      i.x += offset - i.w * (factor - 1) / 2;
+      i.w *= factor;
+    }
+  }
+  const result = parsePages(altered);
+  assert.deepEqual(result.diagnostics.errors, []);
+  assert.deepEqual(result.routes, parsed[6].routes);
+});
+await test('a new unnumbered title beside a continuation still fails explicitly', () => {
+  const altered = structuredClone(pages[6]), header = eveningHeader();
+  altered.find(p => p.number === 6).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:35, h:header.h });
+  const result = parsePages(altered);
+  assert.ok(result.diagnostics.errors.some(e => /unknown unnumbered table: YENİ KÖY/u.test(e)));
+  assert.equal(getRoute(result, 'Ç4').dir0.times.includes('22:00'), false);
+});
+await test('a continuation without a matching departure terminal is rejected', () => {
+  const altered = structuredClone(pages[6]), header = eveningHeader();
+  for (const i of altered.find(p => p.number === 6).items) {
+    if (/HÜSEYİN ELBİ/u.test(i.text) && i.x < 200 && i.y > header.y && i.y < header.y + header.h * 2)
+      i.text = 'BİLİNMEYEN TERMİNAL';
+  }
+  assert.ok(parsePages(altered).diagnostics.errors.some(e => /untitled table cannot be matched to Ç4/u.test(e)));
+});
+await test('an invalid evening departure fails instead of disappearing', () => {
+  const altered = structuredClone(pages[6]), header = eveningHeader();
+  const cell = altered.find(p => p.number === 6).items.find(i => i.text === '22:00' && i.x < 200 && i.y < header.y);
+  assert.ok(cell);
+  cell.text = '25:00';
+  assert.ok(parsePages(altered).diagnostics.errors.some(e => /invalid departure 25:00 for Ç4/u.test(e)));
+});
 await test('Ç10 repeated sections follow terminal names when column order reverses', () => {
   const r = getRoute(parsed[1], 'Ç10');
   assert.match(r.dir0.label, /NUSRAT/);

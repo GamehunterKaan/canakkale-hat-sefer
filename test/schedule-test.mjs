@@ -90,9 +90,9 @@ for (const [name, factor, offset] of [
   assert.deepEqual(result.diagnostics.errors, []);
   assert.deepEqual(result.routes, parsed[6].routes);
 });
-await test('a new unnumbered title beside a continuation still fails explicitly', () => {
+for (const width of [35,70,120,170,240]) await test('an unnumbered title of width ' + width + ' beside a continuation fails explicitly', () => {
   const altered = structuredClone(pages[6]), header = eveningHeader();
-  altered.find(p => p.number === 6).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:35, h:header.h });
+  altered.find(p => p.number === 6).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:width, h:header.h });
   const result = parsePages(altered);
   assert.ok(result.diagnostics.errors.some(e => /unknown unnumbered table: YENİ KÖY/u.test(e)));
   assert.equal(getRoute(result, 'Ç4').dir0.times.includes('22:00'), false);
@@ -103,7 +103,8 @@ await test('a continuation without a matching departure terminal is rejected', (
     if (/HÜSEYİN ELBİ/u.test(i.text) && i.x < 200 && i.y > header.y && i.y < header.y + header.h * 2)
       i.text = 'BİLİNMEYEN TERMİNAL';
   }
-  assert.ok(parsePages(altered).diagnostics.errors.some(e => /untitled table cannot be matched to Ç4/u.test(e)));
+  assert.ok(parsePages(altered).diagnostics.errors.some(e =>
+    /unknown unnumbered table: BİLİNMEYEN TERMİNAL|untitled table cannot be matched to Ç4/u.test(e)));
 });
 await test('an invalid evening departure fails instead of disappearing', () => {
   const altered = structuredClone(pages[6]), header = eveningHeader();

@@ -127,12 +127,6 @@ function nowStr() {
   return n.getHours().toString().padStart(2,'0') + ':' + n.getMinutes().toString().padStart(2,'0');
 }
 
-function hasUpcoming(times) {
-  if (!times?.length) return false;
-  const ns = nowStr();
-  return times.some(t => t >= ns) || (new Date().getHours() >= 20 && times.some(t => t < '04:00'));
-}
-
 function countUpcoming(times) {
   if (!times?.length) return 0;
   const ns = nowStr(), late = new Date().getHours() >= 20;
@@ -400,9 +394,9 @@ function renderRouteCards(routeMap, panelId, isToday) {
     if (!entry) continue;
     const { name, dir0, dir1 } = entry;
 
-    // When showing today's tab, hide routes with no remaining buses
+    // Keep the complete timetable available after service ends. Remaining
+    // counts and departure highlights indicate what is still running today.
     const d0 = dir0?.times || [], d1 = dir1?.times || [];
-    if (isToday && !hasUpcoming(d0) && !hasUpcoming(d1)) continue;
 
     const remaining = isToday ? (countUpcoming(d0) + countUpcoming(d1)) : (d0.length + d1.length);
 

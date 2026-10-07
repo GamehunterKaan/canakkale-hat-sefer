@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import { refreshSchedules, sameSchedule } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL } from '../scripts/lib/schedule-source.mjs';
-import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay } from '../core.js';
+import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT } from '../core.js';
 
 let passed = 0;
 async function test(name, fn) {
@@ -143,10 +143,11 @@ try {
 
     // Exercise the shipped schedule renderer: today's full tab must use the
     // same merged routes as the planner and link to each applied PDF.
-    const elements = new Map(), rendered = [];
+    const elements = new Map();
     class Element {
       children = []; dataset = {}; style = {};
-      set innerHTML(_) { this.children = []; }
+      set innerHTML(value) { this.html = value; this.children = []; }
+      get innerHTML() { return this.html || ''; }
       get firstChild() { return this.children[0] || null; }
       appendChild(child) { this.children.push(child); if (child.id) elements.set(child.id, child); }
       insertBefore(child, before) {
@@ -156,26 +157,37 @@ try {
     }
     for (const id of ['schedLoading','schedTabs','schedPanels']) elements.set(id, new Element());
     let day = { year:2026, mmdd:'10-09', isWeekend:false }, activeTab;
+    class LateNightDate extends Date {
+      getHours() { return 23; }
+      getMinutes() { return 55; }
+    }
     const context = vm.createContext({
       document:{ getElementById:id => elements.get(id), createElement:() => new Element() },
       getSchedule:() => data, scheduleForDay, todayParts:() => day,
       renderScheduleHealth() {}, highlightNextTimes() {}, schedDayLabel:label => label,
-      switchSchedTab:id => { activeTab = id; }, t:key => STR.tr[key],
-      renderRouteCards:(routes, id, isToday) => { rendered.push({ routes, id, isToday }); },
+      switchSchedTab:id => { activeTab = id; }, t:createT(() => 'tr'),
+      Date:LateNightDate, esc:value => String(value), kentkartRouteMap:null,
     });
     const ui = readFileSync(new URL('../ui.js', import.meta.url), 'utf8');
-    const start = ui.indexOf('function renderSchedule()'), end = ui.indexOf('function renderRouteCards(', start);
-    assert.ok(start >= 0 && end > start);
+    const helpers = ui.indexOf('function nowStr()'), helpersEnd = ui.indexOf('// ── Schedule tab', helpers);
+    const start = ui.indexOf('function renderSchedule()'), end = ui.indexOf('function highlightNextTimes()', start);
+    assert.ok(helpers >= 0 && helpersEnd > helpers && start >= 0 && end > start);
+    vm.runInContext(ui.slice(helpers, helpersEnd), context);
     vm.runInContext(ui.slice(start, end), context);
     vm.runInContext('renderSchedule()', context);
     assert.equal(activeTab, friday.id);
-    assert.deepEqual(rendered.find(r => r.isToday).routes, friday.routes);
-    assert.deepEqual(elements.get('routes-' + activeTab).children.map(a => a.href),
+    const cards = () => elements.get('routes-' + activeTab).children.filter(c => c.className === 'route-card');
+    assert.deepEqual(cards().map(c => c.dataset.code).sort(), Object.keys(friday.routes).sort(),
+      'all timetable routes remain visible at 23:55, including routes whose service has ended');
+    const fridayC4 = cards().find(c => c.dataset.code === 'Ç4 ESENLER');
+    assert.ok(fridayC4.innerHTML.includes('data-time="14:37"'));
+    assert.ok(fridayC4.innerHTML.includes(STR.tr.schedNoneLeft));
+    assert.deepEqual(elements.get('routes-' + activeTab).children.filter(a => a.href).map(a => a.href),
       [friday.url, ...friday.appliedOverrides.map(s => s.url)]);
     day = { year:2026, mmdd:'10-08', isWeekend:false };
-    rendered.length = 0;
     vm.runInContext('renderSchedule()', context);
-    assert.deepEqual(rendered.find(r => r.isToday).routes, thursday.routes);
+    assert.deepEqual(cards().map(c => c.dataset.code).sort(), Object.keys(thursday.routes).sort());
+    assert.equal(cards().find(c => c.dataset.code === 'Ç4 ESENLER').innerHTML.includes('data-time="14:37"'), false);
   });
   await test('Friday route replacements match route identity and leave dated holidays in control', () => {
     const route = (name, time) => ({ name, dir0:{ label:'MERKEZ', times:[time] }, dir1:{ label:'KAMPÜS', times:[] } });

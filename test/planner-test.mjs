@@ -287,11 +287,11 @@ function testScheduleHelpers() {
   // where it STARTS — and kk's dirN is NOT always the PDF's dirN (Ç7 inverts,
   // which is exactly what the endpoint scoring exists to get right).
   const normStr = s => (s || '').toUpperCase().replace(/[^A-ZÇĞIİÖŞÜ0-9]/g, '');
-  const blockLabelFor = (code, startsAt) => {
+  const blockLabelFor = (code, startsAt, routeMap = dayData) => {
     const pe = pathCache.find(pe => pe.path.displayRouteCode === code
       && normStr((pe.path.busStopList || [])[0]?.stopName).startsWith(startsAt));
     if (!pe) return '(no such path)';
-    const e = findSchedEntry(dayData, code);
+    const e = findSchedEntry(routeMap, code);
     return normStr(e?.[pickSchedDir(e, pe.path)]?.label);
   };
   check('pickSchedDir: Ç9 departing OTOGAR takes the OTOGAR block',
@@ -303,10 +303,16 @@ function testScheduleHelpers() {
   // ELBİ-YURDU-departing path the SSK (opposite direction) timetable.
   check('pickSchedDir: Ç3 departing ELBİ YURDU takes the ELBİ YURDU block, not SSK',
     blockLabelFor('Ç3', 'ELBİKYK').includes('ELBİYURT'), blockLabelFor('Ç3', 'ELBİKYK'));
+  // The current weekend PDF has no Ç10 timetable. This regression uses a
+  // fixed timetable so it still exercises both real paths on Sundays.
+  const dormSchedule = { 'Ç10 NUSRAT YURDU': {
+    dir0:{ label:'NUSRAT YURDU DURAĞI', times:['07:45'] },
+    dir1:{ label:'ARDES YURDU', times:['10:45'] },
+  } };
   check('pickSchedDir: Ç10 departing ARDES does not match NUSRAT through YURDU',
-    blockLabelFor('Ç10', 'ARDES').startsWith('ARDES'), blockLabelFor('Ç10', 'ARDES'));
+    blockLabelFor('Ç10', 'ARDES', dormSchedule).startsWith('ARDES'), blockLabelFor('Ç10', 'ARDES', dormSchedule));
   check('pickSchedDir: Ç10 departing NUSRAT uses the NUSRAT block',
-    blockLabelFor('Ç10', 'NUSRAT').startsWith('NUSRAT'), blockLabelFor('Ç10', 'NUSRAT'));
+    blockLabelFor('Ç10', 'NUSRAT', dormSchedule).startsWith('NUSRAT'), blockLabelFor('Ç10', 'NUSRAT', dormSchedule));
 
   // The invariant the algorithm is built on: scoring both endpoints symmetrically
   // means the two kk directions agree on orientation, so a route's two paths can

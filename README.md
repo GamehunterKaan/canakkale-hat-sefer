@@ -213,7 +213,7 @@ Everything except the notification worker runs entirely in the browser. No backe
 
 ### Timetable verification and recovery
 
-The refresh discovers links from the municipality's timetable page on every run. Filenames are never hardcoded. Downloads bypass caches and have bounded retries, timeouts and size limits. The parser reconstructs text cells from PDF geometry, follows each table's departure headings, and aligns repeated sections by terminal name when columns switch sides.
+The refresh discovers links from the municipality's timetable page on every run. Filenames are never hardcoded. Downloads bypass caches and have up to three bounded attempts with two- and four-second retry delays, timeouts and size limits. Failed requests retain their URL, attempt count and underlying network error codes in the status/report and CI summary. If discovery fails, saved PDF sources are marked `not-checked` for that run and the last verified data stays intact. The parser reconstructs text cells from PDF geometry, follows each table's departure headings, and aligns repeated sections by terminal name when columns switch sides.
 
 Every parsed PDF is checked against its own route index, departure headings, terminal labels and clock values. An index entry without a timetable table is recorded as a diagnostic; actual timetable tables can still publish. Unknown tables, missing extracted pages, malformed departure tables, scanned PDFs, conflicting links and unreadable advertised specials produce explicit failures. Legitimate seasonal changes do not have to satisfy an old route-count or page-count threshold. There is no force option to bypass validation.
 

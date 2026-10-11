@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 import vm from 'node:vm';
 import { refreshSchedules, sameSchedule } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
-import { MUNICIPALITY_URL, COLORS_URL } from '../scripts/lib/schedule-source.mjs';
+import { MUNICIPALITY_URL, COLORS_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
 import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT } from '../core.js';
 
 let passed = 0;
@@ -282,6 +282,8 @@ try {
       assert.ok(result.status.errors.length);
       assert.equal(scheduleHealth(result.status, JSON.parse(before), now + 1000), 'failed');
       if (!['discovery','no links'].includes(failure)) assert.equal(result.status.sources[0].url, newUrl);
+      else assert.ok(result.status.sources.every(s => s.state === 'not-checked'),
+        'saved source states must not claim this failed run verified any PDFs');
       assert.ok(readdirSync(h.options.diagnosticsDir).includes('report.json'));
       assert.ok(readdirSync(h.options.outputDir).every(name => !name.endsWith('.tmp')));
     });
@@ -353,6 +355,30 @@ try {
     assert.equal(result.statusChanged, true);
     assert.equal(result.status.state, 'ok');
     assert.equal(scheduleHealth(result.status, JSON.parse(h.bytes()), now + 2), null);
+  });
+  await test('source-page network failure preserves data and reports the connection cause', async () => {
+    const h = harness();
+    await h.run();
+    const before = h.bytes(), fetchBytes = h.options.fetchBytes;
+    const url = MUNICIPALITY_URL;
+    h.options.fetchBytes = source => source === url ? requestBytes(url, {
+      sleep:async () => {}, fetchImpl:async () => {
+        throw new TypeError('fetch failed', { cause:Object.assign(new Error('Connect Timeout Error'), { code:'UND_ERR_CONNECT_TIMEOUT' }) });
+      },
+    }) : fetchBytes(source);
+    const result = await h.run({ now:now + 1 });
+    assert.equal(result.ok, false);
+    assert.equal(h.bytes(), before);
+    assert.equal(result.status.lastSuccessAt, now);
+    assert.ok(result.status.sources.every(s => s.state === 'not-checked'));
+    assert.ok(result.report.errors[0].includes(url));
+    assert.ok(result.report.errors[0].includes('UND_ERR_CONNECT_TIMEOUT'));
+    assert.deepEqual(result.report.sources, []);
+    h.options.fetchBytes = fetchBytes;
+    const recovered = await h.run({ now:now + 2 });
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.changed, false);
+    assert.ok(recovered.status.sources.every(s => s.state === 'ok'));
   });
   await test('route color outage does not block a valid timetable update', async () => {
     const h = harness();

@@ -143,7 +143,8 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     dataFetchedAt, sourcePage: MUNICIPALITY_URL,
     sources: report.sources.length ? report.sources.map(({ id, label, url, sha256, state, indexOnlyRoutes }) =>
       ({ id, label, url, ...(sha256 ? { sha256 } : {}), ...(state ? { state } : {}), ...(indexOnlyRoutes?.length ? { indexOnlyRoutes } : {}) }))
-      : oldStatus?.sources || (previous?.schedules || []).map(({ id, label, url }) => ({ id, label, url })),
+      : (oldStatus?.sources || (previous?.schedules || []).map(({ id, label, url }) => ({ id, label, url })))
+          .map(source => ({ ...source, state:'not-checked' })),
     errors: report.errors,
   };
   const content = value => {
@@ -154,6 +155,7 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
   if (statusChanged) atomicWriteJson(statusPath, status);
   atomicWriteJson(join(diagnosticsDir, 'report.json'), report);
   log(ok ? changed ? 'Schedule data updated.' : 'Schedule data unchanged; verification succeeded.' :
-    'Some schedules failed verification. Failed services retain their last good data; verified services update independently.');
+    report.sources.length ? 'Some schedules failed verification. Failed services retain their last good data; verified services update independently.' :
+      'Could not verify the municipality timetable page. The last verified schedules are preserved.');
   return { ok, changed, statusChanged, report, status: statusChanged ? status : oldStatus };
 }

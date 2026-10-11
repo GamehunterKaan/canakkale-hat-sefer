@@ -134,12 +134,26 @@ export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL) {
   return { links, errors, pageErrors, sourceErrors, ignored };
 }
 
+function requestErrorDetails(error) {
+  const details = [], seen = new Set();
+  const visit = e => {
+    if (!e || seen.has(e)) return;
+    seen.add(e);
+    if (e.message || e.code) details.push([e.code, e.message].filter(Boolean).join(': '));
+    visit(e.cause);
+    for (const child of e.errors || []) visit(child);
+  };
+  visit(error);
+  return [...new Set(details)].join('; ') || String(error);
+}
+
 export async function requestBytes(url, { fetchImpl = fetch, attempts = 3, timeoutMs = 20000,
-  maxBytes = 20 * 1024 * 1024, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
-  let last;
+  retryDelayMs = 2000, maxBytes = 20 * 1024 * 1024, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+  let last, tried = 0;
   for (let attempt = 0; attempt < attempts; attempt++) {
     const controller = new AbortController();
     let timer;
+    tried++;
     try {
       const operation = (async () => {
         const response = await fetchImpl(url, { signal: controller.signal, cache: 'no-store',
@@ -173,7 +187,7 @@ export async function requestBytes(url, { fetchImpl = fetch, attempts = 3, timeo
       last = error;
       if (error.retryable === false || attempt === attempts - 1) break;
     } finally { clearTimeout(timer); }
-    await sleep(250 * 2 ** attempt);
+    await sleep(retryDelayMs * 2 ** attempt);
   }
-  throw last;
+  throw new Error(`Failed to fetch ${url} after ${tried} attempt${tried === 1 ? '' : 's'}: ${requestErrorDetails(last)}`, { cause:last });
 }

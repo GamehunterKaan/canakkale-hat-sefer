@@ -248,12 +248,34 @@ await test('date ranges, Turkish months, effective dates and invalid dates', () 
 });
 await test('fetch retries transient failures, bypasses caches and succeeds', async () => {
   let calls = 0;
-  const bytes = await requestBytes('https://example.test/a', { sleep:async () => {}, fetchImpl:async (_url, options) => {
+  const waits = [];
+  const bytes = await requestBytes('https://example.test/a', { sleep:async ms => { waits.push(ms); }, fetchImpl:async (_url, options) => {
     assert.equal(options.cache, 'no-store'); assert.equal(options.headers['Cache-Control'], 'no-cache');
     return ++calls < 3 ? new Response('', { status:503 }) : new Response('PDF bytes');
   } });
   assert.equal(calls, 3);
+  assert.deepEqual(waits, [2000,4000]);
   assert.equal(bytes.toString(), 'PDF bytes');
+});
+await test('network failures retain URL, retry count, nested connection causes and original error', async () => {
+  const failures = [
+    Object.assign(new Error('Connect Timeout Error'), { code:'UND_ERR_CONNECT_TIMEOUT' }),
+    new AggregateError([Object.assign(new Error('connection refused'), { code:'ECONNREFUSED' }),
+      Object.assign(new Error('network unreachable'), { code:'ENETUNREACH' })], ''),
+  ];
+  for (const cause of failures) {
+    const original = new TypeError('fetch failed', { cause });
+    let calls = 0;
+    await assert.rejects(requestBytes('https://example.test/timetable', { sleep:async () => {},
+      fetchImpl:async () => { calls++; throw original; } }), error => {
+      assert.match(error.message, /https:\/\/example.test\/timetable/);
+      assert.match(error.message, /after 3 attempts/);
+      for (const e of cause.errors || [cause]) assert.ok(error.message.includes(e.code));
+      assert.equal(error.cause, original);
+      return true;
+    });
+    assert.equal(calls, 3);
+  }
 });
 await test('404 and oversized bodies are not retried', async () => {
   for (const response of [() => new Response('', { status:404 }), () => new Response('123456')]) {

@@ -799,7 +799,7 @@ export const setPathCache = p => { _pathCache = p || []; };
 
 // Where init() self-fetches data from when the caller doesn't inject or override.
 // Points at the deployed site so `import(...core.js); await init();` just works.
-export const DEFAULT_BASE_URL = 'https://gamehunterkaan.github.io/bus-manager/';
+export const DEFAULT_BASE_URL = 'https://17hatsefer.kaangultekin.net';
 
 // Load the dataset. Every argument is optional:
 //   init()                        → fetch both from DEFAULT_BASE_URL

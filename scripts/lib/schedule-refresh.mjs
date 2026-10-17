@@ -58,7 +58,7 @@ export function validateBundle(schedules, links) {
 }
 
 export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 'tmp/schedule-parser/last-refresh',
-  fetchBytes = requestBytes, parsePdf = parsePDF, now = Date.now(), log = console.log } = {}) {
+  fetchBytes = requestBytes, parsePdf = parsePDF, aiParse = null, now = Date.now(), log = console.log } = {}) {
   const schedulePath = join(outputDir, 'schedule.json'), statusPath = join(outputDir, 'schedule-status.json');
   const report = { checkedAt: now, sourcePage: MUNICIPALITY_URL, sources: [], errors: [], warnings: [] };
   const previous = readJson(schedulePath, report.warnings), oldStatus = readJson(statusPath, report.warnings);
@@ -74,17 +74,18 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     for (let index = 0; index < links.length; index++) {
       const link = links[index];
       log(`Checking ${link.label}: ${link.url}`);
+      let bytes, parsed;
       try {
         // A supplemental source with an invalid label/date cannot block the
         // regular PDFs. Its own service still retains explicit failure status.
         const sourceErrors = discovery.sourceErrors.filter(e => e.url === link.url);
         if (sourceErrors.length) throw new Error(sourceErrors.map(e => e.message).join('\n'));
-        const bytes = await fetchBytes(link.url);
+        bytes = await fetchBytes(link.url);
         const hash = createHash('sha256').update(bytes).digest('hex');
         report.sources[index].sha256 = hash;
         // CI uploads source evidence on failure, including PDFs that are later replaced.
         writeFileSync(join(diagnosticsDir, `source-${index + 1}.pdf`), bytes);
-        const parsed = await parsePdf(bytes);
+        parsed = await parsePdf(bytes);
         report.sources[index].diagnostics = parsed.diagnostics;
         if (!parsed.diagnostics || parsed.diagnostics.errors.length)
           throw new Error(parsed.diagnostics?.errors.join('\n') || 'Parser did not produce a completeness report');
@@ -119,9 +120,31 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
             saved = rebuilt;
           } catch (error) { report.warnings.push('Could not reparse saved ' + link.id + ': ' + error.message); }
         }
+        // A grounded AI reading of the current PDF beats older verified times.
+        // It stays marked unverified and the run still fails. One attempt per
+        // file: a rejected reading is remembered by hash and not retried.
+        const hash = report.sources[index].sha256;
+        let ai = null;
+        if (hash && saved?.aiParsed && saved.source?.sha256 === hash) ai = saved;
+        else if (hash && aiParse && oldStatus?.sources?.some(s => s.url === link.url && s.sha256 === hash && s.aiRejected))
+          report.sources[index].aiRejected = true;
+        else if (hash && aiParse) {
+          try {
+            const result = await aiParse(bytes, parsed);
+            ai = { ...link, aiParsed: true, source: { sha256: hash, pages: result.numPages }, routes: result.routes };
+            const errors = validateBundle([ai], [link]);
+            if (errors.length) throw Object.assign(new Error(errors.join('\n')), { rejected: true });
+            log(`  AI transcription accepted: ${Object.keys(ai.routes).length} routes, ${result.agreed} identical to the parser's clean tables`);
+          } catch (error) {
+            ai = null;
+            if (error.rejected) report.sources[index].aiRejected = true;
+            report.warnings.push(`${link.id}: AI transcription ${error.rejected ? 'rejected' : 'failed'}: ${error.message}`);
+          }
+        }
+        if (ai) report.sources[index].state = 'ai';
         // Each advertised service remains represented. A new, unreadable
         // special must not silently fall through to regular weekday times.
-        schedules.push(saved || { ...link, unavailable: true, routes: {} });
+        schedules.push(ai || saved || { ...link, unavailable: true, routes: {} });
       }
     }
     let routes = previous?.routes || [];
@@ -141,8 +164,9 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     version: 1, state: ok ? 'ok' : 'error', checkedAt: now,
     lastSuccessAt: ok ? now : oldStatus?.lastSuccessAt || null,
     dataFetchedAt, sourcePage: MUNICIPALITY_URL,
-    sources: report.sources.length ? report.sources.map(({ id, label, url, sha256, state, indexOnlyRoutes }) =>
-      ({ id, label, url, ...(sha256 ? { sha256 } : {}), ...(state ? { state } : {}), ...(indexOnlyRoutes?.length ? { indexOnlyRoutes } : {}) }))
+    sources: report.sources.length ? report.sources.map(({ id, label, url, sha256, state, indexOnlyRoutes, aiRejected }) =>
+      ({ id, label, url, ...(sha256 ? { sha256 } : {}), ...(state ? { state } : {}), ...(indexOnlyRoutes?.length ? { indexOnlyRoutes } : {}),
+        ...(aiRejected ? { aiRejected } : {}) }))
       : (oldStatus?.sources || (previous?.schedules || []).map(({ id, label, url }) => ({ id, label, url })))
           .map(source => ({ ...source, state:'not-checked' })),
     errors: report.errors,

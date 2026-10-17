@@ -1,0 +1,28 @@
+[Unit]
+Description=17hatsefer bus ETA observation pilot
+
+[Service]
+Type=simple
+WorkingDirectory=%h/bus-eta
+# Public routes from Kentkart's route list; OGR student routes are hidden by the app.
+# Ç6 has no direction 1 upstream.
+ExecStart=/usr/bin/python3 -u %h/bus-eta/backend/collector.py --interval 30 --db %h/bus-eta/data/eta.sqlite3 \
+  --route 11Ç --route 11G --route 11K --route 11K-E --route 960 --route Ç1 --route Ç10 --route Ç12 \
+  --route Ç13 --route Ç14 --route Ç15 --route Ç17 --route Ç1EKS --route Ç2 --route Ç3 --route Ç3EKS \
+  --route Ç4 --route Ç5 --route Ç6:0 --route Ç7 --route Ç7EKS --route Ç8 --route Ç8EKS --route Ç9 \
+  --route Ç9EKS --route ÇT1 --route ÇT2 --route ÇT3 --route ÇT3E
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=15
+UMask=0077
+Nice=10
+CPUAccounting=true
+CPUQuota=5%
+MemoryAccounting=true
+MemoryMax=96M
+# Also enforce a process limit when the Pi has no memory cgroup controller.
+LimitAS=96M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -227,6 +227,13 @@ The hourly workflow commits valid data and failure status, saves failing PDFs an
 
 With an `ANTHROPIC_API_KEY` repository secret, two AI fallbacks run when the parser rejects a PDF. First, Claude transcribes the rejected PDF once per file hash. The reading publishes only if every time is printed on the route's pages, no time is used more often than the PDF prints it, every route the parser found is present, routes the parser read without error match exactly, and the result passes the usual bundle validation. Accepted readings are marked `aiParsed` in `schedule.json` and `ai` in the source status. The app labels them as unverified, and the run still fails. A rejected reading is recorded as `aiRejected` and not retried until the file changes. Second, the **Parser Fix Agent** workflow gives the failing run's artifact to Claude, which adds a regression fixture and repairs the parser in a read-only job. A separate job runs the regression suite on the patch, and the fix arrives as a `parser-fix` PR for review; an issue is opened instead when no tested fix results. Each set of failing PDFs is handled once. PRs opened with the workflow token do not trigger the Tests workflow; the patch has already passed the self-test in that run.
 
+The agent reads untrusted PDFs, so it is fenced off from the key:
+- **Commands:** they run without credentials in their environment and in their own PID namespace. If that isolation cannot be set up, the agent does not run.
+- **File tools:** they cannot read outside the checkout, including `/proc`.
+- **Publishing:** output containing anything shaped like a token is not published.
+
+Use a key that expires (for example after 30 days) and rotate it, so that a leaked key stops working on its own.
+
 Run the parser checks entirely offline:
 
 ```sh

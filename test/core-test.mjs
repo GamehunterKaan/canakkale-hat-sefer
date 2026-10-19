@@ -153,9 +153,13 @@ if (res?.list?.length) {
 // LIVE_RANK_MAX_FETCH shipped: every headless test passed while the real app threw
 // "ReferenceError: LIVE_RANK_MAX_FETCH is not defined" on the first search. Stub
 // fetchLive so this runs deterministically, with no kentkart network.
+// Pinned to 10:00: near a route's end of service, a just-passed last bus is
+// fetched on top of the cap (live-only, see "last bus still on the road"), which
+// would make the cap check below depend on the clock CI happens to run at.
 const seen = [];
 const liveRes = await core.planTrips(ORIGIN, DEST, {
   settings: { walkRadius: 800, walkSpeedMpm: 75 },
+  nowMins: 10 * 60,
   live: true,                                   // ← exercises the block that broke
   walkMatrix: async () => null,
   fetchLive: async (code, dir) => {
@@ -380,6 +384,13 @@ console.log('\n── last bus still on the road ──\n');
   const long = await plan(23 * 60, async (c, d) => { asked.push(c); return busAt('a')(); });
   ck('a last bus long gone is neither fetched nor offered', long?.list.length === 0 && asked.length === 0,
      `${long?.list.length} trips, ${asked.length} fetches`);
+  // A >4h gap before the NEXT bus today is not a passed last bus: no live-only rescue.
+  entry.dir0.times = ['07:00', '21:00'];
+  const gapAsked = [];
+  const gap = await plan(12 * 60, async (c, d) => { gapAsked.push(c); return busAt('a')(); });
+  entry.dir0.times = ['21:00'];
+  ck('a long midday gap is not treated as a passed last bus', gap?.list.length === 0 && gapAsked.length === 0,
+     `${gap?.list.length} trips, ${gapAsked.length} fetches`);
 
   // Seferler: which last trips may still be on the road.
   const onRoad = now => core.lastTripsOnRoad(entry, [T1], now);

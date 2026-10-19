@@ -1123,11 +1123,13 @@ export async function planTrips(origin, dest, {
       const travelToBoard = _travelToStopMins(u.st[chosen.bi]);
       wait = _waitFromTimes(u.times, travelToBoard, boardArr);
       if (wait >= MAX_WAIT_MIN) {
-        // The schedule says today's last bus has already passed the board stop,
-        // but a late one may still be approaching. Keep a recently-passed trip for
-        // the live pass to confirm (dropped there if it can't); older ones are
-        // gone, which also keeps the extra live fetches few.
-        if (!live || u.times[u.times.length - 1] + travelToBoard < boardArr - LAST_BUS_LATE_SLACK_MIN) continue;
+        // When today's last bus has already passed the board stop (not just a
+        // long gap before the next one), a late one may still be approaching.
+        // Keep a recently-passed trip for the live pass to confirm (dropped
+        // there if it can't); older ones are gone, which also keeps the extra
+        // live fetches few.
+        const lastAt = u.times[u.times.length - 1] + travelToBoard;
+        if (!live || lastAt >= boardArr || lastAt < boardArr - LAST_BUS_LATE_SLACK_MIN) continue;
         liveOnly = true;
       }
       eta =Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));

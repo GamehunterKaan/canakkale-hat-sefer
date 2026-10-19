@@ -19,7 +19,7 @@ import {
   _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins,
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
   pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath, scheduleForDay,
-  todayParts, withinM, foldTr as _foldTr, scheduleHealth,
+  todayParts, withinM, foldTr as _foldTr, scheduleHealth, lastTripsOnRoad, lastBusRunning, expressBase,
   QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
   _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
   getActiveRoutes, getActiveSchedule, planTrips,
@@ -113,6 +113,7 @@ function showScreen(name) {
     renderBookmarksBar();
   }
   if (name === 'settings') initSettingsScreen();
+  if (name === 'schedule') highlightNextTimes();
   if (name === 'stops') {
     renderStopsList();
     const input = document.getElementById('stop-search-input');
@@ -135,6 +136,7 @@ function countUpcoming(times) {
 
 // ── Schedule tab ──────────────────────────────────────────────────────────────
 let schedTab = null;          // currently displayed schedule id
+let schedTodayId = null, schedTodayRoutes = {}; // today's tab — the one whose cards track what's still running
 function switchSchedTab(sid) {
   schedTab = sid;
   document.querySelectorAll('.s-tab-btn').forEach(b => {
@@ -323,6 +325,7 @@ function renderSchedule() {
 
   const active = scheduleForDay(getSchedule().schedules, todayParts());
   const activeId = active?.id;
+  schedTodayId = activeId; schedTodayRoutes = active?.routes || {};
   const tabRow   = document.getElementById('schedTabs');
   const panels   = document.getElementById('schedPanels');
   tabRow.innerHTML = '';
@@ -410,7 +413,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
     // Direction 0
     if (d0.length) {
       const lbl = dir0.label ? esc(dir0.label) + ' →' : t('dirOut');
-      body += '<div class="dir-section"><div class="dir-lbl">' + lbl + '</div>'
+      body += '<div class="dir-section" data-dir="dir0"><div class="dir-lbl">' + lbl + '</div>'
         + '<div class="times-grid">'
         + d0.map(t => '<span class="time-chip" data-time="' + t + '">' + t + '</span>').join('')
         + '</div></div>';
@@ -418,7 +421,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
     // Direction 1
     if (d1.length) {
       const lbl = dir1.label ? esc(dir1.label) + ' →' : t('dirIn');
-      body += '<div class="dir-section"><div class="dir-lbl">' + lbl + '</div>'
+      body += '<div class="dir-section" data-dir="dir1"><div class="dir-lbl">' + lbl + '</div>'
         + '<div class="times-grid">'
         + d1.map(t => '<span class="time-chip" data-time="' + t + '">' + t + '</span>').join('')
         + '</div></div>';
@@ -430,14 +433,14 @@ function renderRouteCards(routeMap, panelId, isToday) {
       : t('schedTotal',{n:(d0.length + d1.length)});
 
     // Look up kentkart display name and color using the route code prefix.
-    // Express PDF entries ("… EKSPRES") map to the kentkart "-E" variant.
+    // Express PDF entries ("… EKSPRES") map only to the kentkart express variant
+    // ("11K-E", "Ç3EKS", "ÇT3E"), never to the regular route.
     const pdfCode    = code.split(/\s+/)[0]; // e.g. "Ç1", "Ç11K", "Ç960"
     const baseCode   = pdfCode.replace(/^Ç(?=\d)/, '').toUpperCase(); // "11K"
     const isExpress  = /EKSPRES/i.test(name);
-    const ktRoute    = kentkartRouteMap &&
-      ((isExpress && kentkartRouteMap.get(baseCode + '-E')) ||
-       kentkartRouteMap.get(pdfCode.toUpperCase()) ||
-       kentkartRouteMap.get(baseCode));
+    const ktRoute    = kentkartRouteMap && (isExpress
+      ? [...kentkartRouteMap.values()].find(r => expressBase(r.displayRouteCode) === schedCodeNorm(pdfCode))
+      : kentkartRouteMap.get(pdfCode.toUpperCase()) || kentkartRouteMap.get(baseCode));
     const hexColor   = ktRoute?.routeColor?.replace('#','').padStart(6,'0') || '252d40';
     const textColor  = (() => {
       const r=parseInt(hexColor.slice(0,2),16), g=parseInt(hexColor.slice(2,4),16), b=parseInt(hexColor.slice(4,6),16);
@@ -492,6 +495,44 @@ function highlightNextTimes() {
     const next = upcoming.find(c => parseInt(c.dataset.time) >= 4) || upcoming[0];
     if (next) next.classList.add('next');
   });
+  if (visible.id === 'routes-' + schedTodayId) updateTodayCards(visible);
+}
+
+// Today's card headers: runs left, or — once every departure has left — whether
+// the last bus is still on the road (live when kentkart answers, else schedule),
+// marking its departure chip. Runs on tab open and every minute (highlightNextTimes).
+const _lastBusLive = new Map(); // "code|dir" → { at, buses } — one live answer per minute
+function _lastBusLiveFor(p) {
+  const k = p.displayRouteCode + '|' + p.direction, hit = _lastBusLive.get(k);
+  if (hit && Date.now() - hit.at < 55000) return hit.buses;
+  const buses = _fetchLiveBuses(p.displayRouteCode, p.direction);
+  _lastBusLive.set(k, { at: Date.now(), buses });
+  return buses;
+}
+let _todayCardsGen = 0;
+function updateTodayCards(panel) {
+  if (!document.getElementById('scr-schedule')?.classList.contains('active')) return;
+  const gen = ++_todayCardsGen, now = _schedNow();
+  for (const card of panel.querySelectorAll('.route-card')) {
+    const entry = schedTodayRoutes[card.dataset.code], meta = card.querySelector('.rc-meta');
+    if (!entry || !meta) continue;
+    const left = countUpcoming(entry.dir0?.times) + countUpcoming(entry.dir1?.times);
+    meta.textContent = left ? t('schedRemaining', { n: left }) : t('schedNoneLeft');
+    if (left) continue;
+    const paths = getPathCache().map(pe => pe.path)
+      .filter(p => findSchedEntry(schedTodayRoutes, p.displayRouteCode) === entry);
+    const onRoad = lastTripsOnRoad(entry, paths, now);
+    if (!onRoad.length) continue;
+    Promise.all(onRoad.map(o => _lastBusLiveFor(o.path))).then(lists => {
+      if (gen !== _todayCardsGen) return;
+      const running = onRoad.filter((o, i) => lastBusRunning(o, lists[i]));
+      if (!running.length) return;
+      meta.textContent = t('schedLastBusOnRoad');
+      for (const o of running)
+        card.querySelector((o.dir ? '.dir-section[data-dir="' + o.dir + '"] ' : '') + '.time-chip[data-time="' + o.time + '"]')
+          ?.classList.add('active-bus');
+    });
+  }
 }
 
 async function refreshSchedule() {
@@ -1850,12 +1891,11 @@ async function initPlanner() {
   for(const s of allStops.values()) {
     const c = L.circleMarker([s.lat,s.lng],{radius:_stopRadius(13),color:'#4a7dc0',fillColor:'#4a7dc0',fillOpacity:.8,weight:1,bubblingMouseEvents:false})
       .bindTooltip(s.stopName,{direction:'top',offset:[0,-4]})
-      // In Konum/Hedef pick modes, treat a stop tap as picking that stop's
-      // exact location instead of opening the stops-browser panel.
+      // A stop tap shows that stop (name, approaching buses) in every mode; its
+      // panel's "Buraya git" / "Buradan" pick it. Empty-map taps still pick points.
       .on('click', () => {
         if (guided && guided.active) return;   // ignore stop taps during a guided trip
-        if (mode === 'origin' || mode === 'dest') applyPoint(s.lat, s.lng, mode);
-        else openStopOnMap(s.stopId);
+        showSingleStopOnMap(s.stopId);
       });
     c.addTo(networkStopLayer);
     _stopCircles.push(c);
@@ -3895,6 +3935,8 @@ function renderNearbyList(stops){
     div.innerHTML='<div class="ns-header"><span class="ns-dist">'+s.meters+'m</span><div><div class="ns-name">'+esc(s.stopName)+' <span style="color:#374151;font-size:.62rem">#'+s.stopId+'</span></div><div class="ns-tags">'+rn+'</div></div></div>'
       +'<div class="ns-body" id="sb-'+s.stopId+'">'
       +  '<div class="ns-actions">'
+      +    '<button class="ns-view-btn ns-go-btn" onclick="event.stopPropagation();useStopAs(\''+s.stopId+'\',\'dest\')">'+t('goToStop')+'</button>'
+      +    '<button class="ns-view-btn" onclick="event.stopPropagation();useStopAs(\''+s.stopId+'\',\'origin\')">'+t('fromStop')+'</button>'
       +    '<button class="ns-view-btn" onclick="event.stopPropagation();viewStopInDuraklar(\''+s.stopId+'\')">'+t('openInDuraklar')+'</button>'
       +  '</div>'
       +  '<div class="ns-buses"><span class="loading-spin"></span>'+t('loadingShort')+'</div>'
@@ -3917,6 +3959,14 @@ function openStop(stopId,silent){
   }
   if(!silent){const b=document.querySelector('#sb-'+stopId+' .ns-buses');if(b)b.innerHTML='<span class="loading-spin"></span>'+t('loadingShort');}
   fetchStopBuses(stopId);
+}
+// "Buraya git" / "Buradan": leave the stop view (keeping any plan) and pick the
+// stop as To / From; applyPoint plans as soon as both ends are set. Picking To
+// with no From leaves the planner asking for From.
+function useStopAs(stopId,which){
+  const s=allStops.get(stopId);if(!s)return;
+  if(mode==='stops')resetPlanner();
+  applyPoint(s.lat,s.lng,which);
 }
 function viewStopInDuraklar(stopId){
   stopDetailId=stopId;
@@ -4517,7 +4567,7 @@ applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStop
   resetWalkRadius, resetWalkSpeed, saveLocationBookmark, selectTrackPath, setLang, setMode, setPlanMode, setPlanOffset,
   setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
   toggleBmDropdown, toggleBusNotify, toggleFavStop, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
-  useRecentDest, viewStopInDuraklar,
+  useRecentDest, useStopAs, viewStopInDuraklar,
   // map place search
   clearMapSearch, closeSearchPlace, onMapSearchFocus, onMapSearchInput, onMapSearchKey,
   pickMapSearchRow, useSearchPlace,

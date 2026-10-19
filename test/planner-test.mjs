@@ -231,12 +231,19 @@ function testScheduleHelpers() {
   // What the PDF actually covers: the first token of each schedule key, normalised.
   // Derived straight from the data — NOT via findSchedEntry, which is the thing
   // under test here.
-  const schedBases = new Set(Object.keys(dayData).map(k => schedCodeNorm(k.split(' ')[0])));
-  // A path is COVERABLE when the PDF ships a block for its code — or, for the
-  // "-E" express convention, for its base code (11K-E ↔ "Ç11K KEPEZ EKSPRES").
+  // Regular and EKSPRES blocks are kept apart: an express path is covered only by
+  // an EKSPRES block for its base code, a regular one only by a regular block.
+  const baseOf = k => schedCodeNorm(k.split(' ')[0]);
+  const keys = Object.keys(dayData);
+  const schedBases    = new Set(keys.filter(k => !/EKSPRES/i.test(k)).map(baseOf));
+  const expressBases  = new Set(keys.filter(k =>  /EKSPRES/i.test(k)).map(baseOf));
+  // kentkart's express suffixes: "11K-E", "Ç3EKS", "ÇT3E".
+  const expressBase = code => schedCodeNorm(code).match(/^(.+?)(?:-E|EKS|(?<=\d)E)$/)?.[1] ?? null;
+  // A path is COVERABLE when the PDF ships a block for its code — for an express
+  // variant, an EKSPRES block for its base code (11K-E ↔ "Ç11K EKSPRES").
   const coverable = code => {
-    const n = schedCodeNorm(code);
-    return schedBases.has(n) || (/-E$/.test(n) && schedBases.has(n.replace(/-E$/, '')));
+    const xb = expressBase(code);
+    return xb ? expressBases.has(xb) : schedBases.has(schedCodeNorm(code));
   };
 
   // The contract findSchedEntry can actually be held to: resolve EVERY path the
@@ -260,23 +267,31 @@ function testScheduleHelpers() {
     unresolved.length ? 'missed: ' + [...new Set(unresolved)].join(', ') : `${covered} coverable paths`);
   console.log(`   coverage: ${resolved}/${total} paths carry a timetable; ${total - resolved} are routes/express variants absent from the PDF`);
 
-  // Phantom express variants (Ç1EKS, Ç9EKS, ÇT3E …) must resolve to NOTHING.
-  // Per the operator only 11K's EKSPRES is a real service with its own block;
-  // the others don't run at all. Teaching findSchedEntry the "EKS" suffix would
-  // make them fall back to their base route's block (candidates[0]) and print the
-  // REGULAR bus's departure times for a service that doesn't exist — planTrips
-  // drops them as ghost routes precisely because they have no entry. This guards
-  // that "fix" from ever being made.
+  // Phantom express variants — kentkart codes whose express service has no
+  // EKSPRES block in the PDF (Ç1EKS, Ç9EKS …) — must resolve to NOTHING, never
+  // fall back to their base route's block and print the REGULAR bus's departure
+  // times for a service that doesn't run; planTrips drops them as ghost routes
+  // precisely because they have no entry.
   const ghostExpress = [...new Set(pathCache.map(pe => pe.path.displayRouteCode)
-    .filter(c => c && /(EKS|E)$/.test(schedCodeNorm(c)) && !coverable(c)))];
+    .filter(c => c && expressBase(c) && !coverable(c)))];
   const ghostWithTimes = ghostExpress.filter(c => findSchedEntry(dayData, c) != null);
   check('phantom express variants inherit no timetable',
     ghostWithTimes.length === 0,
     ghostWithTimes.length ? 'wrongly resolved: ' + ghostWithTimes.join(', ') : `${ghostExpress.length} checked: ${ghostExpress.join(' ')}`);
-  // The one real express keeps working — proof the guard above didn't just
-  // blanket-break express matching.
-  check('11K-E still resolves to the real EKSPRES block',
-    /EKSPRES/i.test(Object.keys(dayData).find(k => dayData[k] === findSchedEntry(dayData, '11K-E')) || ''));
+  // Real express services resolve to their own EKSPRES block, whichever suffix
+  // kentkart uses — proof the guard above didn't just blanket-break express matching.
+  const realExpress = [...new Set(pathCache.map(pe => pe.path.displayRouteCode).filter(c => c && expressBase(c) && coverable(c)))];
+  const keyOf = c => keys.find(k => dayData[k] === findSchedEntry(dayData, c)) || '';
+  check('express variants resolve to their own EKSPRES block',
+    realExpress.length > 0 && realExpress.every(c => /EKSPRES/i.test(keyOf(c)) && baseOf(keyOf(c)) === expressBase(c)),
+    realExpress.map(c => c + '→' + keyOf(c)).join(', '));
+  // Pinned on the shipped data: Ç3EKS and ÇT3E are two different buses.
+  const fixed = { 'Ç3 EKSPRES': { dir0: { times: ['08:00'] } }, 'Ç3 ESENLER': {}, 'ÇT3 EKSPRES': { dir0: { times: ['09:00'] } }, 'ÇT3 ESENLER': {}, 'Ç9 OTOGAR': {} };
+  check('Ç3EKS → Ç3 EKSPRES', findSchedEntry(fixed, 'Ç3EKS') === fixed['Ç3 EKSPRES']);
+  check('ÇT3E → ÇT3 EKSPRES', findSchedEntry(fixed, 'ÇT3E') === fixed['ÇT3 EKSPRES']);
+  check('11K-E keeps the -E convention', findSchedEntry({ 'Ç11K KEPEZ': {}, 'Ç11K EKSPRES': { x: 1 } }, '11K-E')?.x === 1);
+  check('regular Ç3 never takes the express block', findSchedEntry(fixed, 'Ç3') === fixed['Ç3 ESENLER']);
+  check('Ç9EKS with no express block → nothing', findSchedEntry(fixed, 'Ç9EKS') === null);
 
   // ── pickSchedDir ──────────────────────────────────────────────────────────
   // Nothing here used to cover it: schedTimesForPath silently falls back to

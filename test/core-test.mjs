@@ -347,5 +347,56 @@ const sig = r => JSON.stringify(r.list.map(m => [m.isMultiLeg, m._eta, m._wait ?
 ck('forward result identical with arriveByMins omitted vs null', sig(fwd1) === sig(fwd2));
 ck('forward trips carry no arrive-by clocks', fwd1.list.every(m => m._leaveAt == null && m._arriveAt == null));
 
+// ── Last bus still on the road ───────────────────────────────────────────────
+// A synthetic one-route network keeps this deterministic: T1 leaves stop a at
+// 21:00 (its only run) and takes 10 min per stop, 30 min end to end.
+console.log('\n── last bus still on the road ──\n');
+{
+  const mk = (id, i) => ({ stopId: id, stopName: 'S' + id, seq: String(i + 1),
+    lat: String(40.10 + i * 0.0045), lng: '26.40',
+    arrival_offset: String(i * 600), departure_offset: String(i * 600) });
+  const T1 = { displayRouteCode: 'T1', direction: '0', busStopList: ['a', 'b', 'c', 'd'].map(mk), busList: [] };
+  const entry = { name: 'T1 TEST', dir0: { label: '', times: ['21:00'] } };
+  const dayData = { 'T1 TEST': entry };
+  const at = s => ({ lat: +s.lat, lng: +s.lng });
+  const O = at(T1.busStopList[1]), D = at(T1.busStopList[3]);   // board b (bus due 21:10), alight d
+  const plan = (nowMins, fetchLive, live = true) => core.planTrips(O, D, {
+    pathCache: [{ path: T1, route: {} }], dayData, nowMins, live, fetchLive,
+    settings: { walkRadius: 800, walkSpeedMpm: 75 }, walkMatrix: async () => null,
+  });
+  const busAt = id => async () => [{ stopId: id, lat: 40.1, lng: 26.4, plateNumber: '17 X 1' }];
+
+  // Planner: the schedule says the 21:10 bus has passed b, but live shows it still approaching.
+  const late = await plan(21 * 60 + 20, busAt('a'));
+  const lm = late?.list?.[0];
+  ck('a late last bus that live shows approaching is still offered', !!lm && lm.path.displayRouteCode === 'T1',
+     JSON.stringify(late?.list?.map(m => m.path?.displayRouteCode)));
+  ck('…with its live wait and the last-bus flag', !!lm && lm._live && lm._lastBus && lm._wait <= 15,
+     lm ? `wait ${lm._wait} live ${lm._live} last ${lm._lastBus}` : '');
+  ck('no live bus out → the passed trip is dropped', (await plan(21 * 60 + 20, async () => []))?.list.length === 0);
+  ck('live fetch failed → the passed trip is dropped', (await plan(21 * 60 + 20, async () => null))?.list.length === 0);
+  ck('live off → the passed trip is dropped', (await plan(21 * 60 + 20, busAt('a'), false))?.list.length === 0);
+  const asked = [];
+  const long = await plan(23 * 60, async (c, d) => { asked.push(c); return busAt('a')(); });
+  ck('a last bus long gone is neither fetched nor offered', long?.list.length === 0 && asked.length === 0,
+     `${long?.list.length} trips, ${asked.length} fetches`);
+
+  // Seferler: which last trips may still be on the road.
+  const onRoad = now => core.lastTripsOnRoad(entry, [T1], now);
+  const r1 = onRoad(21 * 60 + 20);
+  ck('last trip mid-run is on the road on schedule', r1.length === 1 && r1[0].time === '21:00' && r1[0].onSchedule === true,
+     JSON.stringify(r1.map(o => [o.time, o.dir, o.onSchedule])));
+  const r2 = onRoad(21 * 60 + 45);
+  ck('past its run end but inside the late slack → live must decide', r2.length === 1 && r2[0].onSchedule === false);
+  ck('past the late slack → not on the road', onRoad(22 * 60 + 5).length === 0);
+  ck('last trip not departed yet → not reported', onRoad(20 * 60 + 50).length === 0);
+  ck('an after-midnight last trip stays in the service-day frame',
+     core.lastTripsOnRoad({ name: 'T1 TEST', dir0: { label: '', times: ['00:30'] } }, [T1], core._schedFrame(45))[0]?.onSchedule === true);
+  ck('live bus out → running', core.lastBusRunning(r2[0], [{ stopId: 'c' }]) === true);
+  ck('live says no bus → not running, even on schedule', core.lastBusRunning(r1[0], []) === false);
+  ck('live unavailable → the schedule decides',
+     core.lastBusRunning(r1[0], null) === true && core.lastBusRunning(r2[0], null) === false);
+}
+
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);
 process.exit(fail ? 1 : 0);

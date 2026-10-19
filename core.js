@@ -239,7 +239,7 @@ export const STR = {
     routeNotFound: '{code} hattı bulunamadı.', dirN: 'Yön {n}', busesLoading: 'Otobüsler yükleniyor…',
     updatedJustNow: 'Güncellendi: az önce · 15s aralıklarla otomatik', noActiveBuses: 'Aktif otobüs bulunamadı.',
     locUnknown: 'Konum bilinmiyor', busWord: 'Otobüs',
-    nearbyStopsTitle: 'Yakındaki Duraklar', openInDuraklar: '🚏 Duraklar\'da aç', loadingShort: 'Yükleniyor…',
+    nearbyStopsTitle: 'Yakındaki Duraklar', goToStop: '📍 Buraya git', fromStop: 'Buradan', openInDuraklar: '🚏 Duraklar\'da aç', loadingShort: 'Yükleniyor…',
     noLinesFound: 'Hat bulunamadı.', atStopShort: 'Durağa geldi', noRunsToday: 'Bugün sefer kalmadı', nextShort: 'Sıradaki: {time}',
     nearbyCount: '{name} yakınında {n} durak.',
     clearBookmarksConfirm: 'Tüm kaydedilen yerler silinecek. Devam edilsin mi?', cleared: 'Temizlendi.',
@@ -295,7 +295,7 @@ export const STR = {
     schedNoData: 'Veri alınamadı. Sayfayı yenileyin.',
     schedDone: 'Tamamlandı.', schedUpdating: 'Veriler güncelleniyor…',
     schedError: 'Hata: {err}', schedLoadFail: 'Yüklenemedi: {err}', stopsLoaded: '{n} durak',
-    schedRemaining: '{n} sefer kaldı', schedNoneLeft: 'Sefer kalmadı', schedTotal: '{n} sefer',
+    schedRemaining: '{n} sefer kaldı', schedNoneLeft: 'Sefer kalmadı', schedTotal: '{n} sefer', schedLastBusOnRoad: '🚌 Son otobüs yolda',
     schedNoneTodayLong: 'Bugün için sefer kalmadı.', schedNoneForDay: 'Bu gün tipi için sefer bulunamadı.',
     schedOpenPdf: 'PDF aç', schedOpenPdfTitle: 'Bu tarifenin ulasim.canakkale.bel.tr üzerindeki orijinal PDF’i',
     schedHealthFailed: 'Bazı sefer tarifeleri güncellenemedi. Gösterilen saatler eski olabilir.',
@@ -420,7 +420,7 @@ export const STR = {
     routeNotFound: 'Line {code} not found.', dirN: 'Dir {n}', busesLoading: 'Loading buses…',
     updatedJustNow: 'Updated: just now · auto every 15s', noActiveBuses: 'No active buses found.',
     locUnknown: 'Location unknown', busWord: 'Bus',
-    nearbyStopsTitle: 'Nearby Stops', openInDuraklar: '🚏 Open in Stops', loadingShort: 'Loading…',
+    nearbyStopsTitle: 'Nearby Stops', goToStop: '📍 Go here', fromStop: 'From here', openInDuraklar: '🚏 Open in Stops', loadingShort: 'Loading…',
     noLinesFound: 'No lines found.', atStopShort: 'At the stop', noRunsToday: 'No runs left today', nextShort: 'Next: {time}',
     nearbyCount: '{n} stops near {name}.',
     clearBookmarksConfirm: 'All saved places will be deleted. Continue?', cleared: 'Cleared.',
@@ -474,7 +474,7 @@ export const STR = {
     schedNoData: 'Could not load data. Refresh the page.',
     schedDone: 'Done.', schedUpdating: 'Updating data…',
     schedError: 'Error: {err}', schedLoadFail: 'Could not load: {err}', stopsLoaded: '{n} stops',
-    schedRemaining: '{n} runs left', schedNoneLeft: 'No runs left', schedTotal: '{n} runs',
+    schedRemaining: '{n} runs left', schedNoneLeft: 'No runs left', schedTotal: '{n} runs', schedLastBusOnRoad: '🚌 Last bus on the way',
     schedNoneTodayLong: 'No more runs today.', schedNoneForDay: 'No runs found for this day type.',
     schedOpenPdf: 'Open PDF', schedOpenPdfTitle: 'The original PDF for this timetable on ulasim.canakkale.bel.tr',
     schedHealthFailed: 'Some timetables could not be updated. Displayed times may be outdated.',
@@ -526,21 +526,22 @@ export function haversine(la1,lo1,la2,lo2) {
 // This makes "Ç960" match the PDF key "960 KEPEZ..." and vice-versa.
 export function schedCodeNorm(c) { return c.toUpperCase().replace(/^Ç(?=\d)/, ''); }
 
-// kentkart marks express variants with a "-E" code suffix (e.g. 11K-E) while
-// the PDF distinguishes them only by an "EKSPRES" token in the route name.
-// Match on the base code, then disambiguate express vs regular when several
-// PDF entries share that code.
+// kentkart marks express variants with a code suffix — "11K-E", "Ç3EKS",
+// "ÇT3E" — while the PDF distinguishes them only by an "EKSPRES" token in the
+// route name. Returns the normalised base code ("11K", "3", "ÇT3"), or null for
+// a regular code.
+export function expressBase(code) {
+  return schedCodeNorm(code).match(/^(.+?)(?:-E|EKS|(?<=\d)E)$/)?.[1] ?? null;
+}
+
+// Match on the base code; an express path takes only an EKSPRES block and a
+// regular path only a regular one. Express variants the PDF has no block for
+// (Ç9EKS …) must resolve to nothing rather than print the regular bus's times.
 export function findSchedEntry(dayData, routeCode) {
-  const norm      = schedCodeNorm(routeCode);     // "11K" or "11K-E"
-  const isExpress = /-E$/.test(norm);
-  const baseNorm  = norm.replace(/-E$/, '');       // "11K"
-  const candidates = Object.keys(dayData).filter(k =>
-    schedCodeNorm(k.split(' ')[0]) === baseNorm);
-  if (!candidates.length) return null;
-  if (candidates.length === 1) return dayData[candidates[0]];
-  const expressKey = candidates.find(k => /EKSPRES/i.test(k));
-  const plainKey   = candidates.find(k => !/EKSPRES/i.test(k));
-  return dayData[(isExpress ? expressKey : plainKey) || candidates[0]];
+  const xb = expressBase(routeCode), base = xb ?? schedCodeNorm(routeCode);
+  const key = Object.keys(dayData).find(k =>
+    schedCodeNorm(k.split(' ')[0]) === base && /EKSPRES/i.test(k) === !!xb);
+  return key ? dayData[key] : null;
 }
 
 // Pick which PDF direction (dir0/dir1) belongs to the user's kentkart path.
@@ -626,6 +627,7 @@ export const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
 
 export const REACH_GRACE_MIN = 3;           // a live bus this many mins "too soon" still counts (people speed up)
 export const LIVE_RANK_MAX_FETCH = 12;      // cap on distinct route+dir live fetches per plan
+export const LAST_BUS_LATE_SLACK_MIN = 30;  // a last bus this long past its scheduled time may still be running late — live decides
 
 export const GUIDED_ARRIVE_M = 35;          // guided: within this of a stop = "arrived" (walk/alight)
 
@@ -719,6 +721,32 @@ export function _isLastSefer(times, travelToBoardMins, fromMins) {
     if (times[i] + travelToBoardMins >= fromMins) return i === times.length - 1;
   return false; // all gone / wrapped to tomorrow — that trip is already dropped
 }
+
+// Seferler: today's LAST trips of a schedule entry that may still be on the road
+// once every departure has left. Per kentkart path of the entry, the last
+// departure + the full run time (final stop's arrival offset) is when that bus
+// should finish; up to LAST_BUS_LATE_SLACK_MIN after that it may still be running
+// late, which only live data can settle (lastBusRunning). `nowMins` is in the
+// service-day frame. Returns [{ time, dir, path, onSchedule }], one per
+// direction block + time.
+export function lastTripsOnRoad(entry, paths, nowMins) {
+  const found = new Map();
+  for (const p of paths) {
+    const st = p.busStopList || [], times = schedTimesForPath(entry, p);
+    if (!st.length || !times.length) continue;
+    const last = times.reduce((a, b) => (_tmMin(b) > _tmMin(a) ? b : a));
+    const end = _tmMin(last) + _travelToStopMins(st[st.length - 1]);
+    if (_tmMin(last) > nowMins || nowMins >= end + LAST_BUS_LATE_SLACK_MIN) continue;
+    const dir = pickSchedDir(entry, p), key = dir + '|' + last;
+    if (!found.has(key) || end > found.get(key).end) found.set(key, { time: last, dir, path: p, end });
+  }
+  return [...found.values()].map(({ time, dir, path, end }) => ({ time, dir, path, onSchedule: nowMins < end }));
+}
+
+// Is such a last trip still running? Live decides when it answered (`buses` =
+// that route+direction's live list, [] = none out); null = live unavailable, so
+// the schedule decides.
+export const lastBusRunning = (onRoad, buses) => (buses ? buses.length > 0 : onRoad.onSchedule);
 
 // Wait (minutes, from when you reach the stop) for the soonest LIVE bus that is
 // approaching the board stop AND that you can still catch — a bus arriving up to
@@ -909,18 +937,19 @@ export function estimateWaitFromMins(routeCode, boardSeq, path, fromMins) {
   return Math.max(0, Math.round(tm(times[0]) + travel + 1440 - fromMins));
 }
 
-// Best-effort live bus positions for one route+direction. Returns the busList or
-// [] on any failure/timeout — never throws, so the planner degrades to schedule.
+// Best-effort live bus positions for one route+direction. Returns the busList
+// ([] = no bus out), or null on any failure/timeout — never throws, so the
+// planner degrades to schedule.
 export async function _fetchLiveBuses(code, dir) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
     const r = await fetch(API + 'web/pathInfo?' + QS + '&displayRouteCode=' + encodeURIComponent(code) + '&direction=' + dir, { signal: ctrl.signal });
     clearTimeout(timer);
-    if (!r.ok) return [];
+    if (!r.ok) return null;
     const d = await r.json();
     return d.pathList?.[0]?.busList || [];
-  } catch { return []; }
+  } catch { return null; }
 }
 
 // Real walking distance (meters) from one point to a set of stops, via Valhalla
@@ -1077,7 +1106,7 @@ export async function planTrips(origin, dest, {
     }
     if (!chosen) continue;
     const boardArr = nowMins + walkMins(chosen.bw);
-    let wait, eta, timing = null;
+    let wait, eta, timing = null, liveOnly = false;
     if (arriveByMins != null) {
       // Backward: the LATEST bus that still lands by the deadline and that you
       // can physically reach from now. No wait to bound — you leave just in time.
@@ -1091,17 +1120,26 @@ export async function planTrips(origin, dest, {
       eta = Math.round(arriveAt - leaveAt);
       timing = { _leaveAt: leaveAt, _arriveAt: arriveAt, _boardAt: busAtBoard };
     } else {
-      wait = _waitFromTimes(u.times, _travelToStopMins(u.st[chosen.bi]), boardArr);
-      if (wait >= MAX_WAIT_MIN) continue;
-      eta = Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
+      const travelToBoard = _travelToStopMins(u.st[chosen.bi]);
+      wait = _waitFromTimes(u.times, travelToBoard, boardArr);
+      if (wait >= MAX_WAIT_MIN) {
+        // The schedule says today's last bus has already passed the board stop,
+        // but a late one may still be approaching. Keep a recently-passed trip for
+        // the live pass to confirm (dropped there if it can't); older ones are
+        // gone, which also keeps the extra live fetches few.
+        if (!live || u.times[u.times.length - 1] + travelToBoard < boardArr - LAST_BUS_LATE_SLACK_MIN) continue;
+        liveOnly = true;
+      }
+      eta =Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
     }
     candidates.push({
       isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
       board: u.st[chosen.bi], alight: u.st[chosen.ai],
       walkB: Math.round(chosen.bw), walkA: Math.round(chosen.aw),
       sc: chosen.ai - chosen.bi, _wait: wait, _eta: eta, _maxWalk: Math.max(chosen.bw, chosen.aw),
-      _lastBus: _isLastSefer(u.times, _travelToStopMins(u.st[chosen.bi]), timing ? timing._boardAt : boardArr),
+      _lastBus: liveOnly || _isLastSefer(u.times, _travelToStopMins(u.st[chosen.bi]), timing ? timing._boardAt : boardArr),
       _bi: chosen.bi, _bw: chosen.bw, // transient: board index + walk metres, for the live pass
+      ...(liveOnly && { _liveOnly: true }), // transient: kept only if the live pass finds the bus
       ...timing,
     });
   }
@@ -1249,14 +1287,15 @@ export async function planTrips(origin, dest, {
   // if it's missing / slow / fails — or we're planning ahead — the outcome is the
   // schedule-only result, unchanged. Leg-2 stays schedule (it boards in the
   // future, where current positions don't help). Bounded to the distinct routes
-  // of the top candidates so we fire at most LIVE_RANK_MAX_FETCH kentkart calls.
+  // of the top candidates so we fire at most LIVE_RANK_MAX_FETCH kentkart calls,
+  // plus one per live-only trip (a late last bus only live can confirm).
   if (live) {
     const want = new Map(); // "code|dir" → { code, dir }
     for (const c of [...candidates].sort((a, b) => a._eta - b._eta)) {
       const p = c.isMultiLeg ? c.leg1.path : c.path;
       const key = p.displayRouteCode + '|' + p.direction;
-      if (!want.has(key)) want.set(key, { code: p.displayRouteCode, dir: p.direction });
-      if (want.size >= LIVE_RANK_MAX_FETCH) break;
+      if (!want.has(key) && (want.size < LIVE_RANK_MAX_FETCH || c._liveOnly))
+        want.set(key, { code: p.displayRouteCode, dir: p.direction });
     }
     const keys = [...want.keys()];
     const lists = await Promise.all(keys.map(k => fetchLive(want.get(k).code, want.get(k).dir)));
@@ -1277,10 +1316,12 @@ export async function planTrips(origin, dest, {
         const lw = Math.max(0, Math.round(liveWait));
         c._eta = Math.max(0, c._eta - (schedWait - lw));
         if (c.isMultiLeg) { c.leg1.wait = lw; c.leg1._live = true; }
-        else { c._wait = lw; c._live = true; }
+        else { c._wait = lw; c._live = true; delete c._liveOnly; }
       }
     }
   }
+  // Live-only trips whose late bus live didn't confirm (or couldn't be asked).
+  for (let i = candidates.length; i--;) if (candidates[i]._liveOnly) candidates.splice(i, 1);
 
   // Redundant-transfer filter: if a single bus already makes the whole trip
   // *comfortably* (a direct whose walks fit walkRadius), drop any transfer that

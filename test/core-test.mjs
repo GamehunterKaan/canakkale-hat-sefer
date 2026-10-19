@@ -78,7 +78,9 @@ ck('_schedFrame leaves afternoon alone', core._schedFrame(14 * 60) === 840, Stri
 
 // wrap-aware "next N departures"
 ck('_nextTimes is wrap-aware across midnight',
-   JSON.stringify(core._nextTimes(['23:50', '00:20', '07:00'], 2)) === JSON.stringify(['23:50', '00:20']));
+   JSON.stringify(core._nextTimes(['23:50', '00:20', '07:00'], 2, 23 * 60)) === JSON.stringify(['23:50', '00:20']));
+ck('_nextTimes after midnight puts the early-morning run first',
+   JSON.stringify(core._nextTimes(['23:50', '00:20', '07:00'], 2, 60)) === JSON.stringify(['07:00', '23:50']));
 
 // taxi: 100₺ open + 50₺/km, 200₺ minimum, rounded to 5₺
 const t5 = core._taxiEstimate(5000, 600);

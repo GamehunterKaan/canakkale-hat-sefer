@@ -652,7 +652,7 @@ export function _schedNow() { const d = new Date(); return _schedFrame(d.getHour
 export const _untilClock = (hhmm, nowRaw) => { const d = (_clockMin(hhmm) - nowRaw) % 1440; return d < 0 ? d + 1440 : d; };
 
 // The next n departures, soonest first, regardless of the midnight wrap.
-export function _nextTimes(times, n) { const nowRaw = new Date().getHours()*60 + new Date().getMinutes(); return times.slice().sort((a, b) => _untilClock(a, nowRaw) - _untilClock(b, nowRaw)).slice(0, n); }
+export function _nextTimes(times, n, nowRaw = new Date().getHours()*60 + new Date().getMinutes()) { return times.slice().sort((a, b) => _untilClock(a, nowRaw) - _untilClock(b, nowRaw)).slice(0, n); }
 
 // Minutes from a trip's terminal departure until the bus reaches a stop, taken
 // from kentkart's GTFS arrival_offset (seconds). Falls back to a flat per-stop

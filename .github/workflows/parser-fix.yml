@@ -1,9 +1,11 @@
 name: Parser Fix Agent
 
-# When the hourly data run rejects a timetable PDF, Claude fixes the parser and
-# the fix arrives as a PR for review. AI-written code only ever runs in jobs
-# holding a read-only token: the agent edits a checkout, a separate job tests
-# the patch, and the final job (no AI, no patched code) pushes and opens the PR.
+# When the hourly data run rejects a timetable PDF, Claude fixes the parser, the
+# fix is merged into main without review, and the data run starts again.
+# AI-written code only ever runs in jobs holding a read-only token: the agent
+# edits a checkout, a separate job tests the patch, and the final job (no AI,
+# no patched code) merges it. The patch must pass main's existing tests
+# unchanged, so an old expectation cannot be edited to make a failure disappear.
 on:
   workflow_run:
     workflows: ['Update Transit Data']
@@ -45,7 +47,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      - name: Skip PDFs that already have a fix PR or issue
+      - name: Skip PDFs that already have a fix or an issue
         id: key
         if: steps.evidence.outcome == 'success'
         env:
@@ -54,8 +56,11 @@ jobs:
           hashes="$(jq -r '[.sources[] | select(.state != "ok" and .sha256) | .sha256] | sort | join(",")' tmp/schedule-parser/last-refresh/report.json)"
           if [ -z "$hashes" ]; then echo "No PDF was rejected (source page or network failure)."; exit 0; fi
           key="$(printf %s "$hashes" | sha256sum | cut -c1-12)"
-          # Listing, not search: a PR opened by the previous run is visible immediately.
-          if gh api "repos/$GITHUB_REPOSITORY/issues?labels=parser-fix&state=all&per_page=100" --jq '.[].title' | grep -qF "[parser-fix-$key]"; then
+          # A merged fix leaves its parser-fix/<key> branch; a failed attempt leaves an
+          # issue. Either way these PDFs are not handed to the agent again, so a fix
+          # that does not work cannot loop. Listing, not search: no indexing delay.
+          if gh api "repos/$GITHUB_REPOSITORY/branches/parser-fix/$key" >/dev/null 2>&1 ||
+             gh api "repos/$GITHUB_REPOSITORY/issues?labels=parser-fix&state=all&per_page=100" --jq '.[].title' | grep -qF "[parser-fix-$key]"; then
             echo "These PDFs were already handled under parser-fix-$key."; exit 0
           fi
           echo "key=$key" >> "$GITHUB_OUTPUT"
@@ -94,7 +99,7 @@ jobs:
           # isolation, so its file tools must not read /proc/self/environ: keep
           # every read inside the checkout, and writes inside the paths it fixes.
           claude_args: >-
-            --model claude-opus-5-5 --max-turns 120
+            --model claude-opus-5-5 --effort medium --max-turns 120
             --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true,"deny":["Read(//proc/**)","Read(//sys/**)"]}}'
             --allowedTools "Read,Glob,Grep,Edit(/scripts/lib/**),Edit(/test/**),Edit(/tmp/parser-fix/**),Bash(node:*),Bash(gzip:*),Bash(sha256sum:*),Bash(wc:*),Bash(ls:*),Bash(mkdir:*),Bash(git diff:*),Bash(git status:*)"
           prompt: |
@@ -167,8 +172,12 @@ jobs:
             echo "result=outside-allowed-paths" >> "$GITHUB_OUTPUT"; exit 0
           fi
           git apply "$patch"
+          if ! node scripts/fetch-schedule.mjs --self-test; then echo "result=fail" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # The fix merges unreviewed, so it may add tests but never change one:
+          # the patched parser must also pass main's test files as they are.
+          git checkout HEAD -- test/
           if node scripts/fetch-schedule.mjs --self-test; then echo "result=pass" >> "$GITHUB_OUTPUT"
-          else echo "result=fail" >> "$GITHUB_OUTPUT"; fi
+          else echo "result=changes-existing-tests" >> "$GITHUB_OUTPUT"; fi
 
   propose:
     needs: [agent, verify]
@@ -177,8 +186,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-      pull-requests: write
       issues: write
+      actions: write         # start the data run again after merging
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -186,12 +195,13 @@ jobs:
         with:
           name: parser-fix
           path: ${{ runner.temp }}/parser-fix
-      - name: Open a PR for a tested fix, otherwise an issue
+      - name: Merge a tested fix and rerun the data, otherwise open an issue
         env:
           GH_TOKEN: ${{ github.token }}
           KEY: ${{ needs.agent.outputs.key }}
           RESULT: ${{ needs.verify.outputs.result || 'not-run' }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           fix="$RUNNER_TEMP/parser-fix"
           gh label create parser-fix --color d97706 --description "Automated timetable parser fix" --force
@@ -203,14 +213,20 @@ jobs:
           if [ "$RESULT" = pass ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git switch -c "parser-fix/$KEY"
             git apply --index "$fix/change.patch"
-            git commit -m "fix(parser): read timetable PDFs rejected in the data run" \
-              -m "Proposed by the parser-fix agent for $RUN_URL" \
-              -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-            git push origin "parser-fix/$KEY"
-            gh pr create --base "${{ github.event.repository.default_branch }}" --head "parser-fix/$KEY" \
-              --label parser-fix --title "Timetable parser fix [parser-fix-$KEY]" --body-file "$body"
+            { echo "fix(parser): read timetable PDFs rejected in the data run [parser-fix-$KEY]"; echo
+              echo "Failing data run: $RUN_URL"; echo; cat "$fix/summary.md"; echo
+              echo "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"; } > "$fix/message.txt"
+            git commit -F "$fix/message.txt"
+            # The branch records that these PDFs were handled, before main moves.
+            git push origin "HEAD:refs/heads/parser-fix/$KEY"
+            if ! { git pull --rebase origin "$DEFAULT_BRANCH" && git push origin "HEAD:$DEFAULT_BRANCH"; }; then
+              gh issue create --label parser-fix --title "Tested parser fix could not be merged [parser-fix-$KEY]" \
+                --body "The fix passed every check but could not be pushed to $DEFAULT_BRANCH. It is on branch parser-fix/$KEY. Failing data run: $RUN_URL"
+              exit 1
+            fi
+            # Pushes with the workflow token start no workflows; a dispatch does.
+            gh workflow run update-data.yml --ref "$DEFAULT_BRANCH"
           else
             gh issue create --label parser-fix --title "Timetable parser needs a manual fix [parser-fix-$KEY]" --body-file "$body"
           fi

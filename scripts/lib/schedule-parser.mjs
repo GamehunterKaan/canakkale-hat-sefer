@@ -96,11 +96,21 @@ function markerGroups(items) {
   return groups.sort((a, b) => b.y - a.y);
 }
 
-function headerColumns(items, group, route, width) {
+// The preceding section ends at the next header's top line. KALKIŞ may be the
+// middle line of a wrapped header, so a data row can lie within 2.2 lines of it.
+function headerTop(items, group) {
+  const h = median(group.markers.map(i => i.h)), maxY = Math.max(...group.markers.map(i => i.y));
+  const lines = items.filter(i => i.y >= maxY && i.y <= maxY + h * 2.2 && !leadingTime(i.text) && !/^\d+$/.test(i.text));
+  return Math.min(group.y + h * 2.2, Math.max(maxY, ...lines.map(i => i.y)) + h * 0.5);
+}
+
+// A header cell may wrap below its KALKIŞ line; the header ends at the first
+// time row, not at the marker baseline.
+function headerColumns(items, group, route, width, floor) {
   const h = median(group.markers.map(i => i.h));
   const minY = Math.min(...group.markers.map(i => i.y));
   const maxY = Math.max(...group.markers.map(i => i.y));
-  const candidates = items.filter(i => i.y >= minY - h * 0.5 && i.y <= maxY + h * 3 &&
+  const candidates = items.filter(i => i.y >= Math.min(minY - h * 0.5, floor) && i.y <= maxY + h * 3 &&
     i.h >= h * 0.55 &&
     !hasTime(i.text) && !/^\d+$/.test(i.text) && !routeHeading(i.text) &&
     i.w < width * 0.3 && !/^(?:BLD|DOSYA|SAYFA)|DONEMI|HAFTA|KAMPUS\s*-\s*KEPEZ|KEPEZ\s*-\s*KAMPUS/.test(fold(i.text)) &&
@@ -129,6 +139,16 @@ const terminalKey = text => fold(text).replace(/YURDU|YURT|DURAGI|DURAK|KALKIS|H
 function matchesTerminal(a, b) {
   const x = terminalKey(a), y = terminalKey(b);
   return x && y && (x === y || (Math.min(x.length, y.length) >= 4 && (x.includes(y) || y.includes(x))));
+}
+
+// A two-direction table starts at one terminal and its last column returns
+// there. When both outer columns name the same terminal around a KALKIŞ
+// column, the left one is the unmarked origin and the right one its arrival.
+function mirroredOrigin(columns) {
+  const first = columns[0], last = columns[columns.length - 1];
+  if (columns.length < 3 || first.departure || last.departure || !first.label ||
+      /VARIS/.test(fold(first.label)) || !columns.slice(1, -1).some(c => c.departure)) return null;
+  return terminalKey(first.label) === terminalKey(last.label.replace(/VARI[ŞS]/giu, '')) ? first : null;
 }
 
 function mergeTable(route, table, errors) {
@@ -193,6 +213,11 @@ export function parsePages(rawPages) {
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi], h = median(group.markers.map(i => i.h));
       const firstX = Math.min(...group.markers.map(centre));
+      const bottom = gi + 1 < groups.length ? headerTop(items, groups[gi + 1]) : 0;
+      const top = Math.min(...group.markers.map(i => i.y)) - h * 0.5;
+      const body = timeItems.filter(i => i.y < top && i.y > bottom);
+      const floor = body.length ? Math.max(...body.map(i => i.y)) + h * 0.5 : top;
+      let columns;
       const nearby = items.filter(i => i.y <= group.y + h * 8 && i.y >= group.y - h * 2 &&
         i.x < firstX - h && routeHeading(i.text) && i.h >= h * 0.55 &&
         !items.some(t => leadingTime(t.text) && Math.abs(t.y - i.y) < h * 0.5));
@@ -214,10 +239,15 @@ export function parsePages(rawPages) {
         // A wide terminal caption may start left of its departure marker.
         // Exempt it only when its centre is in the header area AND its name
         // matches a known terminal. Width alone must not hide a new title.
+        // A mirrored origin column with this table's times beneath it, not
+        // the first KALKIŞ, is the table's left edge.
         const knownTerminals = routes.get(lastRoute?.id)?.directions.flatMap(d => d.labels) || [];
-        const otherTitle = items.find(i => i.x < firstX - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
+        columns = headerColumns(items, group, null, page.width, floor);
+        const origin = mirroredOrigin(columns);
+        const left = origin && body.some(t => centre(t) >= origin.left && centre(t) < origin.right) ? origin.x : firstX;
+        const otherTitle = items.find(i => i.x < left - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
           /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)) &&
-          !(centre(i) >= firstX - h * 3 && knownTerminals.some(label => matchesTerminal(label, i.text))));
+          !(centre(i) >= left - h * 3 && knownTerminals.some(label => matchesTerminal(label, i.text))));
         if (otherTitle) {
           // This village shuttle has no route identifier in the city network.
           // An unfamiliar title must never be swallowed into the preceding route.
@@ -228,7 +258,7 @@ export function parsePages(rawPages) {
         heading = lastRoute;
       }
       if (!heading) { diagnostics.errors.push(`Page ${page.number}: departure table has no identifiable route`); continue; }
-      const columns = headerColumns(items, group, routeCell, page.width);
+      columns ||= headerColumns(items, group, routeCell, page.width, floor);
       if (!routeItem && !columns.some(c => c.departure && routes.get(heading.id)?.directions.some(d =>
         d.labels.some(label => matchesTerminal(label, c.label))))) {
         diagnostics.errors.push(`Page ${page.number}: untitled table cannot be matched to ${heading.id}`);
@@ -253,12 +283,16 @@ export function parsePages(rawPages) {
           if (implicit.length === 1) implicit[0].departure = true;
           else if (implicit.length > 1)
             diagnostics.errors.push(`Page ${page.number}: ambiguous reciprocal departure origin for ${heading.id}`);
+          // The other endpoint's arrival may be labelled by position only:
+          // the last column repeats the first column's terminal.
+          else if (!arrivals.some(c => !matchesTerminal(arrivalName(c), known.label))) {
+            const origin = mirroredOrigin(columns);
+            if (origin) origin.departure = true;
+          }
         }
       }
       columns.forEach(c => { c.times = []; });
-      const bottom = gi + 1 < groups.length ? groups[gi + 1].y + median(groups[gi + 1].markers.map(i => i.h)) * 2.2 : 0;
-      const top = Math.min(...group.markers.map(i => i.y)) - h * 0.5;
-      for (const item of timeItems.filter(i => i.y < top && i.y > bottom)) {
+      for (const item of body) {
         const parsed = leadingTime(item.text);
         const x = item.x + item.w * Math.min(1, parsed.length / item.text.length) / 2;
         const col = columns.find(c => x >= c.left && x < c.right);

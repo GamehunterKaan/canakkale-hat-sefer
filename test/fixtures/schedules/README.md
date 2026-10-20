@@ -14,6 +14,7 @@ These are complete, unmodified municipality PDFs, gzip-compressed for storage. `
 | weekday-2026-10-08 | Future effective timetable; 17 routes; latest Ç4 and Kepez express changes |
 | friday-c4-2026-10-07 | Single-route Friday override; Ç4 departures include 14:37 |
 | friday-kepez-2026-10-07 | Three-route Friday override; omitted Dardanos departure marker; small route caption above the column headers |
+| weekday-2026-10-20 | 18 routes; Ç11K express evening header without KALKIŞ/VARIŞ at its mirrored Kepez 144 TOKİ endpoints; KALKIŞ on the middle line of a wrapped header |
 
 ## Independently checked expectations
 
@@ -31,6 +32,8 @@ Rendered source pages were inspected for the difficult layouts:
 Tests also repeat extraction results with reordered text, scaled geometry, alternate dash/clock typography and fragmented clock glyphs. They exercise missing pages/headings, invalid clocks and unknown tables.
 
 The 7 October fixture was captured from the failing 7 October 2026 Actions run's `timetable-diagnostics` artifact. Page 6 was visually checked: the repeated Hüseyin Elbi header belongs to Ç4, with 12 evening departures from 18:20 through 22:00 and 11 return departures from 19:00 through 22:20. The return terminus changes from Bahriye Üçok Caddesi to Eski Hastane in the evening section.
+
+The 20 October fixture (20-EKIM-6) was captured from the failing 20 October 2026 hourly refresh, which rejected it with `Page 16: unknown unnumbered table: KEPEZ`. Page 16 was visually checked: the Ç11K express evening header is a shortened row reading only "KEPEZ / 144 TOKİ" at both outer columns, without the KALKIŞ/VARIŞ line earlier editions had. The left column has 19 departures from 18:25 through 23:45, and Gazi Okulu has 18 departures from 19:10 through 23:50. The morning section's last row (18:05 Dardanos, 18:50 Gazi Okulu) lies directly above that header and belongs to the morning section.
 
 `municipality-2026-10-07.html.gz` is the original [timetable-page HTML](https://ulasim.canakkale.bel.tr/rehber/hatlar-otobus-saatleri/) captured on 7 October after the two Friday PDFs were added, gzip-compressed without modifying its contents. Discovery tests use this snapshot; refresh/selection/renderer tests combine it with the real future weekday and Friday PDFs and controlled regular-source responses. They check Thursday, Friday, a later Friday, weekend and holiday behavior, publication-date filenames, and independent updates when a supplemental source fails.
 

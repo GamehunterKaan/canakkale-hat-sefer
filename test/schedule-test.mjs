@@ -33,6 +33,13 @@ counts.push({ 'Ç1':[36,37], 'Ç3':[36,37], 'Ç3 EKSPRES':[51,54], 'Ç4':[90,89]
 counts.push({ ...counts[6], 'Ç4':[93,89], 'Ç11K EKSPRES':[58,63] });
 counts.push({ 'Ç4':[66,65] });
 counts.push({ 'Ç11K EKSPRES':[76,81], 'Ç11K':[20,20], 'Ç11Ç':[7,7] });
+// 20-EKIM-6: pages 6, 11, 12, 15 and 16 were checked against renders. Known
+// pre-existing extras: Ç4 dir0 07:00/07:30/07:35 (note rows), Ç960 dir1 22:05
+// (a Ç3 note) and Ç11K dir0 06:50/07:50/08:30 (hidden text in blank cells).
+counts.push({ 'Ç1':[37,39], 'Ç3':[37,38], 'Ç3 EKSPRES':[40,42], 'Ç4':[92,91], 'Ç5':[4,0],
+  'Ç7':[36,37], 'Ç8':[37,36], 'Ç9':[35,35], 'Ç10':[23,19], 'Ç960':[35,35], 'ÇT3':[49,49],
+  'ÇT3 EKSPRES':[29,30], 'Ç11K':[20,20], 'Ç11K EKSPRES':[65,68], 'Ç11G':[24,25], 'Ç11Ç':[7,7],
+  'ÇT1':[12,11], 'ÇT2':[1,1] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table.
 const expectedIndexOnly = index => index === 4 ? ['Ç2'] : [];
 const getRoute = (result, id) => Object.values(result.routes).find(r => routeHeading(r.name).id === id);
@@ -125,6 +132,36 @@ await test('an invalid evening departure fails instead of disappearing', () => {
   assert.ok(cell);
   cell.text = '25:00';
   assert.ok(parsePages(altered).diagnostics.errors.some(e => /invalid departure 25:00 for Ç4/u.test(e)));
+});
+await test('Kepez express evening section with an unmarked mirrored origin keeps both directions', () => {
+  const r = getRoute(parsed[10], 'Ç11K EKSPRES');
+  assert.equal(r.dir0.label, 'DARDANOS');
+  assert.equal(r.dir1.label, 'GAZİ OKULU');
+  assert.deepEqual(r.dir0.times.filter(t => t >= '18:00'),
+    '18:05 18:25 18:45 19:05 19:25 19:45 20:05 20:20 20:35 20:50 21:05 21:20 21:35 21:50 22:05 22:20 22:35 22:50 23:10 23:45'.split(' '));
+  assert.deepEqual(r.dir1.times.filter(t => t >= '18:00'),
+    '18:10 18:30 18:50 19:10 19:30 19:50 20:10 20:30 20:50 21:05 21:20 21:35 21:50 22:05 22:10 22:30 22:50 23:05 23:10 23:30 23:50'.split(' '));
+  const tables = parsed[10].diagnostics.pages.find(p => p.page === 16).tables;
+  assert.deepEqual(tables.map(t => t.columns.map(c => c.label)), [['DARDANOS', 'GAZİ OKULU'], ['KEPEZ 144 TOKİ', 'GAZİ OKULU']]);
+  assert.deepEqual(tables.map(t => t.columns.map(c => c.times.length)), [[47, 50], [19, 18]]);
+});
+// The evening header has no KALKIŞ beside KEPEZ 144 TOKİ; geometry, not a name.
+const kepezEvening = () => pages[10].find(p => p.number === 16).items.filter(i =>
+  /^(?:KEPEZ|144 TOKİ)$/u.test(i.text) && i.y < 260 && i.y > 150);
+await test('an evening origin whose terminal is not repeated at the far end fails explicitly', () => {
+  const altered = structuredClone(pages[10]);
+  const right = Math.max(...kepezEvening().map(i => i.x));
+  for (const i of altered.find(p => p.number === 16).items)
+    if (/^(?:KEPEZ|144 TOKİ)$/u.test(i.text) && i.y < 260 && i.y > 150 && i.x >= right - 10) i.text = 'DARDANOS';
+  const result = parsePages(altered);
+  assert.ok(result.diagnostics.errors.some(e => /Page 16: unknown unnumbered table: KEPEZ/u.test(e)));
+  assert.equal(getRoute(result, 'Ç11K EKSPRES').dir0.times.includes('23:45'), false);
+});
+await test('an unnumbered title beside a mirrored-origin continuation still fails', () => {
+  const altered = structuredClone(pages[10]), header = kepezEvening()[0];
+  altered.find(p => p.number === 16).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:50, h:header.h });
+  const result = parsePages(altered);
+  assert.ok(result.diagnostics.errors.some(e => /unknown unnumbered table: YENİ KÖY/u.test(e)));
 });
 await test('Ç10 repeated sections follow terminal names when column order reverses', () => {
   const r = getRoute(parsed[1], 'Ç10');

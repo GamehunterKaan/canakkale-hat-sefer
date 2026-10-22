@@ -31,10 +31,7 @@ export function todayParts() {
 export function scheduleHealth(status, data, now = Date.now()) {
   if (status?.version !== 1 || !['ok', 'error'].includes(status.state) ||
       !Number.isFinite(status.checkedAt) || status.checkedAt > now + 300000) return 'unknown';
-  if (status.state === 'error') {
-    const sources = Array.isArray(status.sources) ? status.sources : [];
-    return sources.some(s => s.state === 'ai') && sources.every(s => s.state === 'ok' || s.state === 'ai') ? 'ai' : 'failed';
-  }
+  if (status.state === 'error') return 'failed';
   if (now - status.checkedAt > 48 * 60 * 60 * 1000) return 'overdue';
   if (!Number.isFinite(status.dataFetchedAt)) return 'unknown';
   if (!data || status.dataFetchedAt > (data.fetchedAt || 0)) return 'outdated';
@@ -302,8 +299,6 @@ export const STR = {
     schedHealthOverdue: 'Seferler son 48 saatte doğrulanamadı. Saatleri belediyenin güncel tarifesinden kontrol edin.',
     schedHealthUnknown: 'Seferlerin güncelliği doğrulanamadı. Saatleri belediyenin güncel tarifesinden kontrol edin.',
     schedHealthOutdated: 'Yeni tarife var. Gösterilen saatler henüz güncellenmedi.',
-    schedHealthAi: 'Bazı tarifeler otomatik doğrulanamadı ve yapay zekâ ile okundu. Saatlerde hata olabilir; PDF’ten kontrol edin.',
-    schedAiParsed: 'Bu tarife yapay zekâ ile okundu ve doğrulanmadı. Saatleri PDF’ten kontrol edin.',
     schedCurrentSources: 'Belediyenin güncel tarifeleri',
     schedUnavailable: 'Bu tarife şu anda gösterilemiyor. Güncel saatler için PDF’i açın.',
     navSched: '<span>📅</span>Seferler', navPlanner: '<span>🗺</span>Rota &amp; Harita', navStops: '<span>🚏</span>Duraklar',
@@ -481,8 +476,6 @@ export const STR = {
     schedHealthOverdue: 'Timetables have not been verified in 48 hours. Check the current municipal timetable.',
     schedHealthUnknown: 'Timetable freshness could not be verified. Check the current municipal timetable.',
     schedHealthOutdated: 'A new timetable is available. Displayed times have not updated yet.',
-    schedHealthAi: 'Some timetables could not be verified automatically and were read by AI. Times may contain errors; check the PDF.',
-    schedAiParsed: 'This timetable was read by AI and is not verified. Check times against the PDF.',
     schedCurrentSources: 'Current municipal timetables',
     schedUnavailable: 'This timetable is currently unavailable. Open the PDF for current times.',
     navSched: '<span>📅</span>Schedules', navPlanner: '<span>🗺</span>Route &amp; Map', navStops: '<span>🚏</span>Stops',

@@ -19,7 +19,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 25      # an AI transcription of a rejected PDF can take minutes
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +37,6 @@ jobs:
       - name: Fetch schedule data (PDFs → JSON)
         id: schedules
         continue-on-error: true
-        env:
-          # Optional. Without it a rejected PDF keeps its last verified times.
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node scripts/fetch-schedule.mjs
 
       - name: Fetch stops data (kentkart API → JSON)

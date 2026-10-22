@@ -2,7 +2,6 @@
   "name": "transit-data-scripts",
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/sdk": "0.131.0",
     "parse5": "8.0.1",
     "pdfjs-dist": "4.10.38"
   }

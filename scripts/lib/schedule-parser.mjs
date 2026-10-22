@@ -13,7 +13,7 @@ const centre = item => item.x + item.w / 2;
 const hasTime = text => /\d{1,2}\s*[:.]\s*\d{2}/.test(text);
 const departure = text => /(?:^|\s)(?:KALKIS|HAREKET)(?:\s+SAAT[IILERI]*)?\s*:?$/.test(fold(text)) && !hasTime(text);
 const note = text => /(?:OLARAK|DEVAM|BITIS|BASLAYACAK|SEFER YOK|IPTAL)/.test(fold(text));
-export const serialTime = time => { const [h, m] = time.split(':').map(Number); return h * 60 + m + (h < 4 ? 1440 : 0); };
+const serialTime = time => { const [h, m] = time.split(':').map(Number); return h * 60 + m + (h < 4 ? 1440 : 0); };
 
 export function routeHeading(text) {
   const s = clean(text).toLocaleUpperCase('tr');
@@ -34,7 +34,7 @@ function leadingTime(text) {
 
 // Text order is not reading order in a PDF. Join fragments by their baseline
 // and bounding boxes; retain column gaps so different cells cannot be joined.
-export function preparePage(page) {
+function preparePage(page) {
   const targetWidth = page.width > page.height ? 842 : 595;
   const scale = targetWidth / page.width;
   const items = page.items.filter(i => clean(i.text)).map(i => ({

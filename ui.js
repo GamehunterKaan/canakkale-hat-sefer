@@ -353,12 +353,6 @@ function renderSchedule() {
       message.textContent = t('schedUnavailable');
       panel.appendChild(message);
     } else renderRouteCards(s.routes || {}, panel.id, isActive);
-    if ([s, ...(s.appliedOverrides || [])].some(x => x.aiParsed)) {
-      const note = document.createElement('p');
-      note.className = 'sched-ai-note';
-      note.textContent = t('schedAiParsed');
-      panel.insertBefore(note, panel.firstChild);
-    }
 
     // renderRouteCards owns the panel's innerHTML, so the PDF link goes in
     // afterwards, pinned above the cards.

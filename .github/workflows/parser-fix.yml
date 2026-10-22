@@ -89,6 +89,7 @@ jobs:
           bwrap --unshare-pid --dev-bind / / --proc /proc true
 
       - name: Ask Claude to fix the parser
+        id: claude
         if: steps.key.outputs.key
         continue-on-error: true    # no fix still ends in an issue, so the PDFs are not retried hourly
         uses: anthropics/claude-code-action@v1
@@ -109,19 +110,32 @@ jobs:
 
             Follow the regression procedure in test/fixtures/schedules/README.md: add each rejected PDF as a gzip fixture with its provenance in sources.json, look at the relevant pages yourself, and add explicit expected counts/times to test/schedule-test.mjs. Then change scripts/lib/schedule-parser.mjs (or schedule-source.mjs) until `node scripts/fetch-schedule.mjs --self-test` passes, including every existing fixture.
 
+            The fix merges into the live site without human review, so before finishing, check that it is correct: run the fixed parser on each rejected PDF, and compare every route's departure times, in both directions, with the PDF pages themselves. Passing tests is not enough. If any route's output does not match the PDF, keep working, or report the mismatch and leave the parser unchanged.
+
             - Fix the general layout rule that failed. Never special-case one file and never relax a check to make an error disappear.
             - If the PDF itself is at fault (an unreadable scan, a genuinely missing table), change no parser code and explain why instead.
             - Only edit files under scripts/lib/ and test/. Do not commit, push or open anything; the workflow does that.
 
-            Finish by writing tmp/parser-fix/summary.md for the PR description: what failed and why, what you changed, and which pages you checked and what they show.
+            Finish by writing tmp/parser-fix/summary.md for the commit message: what failed and why, what you changed, and how you checked the fixed parser's output against each PDF.
 
       - name: Package the proposed change
         if: steps.key.outputs.key
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          AGENT_OUTCOME: ${{ steps.claude.outcome }}
         run: |
           mkdir -p tmp/parser-fix
           git add -A -- scripts/lib test
           git diff --cached --binary > tmp/parser-fix/change.patch
-          [ -s tmp/parser-fix/summary.md ] || echo "The agent did not finish or wrote no summary." > tmp/parser-fix/summary.md
+          if [ ! -s tmp/parser-fix/summary.md ]; then
+            echo "The agent did not finish or wrote no summary (agent step: $AGENT_OUTCOME)." > tmp/parser-fix/summary.md
+            # The action hides Claude's own error text; surface it so a failed run says why.
+            node -e '
+              const log = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              const result = [].concat(log).reverse().find(m => m && m.type === "result");
+              if (result && result.is_error) console.log("\nClaude reported: " + String(result.result || result.errors || result.subtype).slice(0, 500));
+            ' "$EXECUTION_FILE" >> tmp/parser-fix/summary.md 2>/dev/null || true
+          fi
           # Both files become public (PR, issue, artifact). An injected agent
           # must not be able to smuggle a token out through them.
           if grep -qE 'sk-ant-[A-Za-z0-9_-]{8,}|gh[opsu]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}' \

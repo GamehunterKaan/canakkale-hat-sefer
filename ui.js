@@ -2358,7 +2358,7 @@ async function findRoutes(){
   setHint(trips.relaxed ? base + ' ' + t('walksTooLong') : base, trips.relaxed);
   renderPlannerResults(trips.list); selectPlannerMatch(trips.list[0]);
   expandPanel(trips.list.length);
-  if (refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(refreshBuses, 30000);
+  if (refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(refreshBuses, 15000);
 }
 
 
@@ -2693,7 +2693,7 @@ async function refreshBuses(){
       if(tripMatch&&!tripMatch.isMultiLeg&&tripMatch.path.path_code===path.path_code){
         // skipMap=true: bus markers are already refreshed by drawBuses above;
         // re-rendering the polyline + walking lines would trigger a fresh OSRM
-        // fetch and cause visible flicker every 30s.
+        // fetch and cause visible flicker every 15s.
         tripMatch.buses=fp.busList||[];showTripDetail(tripMatch,false,true);
       }
       markKentkartResult(true);
@@ -3916,7 +3916,7 @@ function showSingleStopOnMap(stopId) {
   window._map.setView([s.lat, s.lng], Math.max(window._map.getZoom(), 17));
   renderNearbyList([{ ...s, meters: 0 }]);
   openStop(stopId);   // places the labelled marker
-  stopRefreshTimer = setInterval(() => { if (openStopId) openStop(openStopId, true); }, 30000);
+  stopRefreshTimer = setInterval(() => { if (openStopId) openStop(openStopId, true); }, 15000);
 }
 function showNearbyStops(lat,lng){
   clearSingleStopMarker();
@@ -3924,7 +3924,7 @@ function showNearbyStops(lat,lng){
   const nearby=[...allStops.values()].map(s=>({...s,meters:Math.round(haversine(lat,lng,s.lat,s.lng))})).sort((a,b)=>a.meters-b.meters).slice(0,5);
   setHint(t('nearbyCount',{name:(nearby[0]?.stopName||'?'),n:nearby.length}));
   renderNearbyList(nearby);if(nearby[0])openStop(nearby[0].stopId);
-  stopRefreshTimer=setInterval(()=>{if(openStopId)openStop(openStopId,true);},30000);
+  stopRefreshTimer=setInterval(()=>{if(openStopId)openStop(openStopId,true);},15000);
 }
 function renderNearbyList(stops){
   const panel=document.getElementById('stopPanel');panel.innerHTML='<div class="result-header">'+t('nearbyStopsTitle')+'</div>';

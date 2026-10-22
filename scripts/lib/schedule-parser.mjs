@@ -243,10 +243,14 @@ export function parsePages(rawPages) {
         // the first KALKIŞ, is the table's left edge.
         const knownTerminals = routes.get(lastRoute?.id)?.directions.flatMap(d => d.labels) || [];
         columns = headerColumns(items, group, null, page.width, floor);
-        const origin = mirroredOrigin(columns);
-        const left = origin && body.some(t => centre(t) >= origin.left && centre(t) < origin.right) ? origin.x : firstX;
+        const mirrored = mirroredOrigin(columns);
+        const origin = mirrored && body.some(t => centre(t) >= mirrored.left && centre(t) < mirrored.right) ? mirrored : null;
+        const left = origin ? origin.x : firstX;
+        // The origin's own caption can start further left than its centre; it
+        // is a column heading, never another table's title.
         const otherTitle = items.find(i => i.x < left - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
           /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)) &&
+          !origin?.items.includes(i) &&
           !(centre(i) >= left - h * 3 && knownTerminals.some(label => matchesTerminal(label, i.text))));
         if (otherTitle) {
           // This village shuttle has no route identifier in the city network.
@@ -290,6 +294,16 @@ export function parsePages(rawPages) {
             if (origin) origin.departure = true;
           }
         }
+      }
+      // An untitled continuation repeats the previous section's columns. If
+      // that section departed from two columns, and this header's mirrored
+      // origin and its single KALKIŞ sit in those same two columns, the origin
+      // still departs, even when the repeated header names no VARIŞ at all.
+      if (!routeItem && columns.filter(c => c.departure).length === 1) {
+        const previous = report.tables.findLast(t => t.route === heading.id);
+        const origin = mirroredOrigin(columns), known = columns.find(c => c.departure);
+        const under = col => previous.columns.filter(c => c.x >= col.left && c.x < col.right).length === 1;
+        if (origin && previous && under(origin) && under(known)) origin.departure = true;
       }
       columns.forEach(c => { c.times = []; });
       for (const item of body) {

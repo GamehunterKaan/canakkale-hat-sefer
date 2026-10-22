@@ -64,5 +64,11 @@
     "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/20-EKIM-6.pdf",
     "sha256": "f2f20da4f5cc08ce706b76f74c01c64b5d243b41c3576c80c3519837b38b16c7",
     "bytes": 2069008
+  },
+  {
+    "name": "weekday-2026-10-22",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/20-EKIM-11.pdf",
+    "sha256": "3774fdd14b8502dabb2ff5e238536c49a213f014a61f328cdc68590917d93af5",
+    "bytes": 2076014
   }
 ]

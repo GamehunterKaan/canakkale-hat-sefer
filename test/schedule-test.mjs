@@ -40,6 +40,9 @@ counts.push({ 'Ç1':[37,39], 'Ç3':[37,38], 'Ç3 EKSPRES':[40,42], 'Ç4':[92,91]
   'Ç7':[36,37], 'Ç8':[37,36], 'Ç9':[35,35], 'Ç10':[23,19], 'Ç960':[35,35], 'ÇT3':[49,49],
   'ÇT3 EKSPRES':[29,30], 'Ç11K':[20,20], 'Ç11K EKSPRES':[65,68], 'Ç11G':[24,25], 'Ç11Ç':[7,7],
   'ÇT1':[12,11], 'ÇT2':[1,1] });
+// 20-EKIM-11: page 16 was checked cell by cell against its text layer. Only the
+// Ç11K express evening section differs from the previous parser's reading.
+counts.push({ ...counts[10], 'Ç3':[37,37], 'Ç10':[24,17], 'Ç11K EKSPRES':[77,81], 'Ç11G':[24,26] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table.
 const expectedIndexOnly = index => index === 4 ? ['Ç2'] : [];
 const getRoute = (result, id) => Object.values(result.routes).find(r => routeHeading(r.name).id === id);
@@ -162,6 +165,51 @@ await test('an unnumbered title beside a mirrored-origin continuation still fail
   altered.find(p => p.number === 16).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:50, h:header.h });
   const result = parsePages(altered);
   assert.ok(result.diagnostics.errors.some(e => /unknown unnumbered table: YENİ KÖY/u.test(e)));
+});
+// 20-EKIM-11 repeats the evening header on one line: a single wide "KEPEZ TOKİ"
+// caption that starts left of the table edge, and no VARIŞ anywhere in the row.
+const evening11 = () => pages[11].find(p => p.number === 16).items.filter(i => i.y > 198 && i.y < 205);
+await test('one-line Kepez express evening header keeps its KEPEZ TOKİ origin', () => {
+  const tables = parsed[11].diagnostics.pages.find(p => p.page === 16).tables;
+  assert.deepEqual(tables.map(t => t.columns.map(c => c.label)), [['DARDANOS', 'GAZİ OKULU'], ['KEPEZ TOKİ', 'GAZİ OKULU']]);
+  assert.deepEqual(tables[1].columns[0].times,
+    '18:20 18:35 18:50 19:00 19:15 19:25 19:35 19:50 20:00 20:15 20:35 20:55 21:05 21:25 21:40 22:00 22:10 22:20 22:35 22:50 23:20 00:00'.split(' '));
+  assert.deepEqual(tables[1].columns[1].times,
+    '19:05 19:20 19:35 19:45 19:50 20:05 20:15 20:25 20:45 20:55 21:20 21:35 21:45 22:00 22:25 22:35 22:45 23:05 23:15 23:35 23:55'.split(' '));
+  assert.deepEqual(tables[0].columns.map(c => c.times.length), [55, 61]);
+});
+await test('the one-line origin caption excuses only itself, not a title beside it', () => {
+  const altered = structuredClone(pages[11]), header = evening11()[0];
+  altered.find(p => p.number === 16).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:50, h:header.h });
+  assert.ok(parsePages(altered).diagnostics.errors.some(e => /unknown unnumbered table: YENİ KÖY/u.test(e)));
+});
+await test('without a mirrored far-end terminal the one-line evening header fails explicitly', () => {
+  const altered = structuredClone(pages[11]);
+  for (const i of altered.find(p => p.number === 16).items)
+    if (i.y > 198 && i.y < 205 && i.text === 'KEPEZ TOKİ' && i.x > 400) i.text = 'DARDANOS';
+  const result = parsePages(altered);
+  assert.ok(result.diagnostics.errors.some(e => /Page 16: unknown unnumbered table: KEPEZ TOKİ/u.test(e)));
+  assert.equal(getRoute(result, 'Ç11K EKSPRES').dir0.times.includes('00:00'), false);
+});
+await test('a continuation origin departs only where the previous section departed', () => {
+  const eveningOrigin = result => result.diagnostics.pages.find(p => p.page === 16).tables[1]?.columns.map(c => c.label);
+  // The day section loses its DARDANOS caption, so it departs from GAZİ OKULU alone.
+  const noDayOrigin = structuredClone(pages[11]);
+  const day = noDayOrigin.find(p => p.number === 16);
+  day.items = day.items.filter(i => !(i.text === 'DARDANOS' && i.y > 750 && i.x < 160));
+  assert.deepEqual(eveningOrigin(parsePages(noDayOrigin)), ['GAZİ OKULU']);
+  // The evening KALKIŞ moves one column left, onto the GAZİ OKULU arrival, where
+  // the day section had no departures.
+  const movedKalkis = structuredClone(pages[11]);
+  for (const i of movedKalkis.find(p => p.number === 16).items.filter(i => i.y > 198 && i.y < 205)) {
+    if (i.text === 'GAZİ OKULU KALKIŞ') i.text = 'GAZİ OKULU';
+    else if (i.text === 'GAZİ OKULU') i.text = 'GAZİ OKULU KALKIŞ';
+  }
+  assert.deepEqual(eveningOrigin(parsePages(movedKalkis)), ['GAZİ OKULU']);
+  // A table with its own route title is a new table, not a continuation.
+  const titled = structuredClone(pages[11]), header = evening11()[0];
+  titled.find(p => p.number === 16).items.push({ text:'Ç-11K EKSPRES', x:60, y:header.y, w:50, h:header.h });
+  assert.deepEqual(eveningOrigin(parsePages(titled)), ['GAZİ OKULU']);
 });
 await test('Ç10 repeated sections follow terminal names when column order reverses', () => {
   const r = getRoute(parsed[1], 'Ç10');

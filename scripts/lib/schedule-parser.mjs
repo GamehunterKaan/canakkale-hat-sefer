@@ -224,7 +224,7 @@ export function parsePages(rawPages) {
       nearby.sort((a, b) => Math.abs(a.y - group.y) - Math.abs(b.y - group.y) || a.x - b.x);
       const routeItem = nearby[0];
       let routeCell = routeItem;
-      let heading = routeItem && routeHeading(routeItem.text);
+      let heading = routeItem && routeHeading(routeItem.text), edge = null;
       if (heading) {
         const extra = items.filter(i => Math.abs(i.x - routeItem.x) < h * 4 &&
           i.y < routeItem.y + h * 0.3 && i.y > routeItem.y - h * 3 &&
@@ -244,7 +244,7 @@ export function parsePages(rawPages) {
         const knownTerminals = routes.get(lastRoute?.id)?.directions.flatMap(d => d.labels) || [];
         columns = headerColumns(items, group, null, page.width, floor);
         const mirrored = mirroredOrigin(columns);
-        const origin = mirrored && body.some(t => centre(t) >= mirrored.left && centre(t) < mirrored.right) ? mirrored : null;
+        const origin = edge = mirrored && body.some(t => centre(t) >= mirrored.left && centre(t) < mirrored.right) ? mirrored : null;
         const left = origin ? origin.x : firstX;
         // The origin's own caption can start further left than its centre; it
         // is a column heading, never another table's title.
@@ -304,6 +304,12 @@ export function parsePages(rawPages) {
         const origin = mirroredOrigin(columns), known = columns.find(c => c.departure);
         const under = col => previous.columns.filter(c => c.x >= col.left && c.x < col.right).length === 1;
         if (origin && previous && under(origin) && under(known)) origin.departure = true;
+      }
+      // A mirrored origin that set this table's left edge has times beneath it.
+      // If no rule confirms it departs, fail rather than drop those times.
+      if (edge && !edge.departure) {
+        diagnostics.errors.push(`Page ${page.number}: ${heading.id} origin ${edge.label} is not a confirmed departure`);
+        continue;
       }
       columns.forEach(c => { c.times = []; });
       for (const item of body) {

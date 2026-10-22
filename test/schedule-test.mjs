@@ -191,13 +191,17 @@ await test('without a mirrored far-end terminal the one-line evening header fail
   assert.ok(result.diagnostics.errors.some(e => /Page 16: unknown unnumbered table: KEPEZ TOKİ/u.test(e)));
   assert.equal(getRoute(result, 'Ç11K EKSPRES').dir0.times.includes('00:00'), false);
 });
-await test('a continuation origin departs only where the previous section departed', () => {
+await test('a continuation origin departs only where the previous section departed, else fails loudly', () => {
   const eveningOrigin = result => result.diagnostics.pages.find(p => p.page === 16).tables[1]?.columns.map(c => c.label);
+  const unconfirmed = result => {
+    assert.ok(result.diagnostics.errors.includes('Page 16: Ç11K EKSPRES origin KEPEZ TOKİ is not a confirmed departure'));
+    assert.equal(getRoute(result, 'Ç11K EKSPRES')?.dir0.times.includes('00:00') ?? false, false);
+  };
   // The day section loses its DARDANOS caption, so it departs from GAZİ OKULU alone.
   const noDayOrigin = structuredClone(pages[11]);
   const day = noDayOrigin.find(p => p.number === 16);
   day.items = day.items.filter(i => !(i.text === 'DARDANOS' && i.y > 750 && i.x < 160));
-  assert.deepEqual(eveningOrigin(parsePages(noDayOrigin)), ['GAZİ OKULU']);
+  unconfirmed(parsePages(noDayOrigin));
   // The evening KALKIŞ moves one column left, onto the GAZİ OKULU arrival, where
   // the day section had no departures.
   const movedKalkis = structuredClone(pages[11]);
@@ -205,7 +209,7 @@ await test('a continuation origin departs only where the previous section depart
     if (i.text === 'GAZİ OKULU KALKIŞ') i.text = 'GAZİ OKULU';
     else if (i.text === 'GAZİ OKULU') i.text = 'GAZİ OKULU KALKIŞ';
   }
-  assert.deepEqual(eveningOrigin(parsePages(movedKalkis)), ['GAZİ OKULU']);
+  unconfirmed(parsePages(movedKalkis));
   // A table with its own route title is a new table, not a continuation.
   const titled = structuredClone(pages[11]), header = evening11()[0];
   titled.find(p => p.number === 16).items.push({ text:'Ç-11K EKSPRES', x:60, y:header.y, w:50, h:header.h });

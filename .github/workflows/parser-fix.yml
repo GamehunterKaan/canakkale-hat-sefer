@@ -110,7 +110,7 @@ jobs:
 
             Follow the regression procedure in test/fixtures/schedules/README.md: add each rejected PDF as a gzip fixture with its provenance in sources.json, look at the relevant pages yourself, and add explicit expected counts/times to test/schedule-test.mjs. Then change scripts/lib/schedule-parser.mjs (or schedule-source.mjs) until `node scripts/fetch-schedule.mjs --self-test` passes, including every existing fixture.
 
-            The fix merges into the live site without human review, so before finishing, check that it is correct: run the fixed parser on each rejected PDF, and compare every route's departure times, in both directions, with the PDF pages themselves. Passing tests is not enough. If any route's output does not match the PDF, keep working, or report the mismatch and leave the parser unchanged.
+            The fix merges into the live site without human review, so before finishing, check that it is correct. Passing tests is not enough. Run the parser on each rejected PDF before and after your change, and compare every route whose output your change produces or alters, in both directions, with the PDF pages themselves. If one of those does not match the PDF, keep working, or leave the parser unchanged and explain why. A mismatch that the parser already produced, identically, before your change is not caused by it: list it in the summary, but do not let it block the fix.
 
             - Fix the general layout rule that failed. Never special-case one file and never relax a check to make an error disappear.
             - If the PDF itself is at fault (an unreadable scan, a genuinely missing table), change no parser code and explain why instead.
@@ -184,6 +184,12 @@ jobs:
           if [ ! -s "$patch" ]; then echo "result=empty" >> "$GITHUB_OUTPUT"; exit 0; fi
           if git apply --numstat "$patch" | cut -f3 | grep -qvE '^(scripts/lib/|test/)'; then
             echo "result=outside-allowed-paths" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Only a parser change is a fix. A patch of tests or fixtures alone (for
+          # example a file the agent left behind after deciding not to change the
+          # parser) must not be merged.
+          if ! git apply --numstat "$patch" | cut -f3 | grep -q '^scripts/lib/'; then
+            echo "result=no-parser-change" >> "$GITHUB_OUTPUT"; exit 0
           fi
           git apply "$patch"
           if ! node scripts/fetch-schedule.mjs --self-test; then echo "result=fail" >> "$GITHUB_OUTPUT"; exit 0; fi

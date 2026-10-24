@@ -1,6 +1,6 @@
 /**
  * Fetches all kentkart route/stop/path data and writes stops.json.
- * Runs in GitHub Actions daily at midnight Turkey time.
+ * Runs in GitHub Actions every hour; the file changes only when kentkart's data does.
  */
 
 import { writeFileSync, readFileSync } from 'fs';
@@ -9,32 +9,47 @@ const API    = 'https://service.kentkart.com/rl1/';
 const REGION = '007';
 const QS     = `region=${REGION}&lang=tr&authType=4&resultType=111`;
 
+// A failed request is retried, then fails the run: the previous stops.json stays
+// in place rather than silently losing that route's path.
+async function getJson(url, tries = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text = await r.text();
+      // kentkart occasionally sends broken UTF-8 (a stop named "KAMPÜS��"): retry instead of storing it.
+      if (text.includes('�')) throw new Error('garbled text in response');
+      return JSON.parse(text);
+    } catch (e) {
+      if (attempt >= tries) throw new Error(`${url}: ${e.message}`);
+      await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+}
+
 async function main() {
   // 1. Route list (with colors and display codes)
   console.log('Fetching route list…');
-  const nr = await fetch(`${API}web/nearest/find?${QS}`);
-  const nd = await nr.json();
+  const nd = await getJson(`${API}web/nearest/find?${QS}`);
   const routes = nd.routeList || [];
+  if (!routes.length) throw new Error('kentkart returned no routes');
   console.log(`  → ${routes.length} routes`);
 
-  // Fast-skip: if the route list (codes, colors, names) matches the previous
-  // run, the heavy pathInfo calls would just produce identical data.
-  try {
-    const prev = JSON.parse(readFileSync('data/stops.json', 'utf8'));
-    if (JSON.stringify(prev.routes) === JSON.stringify(routes)) {
-      console.log('Route list unchanged since last run — skipping path fetch.');
-      return;
-    }
-  } catch {}
+  // Paths are always fetched: kentkart changes a route's stops (re-routes, new
+  // stops) without changing the route list.
 
   // 2. Fetch all path info (stops + polyline) for every route × direction
   const total   = routes.length * 2;
   let   done    = 0;
   const fetches = routes.flatMap(route =>
     ['0', '1'].map(dir =>
-      fetch(`${API}web/pathInfo?${QS}&displayRouteCode=${encodeURIComponent(route.displayRouteCode)}&direction=${dir}`)
-        .then(r => r.json())
-        .catch(() => null)
+      getJson(`${API}web/pathInfo?${QS}&displayRouteCode=${encodeURIComponent(route.displayRouteCode)}&direction=${dir}`)
+        .then(data => {
+          // Code 3 ("Sonuç Bulunamadı") is a direction that doesn't exist, e.g. Ç6 has no direction 1.
+          const code = String(data?.result?.code);
+          if (code !== '0' && code !== '3') throw new Error(`${route.displayRouteCode}/${dir}: kentkart result ${code}`);
+          return data;
+        })
         .finally(() => { done++; process.stdout.write(`\r  ${done}/${total} paths`); })
     )
   );
@@ -54,7 +69,9 @@ async function main() {
 
     for (const path of data.pathList) {
       // Strip live bus data — positions change every minute, no point caching
-      const { busList: _buses, ...pathWithoutBuses } = path;
+      const { busList: _buses, ...rest } = path;
+      // busOnStop is live (a bus is at that stop now); keeping it would rewrite the file every run.
+      const pathWithoutBuses = { ...rest, busStopList: (rest.busStopList || []).map(({ busOnStop: _live, ...stop }) => stop) };
       paths.push({ path: pathWithoutBuses, route });
 
       for (const s of path.busStopList || []) {
@@ -92,6 +109,13 @@ async function main() {
     fetchedAt:    Date.now(),
   };
 
+  try {
+    const prev = JSON.parse(readFileSync('data/stops.json', 'utf8'));
+    if (JSON.stringify({ ...prev, fetchedAt: 0 }) === JSON.stringify({ ...out, fetchedAt: 0 })) {
+      console.log('stops.json unchanged');
+      return;
+    }
+  } catch {}
   writeFileSync('data/stops.json', JSON.stringify(out));
   console.log('✅ stops.json written');
 }

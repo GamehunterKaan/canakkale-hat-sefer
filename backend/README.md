@@ -76,8 +76,9 @@ of responses was about 55 KB: polling every 30 seconds is approximately
 150 MiB/day of uncompressed incoming data. A sequential sweep of all public
 routes measured about 1.1 MB and 20 seconds of request time (2026-10-17), or
 roughly 3 GiB/day at a 30-second interval. SQLite writes are batched per response.
-Position observations and request diagnostics have a seven-day retention target;
-transition bounds have a thirty-day target. Hourly pruning deletes in 5,000-row
+Position observations and request diagnostics have a seven-day retention target.
+Transition bounds are kept indefinitely: they are the running-time model's training
+data, roughly 1.5 GB a year with indexes. Hourly pruning deletes in 5,000-row
 transactions per table, repeating until the table is caught up. SQLite reuses freed
 pages, so file size does not immediately shrink after cleanup.
 
@@ -85,3 +86,84 @@ After at least a week, assess missing/stale telemetry, segment coverage, daily
 database growth, actual CPU/memory use, and predictions on later journeys against
 the current estimator. A collection service running successfully is not evidence
 that a learned estimator is already more accurate.
+
+## Running-time model
+
+`eta_model.py` learns segment running times from the collector database (read-only,
+standard library only) and publishes them for the app every night:
+
+```
+segment minutes = base[segment] x dayFactors[day type][hour] x partFactors[weekday|weekend][part][hour]
+```
+
+- `base` is the time from reaching one stop to reaching the next, per route and
+  direction, keyed by stop IDs. Transitions that jump several stops are shared
+  across their segments; single-stop transitions alone overestimate short
+  segments, because their quick traversals are the ones that skip a stop.
+- `dayFactors` are city-wide hourly factors for Mon-Thu, Fri, Sat and Sun (service
+  days: 00:00-03:59 belongs to the previous day). Mon-Thu behave alike; Friday
+  midday and Saturday afternoon are distinct.
+- `partFactors` are route-specific adjustments for each third of a trip, by
+  weekday/weekend and hour.
+- `elapsed[i]` is how long a bus has typically already been reported at stop `i`
+  when someone looks (length-weighted: E[stay²] / 2E[stay]). It matters where stops
+  are rarely reported and the stop ID stays unchanged for several stops.
+- Every factor is observed/expected minutes shrunk towards 1 by `--prior-minutes`
+  (default 30) of evidence, so thin cells fall back to the broader levels.
+- Segments and stops with fewer than five samples export `null`; the app keeps
+  using the timetable offset (and half of the current segment) for those.
+
+### Accumulating data
+
+All transitions are kept and every run learns from all of them. SQL groups them by
+path span, day type, hour and recency first, so a run's memory and time grow with
+the number of route segments rather than with the history. Per day type, the last
+seven days carry at least 25% of the weight and older data shares the rest in
+proportion to its size. While there is little history the recent days keep their
+larger natural share; once older data outweighs them three to one, the 25% floor
+lets changes such as roadworks show up within a week while old data keeps refining
+the estimates.
+
+### Nightly validation and publishing
+
+`--publish REPO` runs after the service day ends (04:30, `bus-eta-model.timer`):
+
+1. Each finished day of the last 28 that has not been checked yet is predicted with
+   a model fitted only on the days before it, on a two-minute clock grid for every
+   tracked bus, and compared with the app's timetable offsets (fetched from
+   Kentkart). Per route results go into `data/model.sqlite3`, so each day is
+   checked once.
+2. A route direction gets `use: true` when the last 28 days hold at least 300
+   predictions for buses 5-20 minutes away and the learned error is at most 90% of
+   the timetable's. Every other route keeps the timetable.
+3. The model is fitted on all data and committed as `data/segment-times.json` on
+   top of `origin/main` in the clone at `REPO`, then pushed; a rejected push is
+   rebased and retried. The clone belongs to the job: it is reset to `origin/main`
+   on every run.
+
+The checks cover continuously tracked buses only; buses held at a stop for over
+two minutes or missing from the feed are excluded, so the errors are optimistic for
+every method.
+
+```powershell
+python backend/eta_model.py --db backend/data/eta.sqlite3 --out segment-times.json  # fit only
+python backend/eta_model.py --db backend/data/eta.sqlite3 --evaluate 14             # accuracy report
+python -m unittest discover -s test -p "eta_*_test.py" -v
+```
+
+### Pi setup
+
+The job pushes with the Pi's stored GitHub credentials, using its own clone:
+
+```sh
+git clone https://github.com/GamehunterKaan/canakkale-hat-sefer.git ~/bus-eta/repo
+cp ~/bus-eta/backend/bus-eta-model.service ~/bus-eta/backend/bus-eta-model.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now bus-eta-model.timer
+systemctl --user start bus-eta-model.service   # run once now
+journalctl --user -u bus-eta-model.service -n 20 --no-pager
+```
+
+The first run checks every finished day still in the database, which takes a few
+minutes; later runs check one day. The service runs at low priority with half a CPU
+core and a 2 GiB address-space limit.

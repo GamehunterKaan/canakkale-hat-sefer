@@ -254,12 +254,12 @@ def collect_once(db, targets, timeout, stop=None, retry_state=None):
     return successes
 
 
-def prune(db, now_ms, sample_days, transition_days):
+def prune(db, now_ms, sample_days):
+    # Transitions are never pruned: they are the running-time model's training data.
     # Bounded batches avoid a large blocking cleanup on the Pi's storage. Repeat
     # until caught up: with many routes, hourly inserts can exceed one batch.
     for table, days, column in (("observations", sample_days, "received_ms"),
                                 ("cycles", sample_days, "received_ms"),
-                                ("transitions", transition_days, "received_ms"),
                                 ("cursors", 1, "last_seen_ms")):
         cutoff = now_ms - days * 86_400_000
         deleted = PRUNE_BATCH
@@ -267,8 +267,9 @@ def prune(db, now_ms, sample_days, transition_days):
             with db:
                 deleted = db.execute(f"DELETE FROM {table} WHERE rowid IN (SELECT rowid FROM {table} WHERE {column}<? LIMIT {PRUNE_BATCH})", (cutoff,)).rowcount
     with db:
-        db.execute("DELETE FROM paths WHERE last_seen_ms<? AND version NOT IN (SELECT version FROM transitions) AND version NOT IN (SELECT version FROM observations) AND version NOT IN (SELECT version FROM cursors)",
-                   (now_ms - transition_days * 86_400_000,))
+        db.execute("DELETE FROM paths WHERE last_seen_ms<? AND NOT EXISTS (SELECT 1 FROM transitions t WHERE t.version=paths.version) "
+                   "AND NOT EXISTS (SELECT 1 FROM observations o WHERE o.version=paths.version) AND NOT EXISTS (SELECT 1 FROM cursors c WHERE c.version=paths.version)",
+                   (now_ms - sample_days * 86_400_000,))
     db.execute("PRAGMA wal_checkpoint(PASSIVE)")
 
 
@@ -297,7 +298,6 @@ def main():
     parser.add_argument("--interval", type=float, default=30)
     parser.add_argument("--timeout", type=float, default=10)
     parser.add_argument("--sample-days", type=int, default=7)
-    parser.add_argument("--transition-days", type=int, default=30)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--status", action="store_true", help="Read collection status without network requests.")
     args = parser.parse_args()
@@ -306,7 +306,7 @@ def main():
         return 0
     if (not math.isfinite(args.interval) or args.interval < 30
             or not math.isfinite(args.timeout) or not 0 < args.timeout <= 10
-            or min(args.sample_days, args.transition_days) < 1):
+            or args.sample_days < 1):
         parser.error("interval must be >=30 seconds, timeout <=10 seconds, and retention >=1 day")
     os.umask(0o077)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -331,7 +331,7 @@ def main():
             started = time.monotonic()
             successes = collect_once(db, targets, args.timeout, stop, retry_state)
             if time.monotonic() - last_cleanup >= 3600:
-                prune(db, int(time.time() * 1000), args.sample_days, args.transition_days)
+                prune(db, int(time.time() * 1000), args.sample_days)
                 last_cleanup = time.monotonic()
             if args.once:
                 return 0 if successes == len(targets) else 1

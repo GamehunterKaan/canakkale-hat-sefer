@@ -1,0 +1,14 @@
+[Unit]
+Description=17hatsefer bus running-time model: validate, fit and publish
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/bus-eta
+ExecStart=/usr/bin/python3 -u %h/bus-eta/backend/eta_model.py --db %h/bus-eta/data/eta.sqlite3 --state %h/bus-eta/data/model.sqlite3 --publish %h/bus-eta/repo
+TimeoutStartSec=2h
+UMask=0077
+Nice=10
+CPUAccounting=true
+CPUQuota=50%
+LimitAS=2G
+NoNewPrivileges=true

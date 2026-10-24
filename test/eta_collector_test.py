@@ -111,22 +111,23 @@ class CollectorTest(unittest.TestCase):
         rows = self.db.execute("SELECT direction,ok FROM cycles ORDER BY id").fetchall()
         self.assertEqual([tuple(row) for row in rows], [("0", 0), ("1", 1)])
 
-    def test_retention_keeps_recent_data(self):
+    def test_retention_prunes_samples_but_keeps_transitions(self):
         self.add(0, 1_000)
         self.add(1, 31_000)
         self.add(2, 61_000)
         now = 32 * 86_400_000
         self.add(3, now)
-        collector.prune(self.db, now, 7, 30)
+        collector.prune(self.db, now, 7)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM observations").fetchone()[0], 1)
-        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM transitions").fetchone()[0], 0)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM transitions").fetchone()[0], 1)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM paths").fetchone()[0], 1)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM cursors").fetchone()[0], 1)
 
     def test_retention_catches_up_when_inserts_exceed_one_batch(self):
         with self.db:
             self.db.executemany("INSERT INTO cycles(received_ms,route,direction,ok,response_bytes,elapsed_ms,observations,transitions,ignored) VALUES (?,'Ç1','0',1,0,0,0,0,0)",
                                 [(i,) for i in range(collector.PRUNE_BATCH * 2 + 1)])
-        collector.prune(self.db, 8 * 86_400_000, 7, 30)
+        collector.prune(self.db, 8 * 86_400_000, 7)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM cycles").fetchone()[0], 0)
 
     def test_route_direction_spec_limits_one_way_routes(self):

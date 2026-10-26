@@ -246,11 +246,12 @@ export function parsePages(rawPages) {
         const mirrored = mirroredOrigin(columns);
         const origin = edge = mirrored && body.some(t => centre(t) >= mirrored.left && centre(t) < mirrored.right) ? mirrored : null;
         const left = origin ? origin.x : firstX;
-        // The origin's own caption can start further left than its centre; it
-        // is a column heading, never another table's title.
+        // A wide caption over a departure column (or the origin) can start
+        // well left of that column's centre. Lying wholly inside the column's
+        // span makes it that column's heading; a title starts left of the table.
         const otherTitle = items.find(i => i.x < left - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
           /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)) &&
-          !origin?.items.includes(i) &&
+          !columns.some(c => (c.departure || c === origin) && i.x >= c.left && i.x + i.w <= c.right) &&
           !(centre(i) >= left - h * 3 && knownTerminals.some(label => matchesTerminal(label, i.text))));
         if (otherTitle) {
           // This village shuttle has no route identifier in the city network.
@@ -263,6 +264,12 @@ export function parsePages(rawPages) {
       }
       if (!heading) { diagnostics.errors.push(`Page ${page.number}: departure table has no identifiable route`); continue; }
       columns ||= headerColumns(items, group, routeCell, page.width, floor);
+      // A round trip ends where it began. Some editions print KALKIŞ over that
+      // final arrival too: with three KALKIŞ columns, the last one repeating the
+      // first column's terminal is the trip's arrival, not a third departure.
+      const marked = columns.filter(c => c.departure);
+      if (marked.length === 3 && marked[0] === columns[0] && marked[2] === columns.at(-1) &&
+          terminalKey(marked[0].label) === terminalKey(marked[2].label)) marked[2].departure = false;
       if (!routeItem && !columns.some(c => c.departure && routes.get(heading.id)?.directions.some(d =>
         d.labels.some(label => matchesTerminal(label, c.label))))) {
         diagnostics.errors.push(`Page ${page.number}: untitled table cannot be matched to ${heading.id}`);

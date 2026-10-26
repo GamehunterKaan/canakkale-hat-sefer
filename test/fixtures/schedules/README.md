@@ -16,6 +16,8 @@ These are complete, unmodified municipality PDFs, gzip-compressed for storage. `
 | friday-kepez-2026-10-07 | Three-route Friday override; omitted Dardanos departure marker; small route caption above the column headers |
 | weekday-2026-10-20 | 18 routes; Ç11K express evening header without KALKIŞ/VARIŞ at its mirrored Kepez 144 TOKİ endpoints; KALKIŞ on the middle line of a wrapped header |
 | weekday-2026-10-22 | Same Ç11K express evening section with its header on one line: a single wide KEPEZ TOKİ caption reaching past the table edge, and no VARIŞ in the row |
+| weekday-2026-10-26 | Ç11K express day header prints KALKIŞ over the closing Dardanos arrival too (three KALKIŞ columns); evening headers fully labelled, with a KEPEZ TOKİ caption wider than its KALKIŞ; evening section continues on page 17 |
+| special-2026-10-28 | 28 October timetable; same Ç11K express pages as weekday-2026-10-26; different ÇT1 and ÇT2 |
 
 ## Independently checked expectations
 
@@ -35,6 +37,13 @@ Tests also repeat extraction results with reordered text, scaled geometry, alter
 The 7 October fixture was captured from the failing 7 October 2026 Actions run's `timetable-diagnostics` artifact. Page 6 was visually checked: the repeated Hüseyin Elbi header belongs to Ç4, with 12 evening departures from 18:20 through 22:00 and 11 return departures from 19:00 through 22:20. The return terminus changes from Bahriye Üçok Caddesi to Eski Hastane in the evening section.
 
 The 22 October fixture (20-EKIM-11) was captured from the failing 22 October 2026 Actions run's `timetable-diagnostics` artifact. Page 16 was checked cell by cell against its extracted text layer, not a render. From 18:20, Ç11K express buses start at Kepez TOKİ instead of Dardanos. There are 22 departures from Kepez TOKİ (18:20 through 00:00) and 21 return departures from Gazi Okulu (19:05 through 23:55). Earlier in the day there are 55 Dardanos and 61 Gazi Okulu departures. Every other route parses exactly as it did before this fix.
+
+The 26 and 28 October fixtures (26-EKIM, 28-EKIM-9) were captured from the failing 26 October 2026 run's artifact. Pages 16 and 17 were counted column by column from the text layer.
+- **Day section:** 52 plain Dardanos cells plus 3 çınarlı/kalabaklı trips give 55 departures. 59 Gazi Okulu cells plus 16:20 kalabaklı give 60.
+- **Far DARDANOS "KALKIŞ" column:** its 60 times each fall about 5 minutes after the Kepez TOKİ column in the same row, so they are trip ends.
+- **Evening:** 9 and 9 departures on page 16, then 14 Kepez TOKİ and 12 Gazi Okulu on page 17.
+
+Every other route parses exactly as it did before this fix.
 
 The 20 October fixture (20-EKIM-6) was captured from the failing 20 October 2026 hourly refresh, which rejected it with `Page 16: unknown unnumbered table: KEPEZ`. Page 16 was visually checked: the Ç11K express evening header is a shortened row reading only "KEPEZ / 144 TOKİ" at both outer columns, without the KALKIŞ/VARIŞ line earlier editions had. The left column has 19 departures from 18:25 through 23:45, and Gazi Okulu has 18 departures from 19:10 through 23:50. The morning section's last row (18:05 Dardanos, 18:50 Gazi Okulu) lies directly above that header and belongs to the morning section.
 

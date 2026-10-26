@@ -43,6 +43,10 @@ counts.push({ 'Ç1':[37,39], 'Ç3':[37,38], 'Ç3 EKSPRES':[40,42], 'Ç4':[92,91]
 // 20-EKIM-11: page 16 was checked cell by cell against its text layer. Only the
 // Ç11K express evening section differs from the previous parser's reading.
 counts.push({ ...counts[10], 'Ç3':[37,37], 'Ç10':[24,17], 'Ç11K EKSPRES':[77,81], 'Ç11G':[24,26] });
+// 26-EKIM and 28-EKIM-9: pages 16 and 17 were counted per column from the text
+// layer. Only the Ç11K express table differs from the previous parser's reading.
+counts.push({ ...counts[11], 'Ç1':[31,33], 'ÇT3':[42,44], 'Ç11K':[23,23], 'Ç11K EKSPRES':[78,81] });
+counts.push({ ...counts[12], 'ÇT1':[8,7], 'ÇT2':[1,2] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table.
 const expectedIndexOnly = index => index === 4 ? ['Ç2'] : [];
 const getRoute = (result, id) => Object.values(result.routes).find(r => routeHeading(r.name).id === id);
@@ -214,6 +218,39 @@ await test('a continuation origin departs only where the previous section depart
   const titled = structuredClone(pages[11]), header = evening11()[0];
   titled.find(p => p.number === 16).items.push({ text:'Ç-11K EKSPRES', x:60, y:header.y, w:50, h:header.h });
   assert.deepEqual(eveningOrigin(parsePages(titled)), ['GAZİ OKULU']);
+});
+// 26-EKIM prints KALKIŞ over both Dardanos columns of the day header: the far
+// one is where the round trip ends. Its evening headers are fully labelled.
+const evening12 = () => pages[12].find(p => p.number === 16).items.filter(i => i.y > 125 && i.y < 142);
+await test('Kepez express round trip ending under KALKIŞ keeps two directions', () => {
+  const page = n => parsed[12].diagnostics.pages.find(p => p.page === n).tables;
+  assert.deepEqual(page(16).map(t => t.columns.map(c => c.label)), [['DARDANOS YERLEŞKE', 'GAZİ OKULU'], ['KEPEZ TOKİ', 'GAZİ OKULU']]);
+  assert.deepEqual(page(16).map(t => t.columns.map(c => c.times.length)), [[55, 60], [9, 9]]);
+  assert.deepEqual(page(16)[1].columns[0].times, '18:10 18:20 18:35 19:00 19:15 19:25 19:35 19:50 20:00'.split(' '));
+  assert.deepEqual(page(16)[1].columns[1].times, '18:55 19:05 19:20 19:45 19:50 20:05 20:15 20:25 20:45'.split(' '));
+  assert.deepEqual(page(17).map(t => t.columns.map(c => c.label)), [['KEPEZ TOKİ', 'GAZİ OKULU']]);
+  assert.deepEqual(page(17)[0].columns[0].times,
+    '20:15 20:35 20:55 21:05 21:15 21:25 21:40 22:00 22:10 22:20 22:35 22:50 23:20 00:00'.split(' '));
+  assert.deepEqual(page(17)[0].columns[1].times,
+    '20:55 21:20 21:35 21:45 22:00 22:25 22:35 22:45 23:05 23:15 23:35 23:55'.split(' '));
+  // The far DARDANOS column holds trip ends, e.g. 08:05 after the 08:00 Kepez TOKİ pass.
+  assert.equal(getRoute(parsed[12], 'Ç11K EKSPRES').dir0.times.includes('08:05'), false);
+});
+await test('a third KALKIŞ that does not return to the first terminal still fails', () => {
+  const altered = structuredClone(pages[12]);
+  for (const i of altered.find(p => p.number === 16).items)
+    if (i.text === 'DARDANOS' && i.y > 755 && i.x > 400) i.text = 'İSKELE';
+  assert.ok(parsePages(altered).diagnostics.errors.includes('Page 16: Ç11K EKSPRES has 3 departure columns'));
+  // Nor when the repeated terminal is not the table's last column.
+  const extra = structuredClone(pages[12]), far = extra.find(p => p.number === 16);
+  const anchor = far.items.find(i => i.text === 'DARDANOS' && i.y > 755 && i.x > 400);
+  far.items.push({ text:'SSK', x:anchor.x + 50, y:anchor.y, w:12, h:anchor.h });
+  assert.ok(parsePages(extra).diagnostics.errors.includes('Page 16: Ç11K EKSPRES has 3 departure columns'));
+});
+for (const width of [35, 70, 120, 170, 240]) await test('a title of width ' + width + ' beside a fully labelled evening header fails', () => {
+  const altered = structuredClone(pages[12]), header = evening12()[0];
+  altered.find(p => p.number === 16).items.push({ text:'YENİ KÖY', x:60, y:header.y, w:width, h:header.h });
+  assert.ok(parsePages(altered).diagnostics.errors.some(e => /unknown unnumbered table: YENİ KÖY/u.test(e)));
 });
 await test('Ç10 repeated sections follow terminal names when column order reverses', () => {
   const r = getRoute(parsed[1], 'Ç10');

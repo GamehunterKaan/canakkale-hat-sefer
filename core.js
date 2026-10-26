@@ -719,6 +719,8 @@ export const TRANSFER_WALK_MAX_M = 400;     // max straight-line walk for a tran
 
 export const TRANSFER_PENALTY_MIN = 10;     // a transfer must save >this vs a direct to rank above it
 
+export const NEAREST_STOP_MARGIN_MIN = 10;  // a bus the nearest stops never see must save this much to send you to other stops
+
 export const TRANSFER_ETA_TOLERANCE_MIN = 5; // (B) transfers within this of the fastest are "equally fast" — then shortest walk wins
 
 export const TRANSFER_CROSS_ROAD_M = 60;    // (C) a transfer walk ≤ this is a "cross the road" hop, preferred outright
@@ -1209,7 +1211,8 @@ export async function planTrips(origin, dest, {
       const latestAtBoard = arriveByMins - _rideMins(u.st, pair.bi, pair.ai) - walkMins(pair.aw);
       return _latestBoardAt(times, travel, latestAtBoard, boardArr) != null;
     };
-    let chosen = null, served = null;
+    let served = null;
+    const inTimePairs = [];   // nearest first
     for (const b of boards) {
       const alights = [];
       for (let j = b.i + 1; j < u.st.length; j++) {
@@ -1223,12 +1226,34 @@ export async function planTrips(origin, dest, {
         const times = _tripMinsAt(u.trips, pair.bi, pair.ai);
         if (u.trips.length && !times.length) continue;
         served ||= pair;
-        if (!u.trips.length || inTime(times, pair)) { chosen = pair; break; }
+        if (u.trips.length && inTime(times, pair)) inTimePairs.push(pair);
       }
-      if (chosen) break;
+      if (served && !u.trips.length) break;
     }
-    chosen ||= served;
+    let chosen = inTimePairs[0] || served;
     if (!chosen) continue;
+    // A bus the nearest stops never see (an evening section, a short turn)
+    // wins when it gets you there NEAREST_STOP_MARGIN_MIN sooner, or in
+    // arrive-by lets you leave that much later. The same bus always boards
+    // and alights at the nearest stops.
+    const busFor = pair => {
+      const travel = _travelToStopMins(u.st[pair.bi]), boardArr = nowMins + walkMins(pair.bw);
+      const ride = _rideMins(u.st, pair.bi, pair.ai), serving = u.trips.filter(t => t.start <= pair.bi && pair.ai <= t.end);
+      if (arriveByMins == null) {
+        const trip = serving.find(t => t.mins + travel >= boardArr);
+        return trip && { trip, score: -(trip.mins + travel + ride + walkMins(pair.aw)) };
+      }
+      const latest = arriveByMins - ride - walkMins(pair.aw);
+      const trip = [...serving].reverse().find(t => t.mins + travel >= boardArr && t.mins + travel <= latest);
+      return trip && { trip, score: trip.mins + travel - walkMins(pair.bw) };
+    };
+    const near = inTimePairs.length > 1 && busFor(chosen), nearest = chosen;
+    let best = near;
+    for (const pair of near ? inTimePairs.slice(1) : []) {
+      const alt = busFor(pair);
+      if (alt && !(alt.trip.start <= nearest.bi && nearest.ai <= alt.trip.end) &&
+          alt.score >= near.score + NEAREST_STOP_MARGIN_MIN && alt.score > best.score) { chosen = pair; best = alt; }
+    }
     const times = _tripMinsAt(u.trips, chosen.bi, chosen.ai);
     const boardArr = nowMins + walkMins(chosen.bw);
     let wait, eta, timing = null, liveOnly = false;

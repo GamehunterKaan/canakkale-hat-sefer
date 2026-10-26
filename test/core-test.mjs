@@ -528,8 +528,31 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
     const day = { 'T2 A': { name: 'T2 A', dir0: { label: 'MERKEZ', times: ['11:00'], trips: [{ time: '11:00', to: 'KEPEZ TOKİ' },
       { time: '09:00', from: 'KEPEZ 144 TOKİ', stops: [['KEPEZ MEYDAN', '09:10'], ['GAZİ OKULU', '09:30']] }] } } };
     const r = await plan(OKUL, MEYDAN, day, 8 * 60);
-    ck('direct: no bus is offered to a stop no trip from the board stop reaches', !r.list.some(m => m.alight.stopId === MEYDAN.stopId), show(r));
+    const pairs = res => JSON.stringify(res.list.map(m => [m.board.stopName, m.alight.stopName, m._wait]));
+    // OKUL's only bus is the 11:00 to KEPEZ TOKİ (there 11:20, then a walk); walking to KEPEZ TOKİ for the 09:00 is 2 h sooner.
+    ck('direct: a bus the nearest stops never see wins when it is 10+ min sooner', pairs(r) === '[["KEPEZ TOKİ","KEPEZ MEYDAN",51]]', pairs(r));
     ck('trip link: rebuilt as null when no trip calls at both stops', spec(OKUL, MEYDAN, [leg(T2, 1, 3)], day, 8 * 60) === null);
+    // From OKUL the 08:10 short turn reaches KEPEZ TOKİ at 08:30, then a 9-minute walk: 08:39. A bus
+    // from KEPEZ TOKİ at 08:20 is at KEPEZ MEYDAN at 08:30, 9 min sooner; at 08:15, 14 min sooner.
+    const close = from => ({ 'T2 C': { name: 'T2 C', dir0: { label: 'MERKEZ', times: ['08:10'], trips: [{ time: '08:10', to: 'KEPEZ TOKİ' },
+      { time: from, from: 'KEPEZ 144 TOKİ', stops: [] }] } } });
+    const stays = await plan(OKUL, MEYDAN, close('08:20'), 8 * 60), moves = await plan(OKUL, MEYDAN, close('08:15'), 8 * 60);
+    ck('direct: the nearest stops stay when the other bus saves under 10 min', pairs(stays) === '[["OKUL","KEPEZ TOKİ",20]]', pairs(stays));
+    ck('direct: and move when it saves 10 min or more', pairs(moves) === '[["KEPEZ TOKİ","KEPEZ MEYDAN",6]]', pairs(moves));
+    // Arrive by 08:45: the 08:00 short turn means leaving OKUL at 08:10; the 08:30 from KEPEZ TOKİ, leaving at 08:21.
+    // At KEPEZ TOKİ the latest bus that still makes it counts (08:30), not the first (08:10).
+    const leaveLater = { 'T2 D': { name: 'T2 D', dir0: { label: 'MERKEZ', times: ['08:00'], trips: [{ time: '08:00', to: 'KEPEZ TOKİ' },
+      { time: '08:10', from: 'KEPEZ 144 TOKİ', stops: [] }, { time: '08:30', from: 'KEPEZ 144 TOKİ', stops: [] }] } } };
+    const later = await core.planTrips(at(OKUL), at(MEYDAN), { pathCache, dayData: leaveLater, nowMins: 7 * 60 + 30,
+      arriveByMins: 8 * 60 + 45, live: false, settings, walkMatrix: async () => null });
+    ck('arrive-by: a bus the nearest stops never see wins when you can leave 10+ min later', pairs(later) === '[["KEPEZ TOKİ","KEPEZ MEYDAN",0]]', pairs(later));
+    // The same bus loops back near the destination: alighting early and walking is 33 min sooner,
+    // but the same bus always alights at the stop nearest the destination.
+    const LOOP = mk('L1', ['A', 'B', 'C', 'X', 'Y', 'Z', 'D'], i => [[40.200, 26.40], [40.205, 26.40], [40.210, 26.40], [40.215, 26.42],
+      [40.215, 26.44], [40.210, 26.44], [40.2136, 26.40]][i]);
+    const loop = await core.planTrips(at(LOOP.busStopList[0]), at(LOOP.busStopList[6]), { pathCache: [{ path: LOOP, route: {} }],
+      dayData: { 'L1 LOOP': { name: 'L1 LOOP', dir0: { label: 'A', times: ['08:00'] } } }, nowMins: 7 * 60 + 55, live: false, settings, walkMatrix: async () => null });
+    ck('direct: the same bus keeps the nearest stops, however the route loops', pairs(loop) === '[["A","D",5]]', pairs(loop));
   }
   {
     // 08:00 is the last bus to reach GAZİ OKULU: 11:00 turns at KEPEZ TOKİ.

@@ -529,6 +529,15 @@ export function parsePages(rawPages) {
           continue;
         }
       }
+      // A turnaround prints its stop twice: the arrival, then the departure.
+      // KALKIŞ over the first of the pair (the second printed VARIŞ or
+      // unmarked) would publish the arrival times as departures: fail.
+      const swapped = columns.find((c, j) => c.departure && columns[j + 1] && !columns[j + 1].departure &&
+        hasTimes(columns[j + 1]) && matchesTerminal(stopName(c.label), stopName(columns[j + 1].label)));
+      if (swapped) {
+        diagnostics.errors.push(`Page ${page.number}: ${heading.id} turnaround at ${stopName(swapped.label)} has KALKIŞ over its arrival`);
+        continue;
+      }
       columns.forEach(c => { c.times = []; c.cells = []; });
       const columnOf = i => columns.find(c => timeX(i) >= c.left && timeX(i) < c.right);
       // A time item wider than its column is a merged cell spanning several.

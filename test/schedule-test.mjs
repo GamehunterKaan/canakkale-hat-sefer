@@ -534,6 +534,19 @@ const editProbes = [
   ['captioned direction loses its origin name', 13, /Page 21: ÇT2 direction KEPEZ - KAMPÜS has no departure column/, p => {
     for (const i of p.find(q => q.number === 21).items) if (i.text === 'KEPEZ 144 TOKİ') i.text = '144 TOKİ';
   }],
+  ['turnaround printed KALKIŞ over its arrival and VARIŞ over its departure', 13, /Page 3: Ç1 turnaround at GAZİ MECLİSİ has KALKIŞ over its arrival/, p => {
+    const items = p.find(q => q.number === 3).items;
+    const arrival = items.find(i => i.text === 'VARIŞ' && i.x > 300 && i.x < 350), departure = items.find(i => i.text === 'KALKIŞ' && i.x > 350 && i.x < 420);
+    [arrival.text, departure.text] = ['KALKIŞ', 'VARIŞ'];
+  }],
+  ['turnaround printed KALKIŞ over its arrival and nothing over its departure', 13, /Page 3: Ç1 turnaround at GAZİ MECLİSİ has KALKIŞ over its arrival/, p => {
+    const items = p.find(q => q.number === 3).items;
+    const arrival = items.find(i => i.text === 'VARIŞ' && i.x > 300 && i.x < 350), departure = items.find(i => i.text === 'KALKIŞ' && i.x > 350 && i.x < 420);
+    [arrival.text, departure.text] = ['KALKIŞ', ''];
+  }],
+  ['an intermediate stop printed with VARIŞ', 13, null, p => {
+    for (const i of p.find(q => q.number === 3).items) if (i.text === 'İSKELE' && i.x < 300) i.text = 'İSKELE VARIŞ';
+  }],
 ];
 for (const [name, index, failure, edit] of editProbes) await test('layout edit: ' + name, () => {
   const altered = structuredClone(pages[index]);

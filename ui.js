@@ -123,15 +123,14 @@ function showScreen(name) {
 
 // ── Schedule helpers ──────────────────────────────────────────────────────────
 
-function nowStr() {
-  const n = new Date();
-  return n.getHours().toString().padStart(2,'0') + ':' + n.getMinutes().toString().padStart(2,'0');
-}
+// Now in the service-day frame of the departures (after midnight is the
+// evening's tail, until 04:00).
+const schedNowMins = () => { const n = new Date(); return _schedFrame(n.getHours() * 60 + n.getMinutes()); };
 
 function countUpcoming(times) {
   if (!times?.length) return 0;
-  const ns = nowStr(), late = new Date().getHours() >= 20;
-  return times.filter(t => t >= ns || (late && t < '04:00')).length;
+  const now = schedNowMins();
+  return times.filter(t => _tmMin(t) >= now).length;
 }
 
 // ── Schedule tab ──────────────────────────────────────────────────────────────
@@ -496,7 +495,7 @@ function renderRouteCards(routeMap, panelId, isToday) {
 }
 
 function highlightNextTimes() {
-  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowMins = schedNowMins();
   // Only highlight chips in the currently-visible tab
   const visible = document.querySelector('.sched-content.visible');
   if (!visible) return;

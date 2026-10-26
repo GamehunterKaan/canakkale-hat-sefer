@@ -606,5 +606,14 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
      viaOther.list.some(m => m.path === C4 && m.board.stopName === 'HALKBAHÇESİ'), show(viaOther));
 }
 
+console.log('\n── service day ──\n');
+{
+  const day = iso => { const t = core.todayParts(new Date(iso)); return JSON.stringify([t.mmdd, t.dayOfWeek, t.isWeekend, t.year]); };
+  ck('before 04:00 the service day is still yesterday: Friday night\'s 00:30 bus runs on Friday\'s timetable',
+     day('2026-10-31T00:30:00+03:00') === '["10-30",5,false,2026]' && day('2026-10-31T03:59:00+03:00') === '["10-30",5,false,2026]');
+  ck('from 04:00 it is the calendar day', day('2026-10-31T04:00:00+03:00') === '["10-31",6,true,2026]');
+  ck('New Year\'s night still belongs to 31 December', day('2027-01-01T01:00:00+03:00') === '["12-31",4,false,2026]');
+}
+
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);
 process.exit(fail ? 1 : 0);

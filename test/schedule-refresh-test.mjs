@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import { refreshSchedules, sameSchedule, validateBundle } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
-import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT, schedDepartures } from '../core.js';
+import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT, schedDepartures, _schedFrame, _tmMin } from '../core.js';
 
 let passed = 0;
 async function test(name, fn) {
@@ -184,20 +184,20 @@ try {
       }
     }
     for (const id of ['schedLoading','schedTabs','schedPanels']) elements.set(id, new Element());
-    let day = { year:2026, mmdd:'10-09', isWeekend:false }, activeTab;
+    let day = { year:2026, mmdd:'10-09', isWeekend:false }, activeTab, clock = [23, 55];
     class LateNightDate extends Date {
-      getHours() { return 23; }
-      getMinutes() { return 55; }
+      getHours() { return clock[0]; }
+      getMinutes() { return clock[1]; }
     }
     const context = vm.createContext({
       document:{ getElementById:id => elements.get(id), createElement:() => new Element() },
-      getSchedule:() => data, scheduleForDay, schedDepartures, todayParts:() => day,
+      getSchedule:() => data, scheduleForDay, schedDepartures, todayParts:() => day, _schedFrame, _tmMin,
       renderScheduleHealth() {}, highlightNextTimes() {}, schedDayLabel:label => label,
       switchSchedTab:id => { activeTab = id; }, t:createT(() => 'tr'),
       Date:LateNightDate, esc:value => String(value), kentkartRouteMap:null,
     });
     const ui = readFileSync(new URL('../ui.js', import.meta.url), 'utf8');
-    const helpers = ui.indexOf('function nowStr()'), helpersEnd = ui.indexOf('// ── Schedule tab', helpers);
+    const helpers = ui.indexOf('const schedNowMins'), helpersEnd = ui.indexOf('// ── Schedule tab', helpers);
     const start = ui.indexOf('function renderSchedule()'), end = ui.indexOf('function highlightNextTimes()', start);
     assert.ok(helpers >= 0 && helpersEnd > helpers && start >= 0 && end > start);
     vm.runInContext(ui.slice(helpers, helpersEnd), context);
@@ -219,6 +219,12 @@ try {
     vm.runInContext('renderSchedule()', context);
     assert.deepEqual(cards().map(c => c.dataset.code).sort(), Object.keys(thursday.routes).sort());
     assert.equal(cards().find(c => c.dataset.code === 'Ç4 ESENLER').innerHTML.includes('data-time="14:37"'), false);
+    // After midnight the evening's departures are behind and its after-midnight ones ahead.
+    const upcoming = () => vm.runInContext('countUpcoming(["22:40", "23:50", "00:20", "00:40"])', context);
+    assert.equal(upcoming(), 2, '23:55');
+    clock = [0, 30];
+    assert.equal(upcoming(), 1, '00:30');
+    clock = [23, 55];
   });
   await test('departure chips show each bus, where it starts and ends, and escape timetable text', () => {
     const ui = readFileSync(new URL('../ui.js', import.meta.url), 'utf8');

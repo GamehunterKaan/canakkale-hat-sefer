@@ -9,14 +9,17 @@
 // invariant is enforced by test/core-test.mjs, which imports this under bare node
 // (where document/window/localStorage/L simply do not exist).
 
-// Compute today (Europe/Istanbul) — mirror of the CI script's todayInTurkey
-export function todayParts() {
+// Today's service day (Europe/Istanbul). A bus after midnight runs on the
+// evening's timetable, so before 04:00 (the cutoff _tmMin uses) today is
+// still yesterday.
+export function todayParts(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date());
-  const get = k => parts.find(p => p.type === k).value;
-  const y = +get('year'), m = +get('month'), d = +get('day');
-  const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+    timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23'
+  }).formatToParts(now);
+  const get = k => +parts.find(p => p.type === k).value;
+  const day = new Date(Date.UTC(get('year'), get('month') - 1, get('day') - (get('hour') < 4 ? 1 : 0), 12));
+  const y = day.getUTCFullYear(), m = day.getUTCMonth() + 1, d = day.getUTCDate();
+  const dow = day.getUTCDay();
   return {
     ymd:  `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,
     mmdd: `${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`,

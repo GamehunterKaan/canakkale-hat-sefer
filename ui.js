@@ -18,7 +18,7 @@ import {
   WALK_DETOUR_FACTOR, WALK_RELAX_MULT, _clockMin, _isLastSefer, _liveBoardWaitMins,
   _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins,
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
-  pickSchedDir, routeSliceCoords, schedCodeNorm, schedTimesForPath, scheduleForDay,
+  pickSchedDir, routeSliceCoords, schedCodeNorm, schedTripsForPath, schedDepartures, scheduleForDay,
   todayParts, withinM, foldTr as _foldTr, scheduleHealth, lastTripsOnRoad, lastBusRunning, expressBase,
   QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
   _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
@@ -386,6 +386,31 @@ function schedPdfLink(url, label) {
   return a;
 }
 
+// A departure's chips, one per bus that leaves at that time. A trip that starts
+// away from the direction's terminal shows where it starts, one that ends
+// before most of its direction's trips shows where it ends, and the
+// timetable's own note ("kalabaklı") is kept.
+const usualEndOf = block => {
+  const trips = block?.trips || [], n = new Map();
+  // A terminal departure the timetable says nothing more about runs to the end (undefined).
+  const ends = [...trips.map(trip => trip.to),
+    ...(block?.times || []).filter(time => !trips.some(trip => !trip.from && trip.time === time)).map(() => undefined)];
+  for (const to of ends) n.set(to, (n.get(to) || 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1])[0]?.[0];
+};
+function timeChip(time, block, usualEnd) {
+  const trips = (block?.trips || []).filter(trip => trip.time === time);
+  const plain = (block?.times || []).includes(time) && !trips.some(trip => !trip.from);
+  return [...(plain ? [{}] : []), ...trips].map(trip => {
+    const to = trip.to && trip.to !== usualEnd ? trip.to : null;
+    const tag = [trip.from, to && '→ ' + to].filter(Boolean).join(' ') || trip.note;
+    const title = [trip.from && t('tripFrom', { stop: trip.from }), to && t('tripTo', { stop: to }),
+      trip.note && t('tripNote', { note: trip.note })].filter(Boolean).join(' ');
+    return '<span class="time-chip" data-time="' + time + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + time
+      + (tag ? '<small class="chip-tag">' + esc(tag) + '</small>' : '') + '</span>';
+  }).join('');
+}
+
 function renderRouteCards(routeMap, panelId, isToday) {
   const cont = document.getElementById(panelId);
   cont.innerHTML = '';
@@ -399,7 +424,8 @@ function renderRouteCards(routeMap, panelId, isToday) {
 
     // Keep the complete timetable available after service ends. Remaining
     // counts and departure highlights indicate what is still running today.
-    const d0 = dir0?.times || [], d1 = dir1?.times || [];
+    const d0 = schedDepartures(dir0), d1 = schedDepartures(dir1);
+    const end0 = usualEndOf(dir0), end1 = usualEndOf(dir1);
 
     const remaining = isToday ? (countUpcoming(d0) + countUpcoming(d1)) : (d0.length + d1.length);
 
@@ -408,17 +434,13 @@ function renderRouteCards(routeMap, panelId, isToday) {
     if (d0.length) {
       const lbl = dir0.label ? esc(dir0.label) + ' →' : t('dirOut');
       body += '<div class="dir-section" data-dir="dir0"><div class="dir-lbl">' + lbl + '</div>'
-        + '<div class="times-grid">'
-        + d0.map(t => '<span class="time-chip" data-time="' + t + '">' + t + '</span>').join('')
-        + '</div></div>';
+        + '<div class="times-grid">' + d0.map(time => timeChip(time, dir0, end0)).join('') + '</div></div>';
     }
     // Direction 1
     if (d1.length) {
       const lbl = dir1.label ? esc(dir1.label) + ' →' : t('dirIn');
       body += '<div class="dir-section" data-dir="dir1"><div class="dir-lbl">' + lbl + '</div>'
-        + '<div class="times-grid">'
-        + d1.map(t => '<span class="time-chip" data-time="' + t + '">' + t + '</span>').join('')
-        + '</div></div>';
+        + '<div class="times-grid">' + d1.map(time => timeChip(time, dir1, end1)).join('') + '</div></div>';
     }
     if (!body) continue;
 
@@ -510,7 +532,7 @@ function updateTodayCards(panel) {
   for (const card of panel.querySelectorAll('.route-card')) {
     const entry = schedTodayRoutes[card.dataset.code], meta = card.querySelector('.rc-meta');
     if (!entry || !meta) continue;
-    const left = countUpcoming(entry.dir0?.times) + countUpcoming(entry.dir1?.times);
+    const left = countUpcoming(schedDepartures(entry.dir0)) + countUpcoming(schedDepartures(entry.dir1));
     meta.textContent = left ? t('schedRemaining', { n: left }) : t('schedNoneLeft');
     if (left) continue;
     const paths = getPathCache().map(pe => pe.path)
@@ -575,7 +597,7 @@ function scheduleMidnightRefresh() {
 }
 scheduleMidnightRefresh();
 
-function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 let SETTINGS = (() => {
   try { return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('bm_settings_v1') || '{}') }; }
@@ -1800,7 +1822,7 @@ function getNextDeparture(code) {
   const entry  = findSchedEntry(dayData, code);
   if (!entry) return null;
   const toM  = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
-  const all  = [...(entry.dir0?.times || []), ...(entry.dir1?.times || [])].sort((a, b) => toM(a) - toM(b));
+  const all  = [...schedDepartures(entry.dir0), ...schedDepartures(entry.dir1)].sort((a, b) => toM(a) - toM(b));
   if (!all.length) return null;
   const now  = _schedNow();   // service-day frame, matches toM
   const next = all.find(t => toM(t) >= now);
@@ -2949,10 +2971,10 @@ async function toggleBusNotify() {
   const seqOf  = {};
   stops.forEach(s => { seqOf[s.stopId] = parseInt(s.seq) || 0; });
 
-  // Compute next scheduled departure timestamp (epoch ms) for time-based alert
-  const dayData_  = getActiveRoutes();
-  const schedE_   = findSchedEntry(dayData_, m.path.displayRouteCode);
-  const schedT_   = schedTimesForPath(schedE_, m.path);
+  // Compute next scheduled departure timestamp (epoch ms) for time-based alert:
+  // the printed departure, from its first stop, of the next trip that calls at
+  // this board stop.
+  const schedT_   = _tripsAt(m.path, m.board.stopId, m.alight.stopId).map(trip => trip.time);
   let nextDepTs   = null;
   if (schedT_.length) {
     const nowMs = Date.now();
@@ -3105,30 +3127,24 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   const atStopReachable = atStop.length && walkToMins <= REACH_GRACE_MIN;
 
   // ── Schedule lookup ──────────────────────────────────────────────────────────
-  // Schedule is keyed by full route name (e.g. "Ç11K KEPEZ ESENLER"), not by code.
-  const dayData = getActiveRoutes();
-  const schedEntry = findSchedEntry(dayData, m.path.displayRouteCode);
-  const nowMins    = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame, matches toMins below
-  // toMins maps early-morning times (h<4) to next-day to keep sort order sane
-  const toMins     = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
-  // Sort by actual chronological minute value — NOT alphabetically.
-  // Alphabetical puts "00:10" before "07:40", making it look like the next bus
-  // is 741 minutes away instead of finding the real next same-day departure.
-  const allSchedTimes = schedTimesForPath(schedEntry, m.path).sort((a, b) => toMins(a) - toMins(b));
+  const nowMins    = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame, matches the trips' minutes
+  // Trips that call at the board stop and stay on to the alight stop, in the
+  // order they pass it (a trip starting down the line counts from there).
+  const trips = _tripsAt(m.path, m.board.stopId, m.alight.stopId);
 
-  // For each terminal departure, calculate when the bus reaches the boarding stop
+  // For each trip, calculate when the bus reaches the boarding stop
   // (from GTFS offsets, flat per-stop fallback inside _travelToStopMins).
   const travelToBoard = _travelToStopMins(boardIdx >= 0 ? stops[boardIdx] : m.board);
 
-  let nextDep = null; // { time: "HH:MM", boardMins: number, tomorrow?: true }
-  for (const t of allSchedTimes) {
-    const boardMins = toMins(t) + travelToBoard;
-    if (boardMins >= nowMins) { nextDep = { time: t, boardMins }; break; }
+  let nextDep = null; // { time: "HH:MM", boardMins: number, trip, tomorrow?: true }
+  for (const trip of trips) {
+    const boardMins = trip.mins + travelToBoard;
+    if (boardMins >= nowMins) { nextDep = { time: trip.time, boardMins, trip }; break; }
   }
   // All of today's buses already departed — wrap to first bus tomorrow
-  if (!nextDep && allSchedTimes.length) {
-    const t = allSchedTimes[0];
-    nextDep = { time: t, boardMins: toMins(t) + travelToBoard + 1440, tomorrow: true };
+  if (!nextDep && trips.length) {
+    const trip = trips[0];
+    nextDep = { time: trip.time, boardMins: trip.mins + travelToBoard + 1440, trip, tomorrow: true };
   }
 
   // ── Wait time ────────────────────────────────────────────────────────────────
@@ -3141,9 +3157,12 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   let waitMins = 0, waitLabel = '', waitDetail = '';
   if (arriveMode) {
     waitMins   = 0;
-    // Label with the TERMINAL departure (what the schedule chips below show);
-    // _boardAt is the bus's arrival at YOUR stop, terminal + travelToBoard.
-    waitLabel  = t('waitDepart', { time: _fmtSched(m._boardAt - travelToBoard) });
+    // Label with the caught trip's printed departure (what the schedule chips
+    // below show); _boardAt is the bus's arrival at YOUR stop, trip.mins +
+    // travelToBoard, and trip.mins is a path-origin minute for a trip that
+    // starts down the line.
+    const caught = trips.find(trip => Math.abs(trip.mins + travelToBoard - m._boardAt) < 1e-6);
+    waitLabel  = t('waitDepart', { time: caught ? caught.time : _fmtSched(m._boardAt - travelToBoard) });
     waitDetail = t('leaveAtArriveAt', { leave: _fmtSched(m._leaveAt), arrive: _fmtSched(m._arriveAt) });
   } else if (!planOffset && atStopReachable) {
     waitMins   = 0;
@@ -3166,16 +3185,15 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Last-bus notice: when the caught departure is the day's final one. In
   // arrive-by mode the planner already knows (its bus ≠ the next one from now).
   const isLastSeferDetail = arriveMode ? !!m._lastBus
-    : !!(nextDep && !nextDep.tomorrow && allSchedTimes.length
-      && nextDep.time === allSchedTimes[allSchedTimes.length - 1]);
+    : !!(nextDep && !nextDep.tomorrow && nextDep.trip === trips[trips.length - 1]);
 
   const totalMins = walkToMins + waitMins + rideMins + walkFromMins;
   // Snapshot for async OSRM correction — _updateTripWalk patches this card
   // once real road distance arrives.
   window._tripWalks = { walkBMins: walkToMins, walkAMins: walkFromMins, waitMins, rideMins };
 
-  // ── Scheduled departure chips (next 5 terminal departures, wrap-aware) ──────
-  const nextTimes = _nextTimes(allSchedTimes, 5);
+  // ── Scheduled departure chips (next 5 departures that call here, wrap-aware) ──
+  const nextTimes = _nextTimes(trips.map(trip => trip.time), 5);
 
   // Badge
   const hex = (m.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
@@ -3665,20 +3683,30 @@ function drawGuidedStep(step) {
   }
 }
 
+// The trips of a path's timetable that call at the board stop and stay on to
+// the alight stop, by path-origin minute (core schedTripsForPath).
+function _tripsAt(path, boardId, alightId) {
+  const stops = path.busStopList || [];
+  const bi = stops.findIndex(s => s.stopId === boardId), ai = stops.findIndex(s => s.stopId === alightId);
+  const trips = schedTripsForPath(findSchedEntry(getActiveRoutes(), path.displayRouteCode), path);
+  return bi < 0 ? trips : trips.filter(trip => trip.start <= bi && Math.max(bi, ai) <= trip.end);
+}
+
 // ── Live, adaptive ETA ──────────────────────────────────────────────────────
-// Sorted scheduled departure times for a leg.
+// Scheduled trips for a leg: those that call at its board stop and stay on to
+// its alight stop, by path-origin minute. A trip's `mins` plus the travel time
+// to the board stop is when it calls there; `time` is its printed departure.
 function _gSchedTimes(step) {
-  return (schedTimesForPath(findSchedEntry(getActiveRoutes(), step.path.displayRouteCode), step.path) || [])
-    .slice().sort((a, b) => _tmMin(a) - _tmMin(b));
+  return _tripsAt(step.path, step.boardId, step.alightId);
 }
 // Minutes to wait for the next scheduled bus at the board stop, given you're
 // there at fromMin (clock minutes). Wraps to tomorrow if all buses have gone.
 function _gSchedWait(step, fromMin) {
-  const times = _gSchedTimes(step);
-  if (!times.length) return { mins: 20, time: null };
+  const trips = _gSchedTimes(step);
+  if (!trips.length) return { mins: 20, time: null };
   const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop);
-  for (const tm of times) { const bm = _tmMin(tm) + travel; if (bm >= fromMin) return { mins: bm - fromMin, time: tm }; }
-  return { mins: _tmMin(times[0]) + travel + 1440 - fromMin, time: times[0] };
+  for (const trip of trips) { const bm = trip.mins + travel; if (bm >= fromMin) return { mins: bm - fromMin, time: trip.time }; }
+  return { mins: trips[0].mins + travel + 1440 - fromMin, time: trips[0].time };
 }
 // Adaptive pace: observed minutes-per-stop (EWMA) plus any "overage" if we've
 // been stuck on the current stop longer than expected (bus late / slow leg).
@@ -3757,8 +3785,7 @@ function guidedEtaHtml() {
 // WAIT detail: scheduled departures + buses approaching the board stop.
 function guidedWaitDetail(step) {
   let html = '';
-  const times = _gSchedTimes(step);
-  const chips = _nextTimes(times, 6);   // soonest 6 departures, wrap-aware
+  const chips = _nextTimes(_gSchedTimes(step).map(trip => trip.time), 6);   // soonest 6 departures, wrap-aware
   if (chips.length) {
     html += '<div class="trip-section"><div class="trip-section-title">' + t('schedTimes') + ' <span style="font-weight:400;opacity:.6">' + t('schedApprox') + '</span></div><div class="dep-chips">';
     chips.forEach((tm, i) => { html += '<span class="dep-chip' + (i === 0 ? ' next' : '') + '">' + tm + '</span>'; });
@@ -3816,10 +3843,12 @@ function guidedWaitText(step) {
   const approaching = buses.filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= 0 && s < boardSeq; })
     .map(b => boardSeq - seqOf[b.stopId]).sort((a, b) => a - b);
   if (approaching.length) return t('navBusApproaching', { n: approaching[0] });
-  const times = (schedTimesForPath(findSchedEntry(getActiveRoutes(), step.path.displayRouteCode), step.path) || []).slice().sort((a, b) => _tmMin(a) - _tmMin(b));
-  const now = _schedNow();   // service-day frame, matches _tmMin
+  const now = _schedNow();   // service-day frame, matches the trips' minutes
   const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop);
-  for (const tm of times) { const bm = _tmMin(tm) + travel; if (bm >= now) return t('navNextDep', { time: tm, mins: Math.max(0, Math.round(bm - now)) }); }
+  for (const trip of _gSchedTimes(step)) {
+    const bm = trip.mins + travel;
+    if (bm >= now) return t('navNextDep', { time: trip.time, mins: Math.max(0, Math.round(bm - now)) });
+  }
   return t('navNoSchedule');
 }
 function guidedRideText(step) {

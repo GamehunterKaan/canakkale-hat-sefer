@@ -278,6 +278,9 @@
     .time-chip.past { color: #374151; background: #141621; border-color: #1e2235; }
     .time-chip.next { color: #fff; background: #1a3660; border-color: #4a90d9; box-shadow: 0 0 8px rgba(74,144,217,.3); }
     .time-chip.active-bus { color: #fff; background: #14532d; border-color: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,.3); }
+    /* A trip that starts or ends away from the direction's terminal, or the timetable's own note. */
+    .time-chip .chip-tag { display: block; font-size: .6rem; font-weight: 600; opacity: .75; max-width: 9em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* ── Planner ── */
     #scr-planner { flex-direction: column; }

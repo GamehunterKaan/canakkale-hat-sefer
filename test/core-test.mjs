@@ -411,5 +411,191 @@ console.log('\n── last bus still on the road ──\n');
      core.lastBusRunning(r1[0], null) === true && core.lastBusRunning(r2[0], null) === false);
 }
 
+// ── Trips that start or end away from the terminals ──────────────────────────
+// A timetable direction lists departures from its terminal and trips that
+// start elsewhere (an evening section, a village trip) or turn back early.
+// T2 runs MERKEZ → OKUL → KEPEZ TOKİ → KEPEZ MEYDAN → GAZİ OKULU, 10 min apart.
+console.log('\n── trips placed on their path ──\n');
+{
+  ck('KEPEZ 144 TOKİ names KEPEZ TOKİ', core._stopNameScore('KEPEZ 144 TOKİ', 'KEPEZ TOKİ') > 0);
+  ck('a cut-short word still names its stop', core._stopNameScore('KEPEZ 144 TOK', 'KEPEZ TOKİ') > 0);
+  ck('spacing does not matter', core._stopNameScore('ESKİ HASTANE', 'ESKİHASTANE') === 3);
+  ck('a shared word is not a match', core._stopNameScore('KEPEZ MEYDAN', 'BELEDİYE MEYDAN') === 0);
+  ck('one generic word does not name a longer stop', core._stopNameScore('KEPEZ', 'KEPEZ ÇAMLIK ALTI') === 0);
+  ck('a short stop name may be the whole word', core._stopNameScore('SSK', 'ESKİ SSK') > 0);
+  ck('a stop name kentkart shortens still matches (SOSYAL BİL. MYO.)', core._stopNameScore('SOSYAL BİLİMLER MYO', 'SOSYAL BİL. MYO.') > 0);
+  ck('a column word (VARIŞ, KALKIŞ) is not part of the name', core._stopNameScore('ELBİ KYK VARIŞ', 'ELBİ KYK') === 3);
+  ck('one name inside the other outranks shared words', core._stopNameScore('İSKELE', 'İSKELE 2') === 2);
+  ck('a short name is not found inside a longer word', core._stopNameScore('ADA', 'KADAYIF') === 0);
+  ck('initials and one-letter stop words match nothing',
+     core._stopNameScore('A B C', 'ADLİYE BARBAROS CUMA') === 0 && core._stopNameScore('ADLİYE', 'A BLOK') === 0);
+  const names = ['MERKEZ', 'OKUL', 'KEPEZ TOKİ', 'KEPEZ MEYDAN', 'GAZİ OKULU'];
+  const T2 = { displayRouteCode: 'T2', direction: '0', busList: [], busStopList: names.map((stopName, i) => ({
+    stopId: 't' + i, stopName, seq: String(i + 1), lat: String(40.20 + i * 0.0045), lng: '26.40',
+    arrival_offset: String(i * 600), departure_offset: String(i * 600) })) };
+  const entry = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['08:00', '11:00'], trips: [
+    { time: '09:00', from: 'KEPEZ 144 TOKİ', stops: [['KEPEZ MEYDAN', '09:10'], ['GAZİ OKULU', '09:30']] },
+    { time: '10:00', from: 'ÇINARLI', stops: [['KEPEZ MEYDAN', '10:15'], ['GAZİ OKULU', '10:35']] },
+    { time: '11:00', to: 'KEPEZ TOKİ' },
+    { time: '12:00', from: 'ÇINARLI', stops: [] },
+  ] } };
+  const placed = core.schedTripsForPath(entry, T2);
+  ck('each trip is placed at the stops it serves, a trip off the path is left out',
+     JSON.stringify(placed.map(t => [t.time, t.start, t.end, t.mins])) ===
+     JSON.stringify([['08:00', 0, 4, 480], ['09:00', 2, 4, 520], ['10:00', 3, 4, 585], ['11:00', 0, 2, 660]]),
+     JSON.stringify(placed.map(t => [t.time, t.start, t.end, t.mins])));
+  ck('only trips calling at both stops count',
+     JSON.stringify([core._tripMinsAt(placed, 0, 4), core._tripMinsAt(placed, 3, 4), core._tripMinsAt(placed, 1, 2)]) ===
+     JSON.stringify([[480], [480, 520, 585], [480, 660]]));
+  ck('departures from the terminal are the plain times', JSON.stringify(core.schedTimesForPath(entry, T2)) === '["08:00","11:00"]');
+  ck('the timetable lists every departure', JSON.stringify(core.schedDepartures(entry.dir0)) === '["08:00","09:00","10:00","11:00","12:00"]');
+  const at = s => ({ lat: +s.lat, lng: +s.lng });
+  const plan = (board, alight, nowMins) => core.planTrips(at(T2.busStopList[board]), at(T2.busStopList[alight]), {
+    pathCache: [{ path: T2, route: {} }], dayData: { 'T2 TEST': entry }, nowMins, live: false,
+    settings: { walkRadius: 300, walkSpeedMpm: 75 }, walkMatrix: async () => null });
+  const atMerkez = await plan(0, 4, 8 * 60 + 30);
+  ck('no bus is offered at the terminal for a trip that starts down the line', atMerkez?.list.length === 0,
+     JSON.stringify(atMerkez?.list.map(m => m._wait)));
+  const atMeydan = (await plan(3, 4, 8 * 60 + 50))?.list[0];
+  ck('down the line the trip arrives on its own clock (09:10 at KEPEZ MEYDAN)', atMeydan?._wait === 20, String(atMeydan?._wait));
+  // 11:00 turns back at KEPEZ TOKİ, a walk from KEPEZ MEYDAN: ride to there instead.
+  const pastEnd = await plan(1, 3, 10 * 60 + 50);
+  ck('a trip that turns back early is not offered beyond its end, only to where it turns back',
+     JSON.stringify(pastEnd?.list.map(m => [m.alight.stopName, m._wait])) === '[["KEPEZ TOKİ",20]]',
+     JSON.stringify(pastEnd?.list.map(m => [m.alight.stopName, m._wait])));
+  // 11:00 turns back at KEPEZ TOKİ (11:20): it is off the road well before the full run would end.
+  ck('the last trip ends where it turns back',
+     core.lastTripsOnRoad(entry, [T2], 11 * 60 + 15)[0]?.onSchedule === true &&
+     core.lastTripsOnRoad(entry, [T2], 11 * 60 + 25)[0]?.onSchedule === false);
+  // A last trip from KEPEZ TOKİ is on the road from when it leaves there (12:00).
+  const fromTokiLast = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['08:00'], trips: [{ time: '12:00', from: 'KEPEZ TOKİ', stops: [] }] } };
+  ck('a last trip that starts down the line is on the road once it leaves its own first stop',
+     core.lastTripsOnRoad(fromTokiLast, [T2], 11 * 60 + 50).length === 0 &&
+     core.lastTripsOnRoad(fromTokiLast, [T2], 12 * 60 + 10)[0]?.onSchedule === true);
+  // 12:00 from MERKEZ passes KEPEZ TOKİ at 12:20, after the 12:05 that starts there: 12:00 is the last on the road.
+  const lastByRoad = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['12:00'], trips: [{ time: '12:05', from: 'KEPEZ TOKİ', stops: [] }] } };
+  ck('the last trip is the one furthest behind on the road, not the latest printed time',
+     JSON.stringify(core.lastTripsOnRoad(lastByRoad, [T2], 12 * 60 + 30).map(t => [t.time, t.onSchedule])) === '[["12:00",true]]',
+     JSON.stringify(core.lastTripsOnRoad(lastByRoad, [T2], 12 * 60 + 30)));
+  const campus = ['GAZİ OKULU', 'DARDANOS CAMİİ', 'JANDARMA', 'ÇOMÜDARDANOS'].map(stopName => ({ stopName }));
+  ck('a trip end the path\'s own end also matches is that end, not an earlier stop',
+     core._stopIndex(campus, 'DARDANOS', 0, true) === 3 && core._stopIndex(campus, 'DARDANOS') === 1);
+  // ESKİ HASTANE is not on T2 but on another route, across the road from OKUL.
+  const other = { displayRouteCode: 'T3', direction: '1', busStopList: [
+    { stopId: 'o1', stopName: 'ESKİHASTANE', lat: String(40.2045 + 0.00018), lng: '26.40' },
+    { stopId: 'o2', stopName: 'ÇINARLI', lat: '40.22', lng: '26.40' }] };
+  const pathCache = [{ path: T2 }, { path: other }];
+  const offPath = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['08:05'], trips: [
+    { time: '08:05', to: 'GAZİ OKULU' }, { time: '08:05', to: 'KEPEZ TOKİ' },
+    { time: '13:00', from: 'ESKİ HASTANE', stops: [['GAZİ OKULU', '13:40']] },
+    { time: '14:00', from: 'ÇINARLI', stops: [['GAZİ OKULU', '14:40']] },
+  ] } };
+  ck('a trip leaves from the path\'s stop across the road from its own first stop; buses that leave together run as far as the furthest',
+     JSON.stringify(core.schedTripsForPath(offPath, T2, pathCache).map(t => [t.time, t.start, t.end, t.mins])) ===
+     JSON.stringify([['08:05', 0, 4, 485], ['13:00', 1, 4, 770]]),
+     JSON.stringify(core.schedTripsForPath(offPath, T2, pathCache).map(t => [t.time, t.start, t.end, t.mins])));
+}
+
+console.log('\n── every leg counts only the trips that serve it ──\n');
+{
+  // T2: MERKEZ → OKUL → KEPEZ TOKİ → KEPEZ MEYDAN → GAZİ OKULU, 10 min apart.
+  // T7: KEPEZ MEYDAN B (40 m from T2's KEPEZ MEYDAN) → ÇARŞI → LİSE → STADYUM, heading east.
+  const mk = (code, names, pos) => ({ displayRouteCode: code, direction: '0', busList: [], busStopList: names.map((stopName, i) => ({
+    stopId: code + i, stopName, seq: String(i + 1), lat: String(pos(i)[0]), lng: String(pos(i)[1]),
+    arrival_offset: String(i * 600), departure_offset: String(i * 600) })) });
+  const T2 = mk('T2', ['MERKEZ', 'OKUL', 'KEPEZ TOKİ', 'KEPEZ MEYDAN', 'GAZİ OKULU'], i => [40.20 + i * 0.0045, 26.40]);
+  const T7 = mk('T7', ['KEPEZ MEYDAN B', 'ÇARŞI', 'LİSE', 'STADYUM'], j => [40.2135, 26.4005 + j * 0.006]);
+  const at = s => ({ lat: +s.lat, lng: +s.lng });
+  const settings = { walkRadius: 300, walkSpeedMpm: 75 }, pathCache = [{ path: T2, route: {} }, { path: T7, route: {} }];
+  const plan = (o, d, dayData, nowMins, arriveByMins = null) => core.planTrips(at(o), at(d),
+    { pathCache, dayData, nowMins, arriveByMins, live: false, settings, walkMatrix: async () => null });
+  const spec = (o, d, legs, dayData, nowMins) => core.buildTripFromSpec({ origin: at(o), dest: at(d), legs }, { pathCache, dayData, nowMins, settings });
+  const leg = (p, b, a) => ({ code: p.displayRouteCode, dir: '0', board: p.busStopList[b].stopId, alight: p.busStopList[a].stopId });
+  const show = r => JSON.stringify(r?.list?.map(m => m.isMultiLeg ? ['X', m.leg1.wait, m.leg2.wait, m._eta, m._lastBus]
+    : [m.path.displayRouteCode, m.alight.stopName, m._wait, m._eta, m._lastBus]));
+  const [MERKEZ, OKUL, , MEYDAN, GAZI] = T2.busStopList, STADYUM = T7.busStopList[3];
+  {
+    // No trip calls at both OKUL and KEPEZ MEYDAN: 11:00 turns at KEPEZ TOKİ, 09:00 starts there.
+    const day = { 'T2 A': { name: 'T2 A', dir0: { label: 'MERKEZ', times: ['11:00'], trips: [{ time: '11:00', to: 'KEPEZ TOKİ' },
+      { time: '09:00', from: 'KEPEZ 144 TOKİ', stops: [['KEPEZ MEYDAN', '09:10'], ['GAZİ OKULU', '09:30']] }] } } };
+    const r = await plan(OKUL, MEYDAN, day, 8 * 60);
+    ck('direct: no bus is offered to a stop no trip from the board stop reaches', !r.list.some(m => m.alight.stopId === MEYDAN.stopId), show(r));
+    ck('trip link: rebuilt as null when no trip calls at both stops', spec(OKUL, MEYDAN, [leg(T2, 1, 3)], day, 8 * 60) === null);
+  }
+  {
+    // 08:00 is the last bus to reach GAZİ OKULU: 11:00 turns at KEPEZ TOKİ.
+    const day = { 'T2 B': { name: 'T2 B', dir0: { label: 'MERKEZ', times: ['08:00', '11:00'], trips: [{ time: '11:00', to: 'KEPEZ TOKİ' }] } } };
+    const r = await plan(MERKEZ, GAZI, day, 7 * 60 + 45);
+    ck('direct: the last bus is judged on the trips that reach the alight stop', r.list[0]?._lastBus === true, show(r));
+    const m = spec(MERKEZ, GAZI, [leg(T2, 0, 4)], day, 7 * 60 + 45);
+    ck('trip link: likewise', m?._lastBus === true && m?._wait === 15, JSON.stringify(m && [m._wait, m._lastBus]));
+  }
+  // Transfer at KEPEZ MEYDAN. T2: 08:00 and 10:00 turn at OKUL, 09:00 runs through. T7: 09:40 turns at ÇARŞI, 10:40 runs through.
+  const T2x = { name: 'T2 X', dir0: { label: 'MERKEZ', times: ['08:00', '09:00', '10:00'], trips: [{ time: '08:00', to: 'OKUL' }, { time: '10:00', to: 'OKUL' }] } };
+  const T7x = { name: 'T7 X', dir0: { label: 'KEPEZ MEYDAN B', times: ['09:40', '10:40'], trips: [{ time: '09:40', to: 'ÇARŞI' }] } };
+  {
+    const day = { 'T2 X': T2x, 'T7 X': T7x };
+    const x = (await plan(MERKEZ, STADYUM, day, 7 * 60 + 50)).list.find(m => m.isMultiLeg);
+    ck('transfer: each leg waits for a bus that reaches its stops (09:00, then 10:40)',
+       JSON.stringify(x && [x.leg1.wait, x.leg2.wait, x._eta, x._lastBus]) === '[70,69,200,true]', JSON.stringify(x && [x.leg1.wait, x.leg2.wait, x._eta, x._lastBus]));
+    const xb = (await plan(MERKEZ, STADYUM, day, 7 * 60 + 50, 11 * 60 + 30)).list.find(m => m.isMultiLeg);
+    ck('arrive-by transfer: leg 1 is the 09:00, leg 2 the 10:40', Math.round(xb?._boardAt) === 540 && Math.round(xb?._leg2BoardAt) === 640,
+       JSON.stringify(xb && [xb._boardAt, xb._leg2BoardAt]));
+    const m = spec(MERKEZ, STADYUM, [leg(T2, 0, 3), leg(T7, 0, 3)], day, 7 * 60 + 50);
+    ck('trip link transfer: the same waits', m?.leg1.wait === 70 && m?.leg2.wait === 69, JSON.stringify(m && [m.leg1.wait, m.leg2.wait]));
+    const noLeg1 = { 'T2 N': { name: 'T2 N', dir0: { label: 'MERKEZ', times: ['08:00'], trips: [{ time: '08:00', to: 'OKUL' }] } }, 'T7 X': T7x };
+    ck('transfer: none when no leg-1 trip reaches the transfer stop', !(await plan(MERKEZ, STADYUM, noLeg1, 7 * 60 + 50)).list.some(m => m.isMultiLeg));
+    const noLeg2 = { 'T2 X': T2x, 'T7 N': { name: 'T7 N', dir0: { label: 'KEPEZ MEYDAN B', times: ['09:40'], trips: [{ time: '09:40', to: 'ÇARŞI' }] } } };
+    ck('transfer: none when no leg-2 trip reaches the alight stop', !(await plan(MERKEZ, STADYUM, noLeg2, 7 * 60 + 50)).list.some(m => m.isMultiLeg));
+    // A short-turn 12:30 serves the board stop; the only trip to the transfer stop is tomorrow's 05:00.
+    const overnight = { 'T2 O': { name: 'T2 O', dir0: { label: 'MERKEZ', times: ['05:00', '12:30'], trips: [{ time: '12:30', to: 'OKUL' }] } },
+      'T7 O': { name: 'T7 O', dir0: { label: 'KEPEZ MEYDAN B', times: ['05:40'] } } };
+    ck('transfer: no overnight leg-1 wait', !(await plan(MERKEZ, STADYUM, overnight, 12 * 60)).list.some(m => m.isMultiLeg));
+    // Leg 1 (09:00) is the last T2 to reach KEPEZ MEYDAN; leg 2 is not the last (11:40 runs through).
+    const legOneLast = { 'T2 X': T2x, 'T7 L': { name: 'T7 L', dir0: { label: 'KEPEZ MEYDAN B', times: ['09:40', '10:40', '11:40'], trips: [{ time: '09:40', to: 'ÇARŞI' }] } } };
+    ck('transfer: leg 1\'s last bus is judged on trips reaching the transfer stop',
+       (await plan(MERKEZ, STADYUM, legOneLast, 7 * 60 + 50)).list.find(m => m.isMultiLeg)?._lastBus === true);
+    // Leg 1 is not the last (10:30 runs through); leg 2's 10:40 is the last to reach STADYUM, and 08:40 is gone by the transfer.
+    const legTwoLast = { 'T2 Y': { name: 'T2 Y', dir0: { label: 'MERKEZ', times: ['08:00', '09:00', '10:30'], trips: [{ time: '08:00', to: 'OKUL' }] } },
+      'T7 Y': { name: 'T7 Y', dir0: { label: 'KEPEZ MEYDAN B', times: ['08:40', '10:40', '11:40'], trips: [{ time: '11:40', to: 'ÇARŞI' }] } } };
+    ck('transfer: leg 2\'s last bus is judged on trips reaching the alight stop, from the real leg-1 arrival',
+       (await plan(MERKEZ, STADYUM, legTwoLast, 7 * 60 + 50)).list.find(m => m.isMultiLeg)?._lastBus === true);
+  }
+  const st = names => names.map(stopName => ({ stopName }));
+  ck('a stop\'s whole name inside the timetable\'s names it (HÜSEYİN ELBİ YURDU ~ ELBİ KYK)',
+     core._stopIndex(st(['ELBİ KYK', 'İSKELE']), 'HÜSEYİN ELBİ YURDU') === 0);
+  const twin = st(['NUSRAT', 'MÜHENDİSLİK FAKÜLTESİ', 'MÜHENDİSLİK FAKÜLTESİ', 'ARDES YURT']);
+  ck('a trip ends at the last of a run of same-named stops, and starts at the first',
+     core._stopIndex(twin, 'MÜHENDİSLİK FAKÜLTESİ', 0, true) === 2 && core._stopIndex(twin, 'MÜHENDİSLİK FAKÜLTESİ') === 1);
+  ck('a run does not jump over other stops', core._stopIndex(st(['OTOGAR', 'X', 'OTOGAR', 'Y']), 'OTOGAR', 0, true) === 0);
+  const T9 = { displayRouteCode: 'T9', direction: '0', busStopList: twin.map((s, i) => ({ ...s, stopId: 'p' + i, seq: String(i + 1), arrival_offset: String(i * 600) })) };
+  ck('placement: a trip to a stop the path names twice runs to the second',
+     core.schedTripsForPath({ name: 'T9', dir0: { label: 'NUSRAT', times: ['08:00'], trips: [{ time: '08:00', to: 'MÜHENDİSLİK FAKÜLTESİ' }] } }, T9)[0]?.end === 2);
+  // Across the road means a stop of exactly that name within TRANSFER_CROSS_ROAD_M.
+  const mkp = (code, rows) => ({ displayRouteCode: code, direction: '0', busList: [], busStopList: rows.map(([stopName, lat, lng], i) => ({
+    stopId: code + i, stopName, seq: String(i + 1), lat: String(lat), lng: String(lng), arrival_offset: String(i * 300) })) });
+  const C4 = mkp('C4', [['BAHRİYE', 40.150, 26.400], ['HALKBAHÇESİ', 40.152, 26.400], ['İSKELE', 40.154, 26.400], ['ELBİ KYK', 40.156, 26.400]]);
+  const evening = { name: 'C4', dir0: { label: 'BAHRİYE', times: ['18:00'], trips: [{ time: '19:00', from: 'ESKİ HASTANE', stops: [['İSKELE', '19:05']] }] } };
+  const startWith = other => core.schedTripsForPath(evening, C4, [{ path: C4 }, { path: other }]).find(t => t.time === '19:00')?.start;
+  ck('a same-named stop 255 m away is not across the road', startWith(mkp('C9', [['ESKİ HASTANE', 40.152, 26.403]])) === 2);
+  ck('only an exactly named stop elsewhere is used across the road', startWith(mkp('C9', [['ESKİ HASTANE GİRİŞİ', 40.152, 26.4004]])) === 2);
+  // Two stops of this path within reach: the trip starts at the nearer one.
+  const C4twin = mkp('C4', [['BAHRİYE', 40.150, 26.400], ['HALKBAHÇESİ', 40.152, 26.400], ['HALKBAHÇESİ 2', 40.15205, 26.4004], ['ELBİ KYK', 40.156, 26.400]]);
+  ck('across the road is the nearest stop of the path',
+     core.schedTripsForPath(evening, C4twin, [{ path: C4twin }, { path: mkp('C9', [['ESKİHASTANE', 40.152, 26.4004]]) }]).find(t => t.time === '19:00')?.start === 2);
+  // A trip's end is searched from where it starts: ANAFARTALAR KAMPÜSÜ is stop 1 and stop 3.
+  const loop = mkp('C4', [['BAHRİYE', 40.150, 26.400], ['ANAFARTALAR KAMPÜSÜ', 40.152, 26.400], ['İSKELE', 40.154, 26.400],
+    ['ANAFARTALAR KAMPÜSÜ', 40.156, 26.400], ['ELBİ KYK', 40.158, 26.400]]);
+  const toCampus = { name: 'C4', dir0: { label: 'BAHRİYE', times: ['18:00'], trips: [{ time: '19:00', from: 'İSKELE', stops: [], to: 'ANAFARTALAR KAMPÜSÜ' }] } };
+  ck('a trip ends at the first stop of its end name after where it starts',
+     core.schedTripsForPath(toCampus, loop, [{ path: loop }]).find(t => t.time === '19:00')?.end === 3);
+  // The planner places such trips with its own path cache: the 19:00 leaves HALKBAHÇESİ.
+  const out = mkp('C4', [['ELBİ KYK', 40.156, 26.4004], ['ESKİHASTANE', 40.152, 26.4004], ['BADEMLİ', 40.148, 26.4004]]);
+  const viaOther = await core.planTrips(at(C4.busStopList[1]), at(C4.busStopList[3]), { pathCache: [{ path: C4, route: {} }, { path: out, route: {} }],
+    dayData: { C4: evening }, nowMins: 18 * 60 + 55, live: false, settings, walkMatrix: async () => null });
+  ck('the planner boards a trip at the stop across the road from its first stop',
+     viaOther.list.some(m => m.path === C4 && m.board.stopName === 'HALKBAHÇESİ'), show(viaOther));
+}
+
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);
 process.exit(fail ? 1 : 0);

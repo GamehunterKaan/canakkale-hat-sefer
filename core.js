@@ -289,6 +289,7 @@ export const STR = {
     // ── Schedule ──
     schedLoading: 'Seferler yükleniyor…',
     dirOut: 'Gidiş →', dirIn: 'Dönüş →', liveBtn: '🚌 Canlı', canli: 'Canlı',
+    tripFrom: 'Bu sefer {stop} durağından kalkar.', tripTo: 'Bu sefer {stop} durağında biter.', tripNote: 'Tarifedeki not: {note}',
     schedNoData: 'Veri alınamadı. Sayfayı yenileyin.',
     schedDone: 'Tamamlandı.', schedUpdating: 'Veriler güncelleniyor…',
     schedError: 'Hata: {err}', schedLoadFail: 'Yüklenemedi: {err}', stopsLoaded: '{n} durak',
@@ -466,6 +467,7 @@ export const STR = {
     setAbout: 'About', setDevSite: '🌐 Developer site', setGitHub: '💻 GitHub', setContact: '✉️ Contact — kaan@kaangultekin.net',
     schedLoading: 'Loading schedules…',
     dirOut: 'Outbound →', dirIn: 'Inbound →', liveBtn: '🚌 Live', canli: 'Live',
+    tripFrom: 'This trip starts at {stop}.', tripTo: 'This trip ends at {stop}.', tripNote: 'Timetable note: {note}',
     schedNoData: 'Could not load data. Refresh the page.',
     schedDone: 'Done.', schedUpdating: 'Updating data…',
     schedError: 'Error: {err}', schedLoadFail: 'Could not load: {err}', stopsLoaded: '{n} stops',
@@ -584,13 +586,112 @@ export function pickSchedDir(schedEntry, path) {
   return has(pick) ? pick : (pick === def ? oth : def);
 }
 
+// Departures that leave from the path's first stop (see schedTripsForPath).
 export function schedTimesForPath(schedEntry, path) {
   if (!schedEntry) return [];
   const dir = pickSchedDir(schedEntry, path);
-  if (dir) return schedEntry[dir]?.times || [];
+  if (dir) return schedTripsForPath(schedEntry, path).filter(t => t.start === 0).map(t => t.time);
   // Fallback: merge both directions if we can't determine the mapping
   return [...(schedEntry.dir0?.times || []), ...(schedEntry.dir1?.times || [])];
 }
+
+// A direction's departures for display: those from its terminal and the trips
+// that start at another stop (an evening section, a village trip).
+export const schedDepartures = block => [...new Set([...(block?.times || []),
+  ...(block?.trips || []).filter(t => t.from).map(t => t.time)])].sort((a, b) => _tmMin(a) - _tmMin(b));
+
+// How well a timetable stop name names a kentkart stop: 3 identical, 2 one
+// contains the other, 1 every word of the name is in the stop's (a word may
+// be cut short, a number may be left out), 0 not at all. One generic word
+// ("KEPEZ") only names a short stop name, never every stop that contains it.
+const _stopWords = s => foldTr(s).toUpperCase()
+  .replace(/\b(?:YURDU|YURT|DURAGI|DURAK|KYK|VARIS|KALKIS)\b/g, ' ').replace(/[^A-Z0-9]+/g, ' ').trim();
+export function _stopNameScore(name, stopName) {
+  const a = _stopWords(name), b = _stopWords(stopName);
+  const ca = a.replace(/ /g, ''), cb = b.replace(/ /g, '');
+  if (!ca || !cb) return 0;
+  if (ca === cb) return 3;
+  // The stop's whole name inside the timetable's (HÜSEYİN ELBİ YURT ~ ELBİ KYK),
+  // or the timetable's inside a stop name of at most two words (İSKELE ~ İSKELE 2).
+  if (Math.min(ca.length, cb.length) >= 4 && (ca.includes(cb) || (cb.includes(ca) && b.split(' ').length <= 2))) return 2;
+  const words = a.split(' ').filter(w => w.length >= 3 && !/^\d+$/.test(w)), stop = b.split(' ');
+  const named = w => stop.some(s => s.length >= 3 && (s.startsWith(w) || w.startsWith(s)));
+  return words.length && words.every(named) && (words.length >= 2 || stop.length <= 2) ? 1 : 0;
+}
+// Index of the stop a timetable name refers to, from `from` on: the best match,
+// and for a trip's end the last of a run of stops with that name, or the
+// path's own end when it matches as well (DARDANOS: ÇOMÜDARDANOS, not the
+// DARDANOS CAMİİ before it).
+export function _stopIndex(stops, name, from = 0, end = false) {
+  let best = -1, score = 0;
+  for (let i = from; i < stops.length; i++) {
+    const s = _stopNameScore(name, stops[i]?.stopName);
+    if (s > score) { best = i; score = s; }
+    else if (end && s && s === score && (i === best + 1 || i === stops.length - 1)) best = i;
+  }
+  return best;
+}
+
+// The stops of every path that a timetable name names exactly, per path cache.
+const _namedStops = new WeakMap();
+function _stopsNamed(name, pathCache) {
+  let byName = _namedStops.get(pathCache);
+  if (!byName) _namedStops.set(pathCache, byName = new Map());
+  if (!byName.has(name)) byName.set(name, pathCache.flatMap(pe =>
+    (pe.path?.busStopList || []).filter(s => _stopNameScore(name, s.stopName) === 3)));
+  return byName.get(name);
+}
+// A name this path does not use can still be one of its stops: the stop of
+// that name on another route, across the road from one of this path's
+// (ESKİ HASTANE on Ç4's other direction is HALKBAHÇESİ's other side).
+function _stopIndexNear(stops, name, from, pathCache) {
+  let best = -1, bestM = TRANSFER_CROSS_ROAD_M;
+  for (const s of _stopsNamed(name, pathCache)) for (let i = from; i < stops.length; i++) {
+    const m = haversine(+s.lat, +s.lng, +stops[i].lat, +stops[i].lng);
+    if (m <= bestM) { best = i; bestM = m; }
+  }
+  return best;
+}
+
+// The trips of the timetable direction that serves `path`, placed on it.
+// `time` is the printed clock at the trip's first stop; `mins` (service-day
+// frame) is when it would have left the path's first stop, so `mins +
+// _travelToStopMins(stop)` is when the bus reaches any stop it serves;
+// `start`..`end` are the indexes of the stops it serves. The timetable lists
+// trips that start elsewhere (`from`, with their later timed `stops`) or end
+// early (`to`). A trip that meets none of this path's stops is left out: the
+// timetable still lists it, but no stop is ever shown a bus that never comes.
+export function schedTripsForPath(schedEntry, path, pathCache = _pathCache) {
+  const dir = schedEntry && pickSchedDir(schedEntry, path), stops = path?.busStopList || [];
+  if (!dir || !stops.length) return [];
+  const block = schedEntry[dir], last = stops.length - 1, out = [];
+  const indexOf = (name, from = 0, end = false) => {
+    const i = _stopIndex(stops, name, from, end);
+    return i >= 0 ? i : _stopIndexNear(stops, name, from, pathCache);
+  };
+  // An end this path does not name is where the path ends.
+  const endOf = (trip, start) => { const i = trip?.to ? indexOf(trip.to, start, true) : -1; return i >= 0 ? i : last; };
+  // Buses that leave together run as far as the furthest of them.
+  const ends = new Map();
+  for (const trip of (block.trips || []).filter(t => !t.from)) ends.set(trip.time, Math.max(ends.get(trip.time) ?? 0, endOf(trip, 0)));
+  for (const time of block.times || []) out.push({ time, mins: _tmMin(time), start: 0, end: ends.get(time) ?? last });
+  for (const trip of (block.trips || []).filter(t => t.from)) {
+    let start = indexOf(trip.from), at = trip.time;
+    for (const [name, time] of start < 0 ? trip.stops || [] : []) {
+      start = indexOf(name);
+      if (start >= 0) { at = time; break; }
+    }
+    if (start < 0) continue;
+    const end = endOf(trip, start);
+    if (end > start) out.push({ time: trip.time, mins: _tmMin(at) - _travelToStopMins(stops[start]), start, end });
+  }
+  return out.sort((a, b) => a.mins - b.mins);
+}
+
+// Path-origin minutes of the trips that serve stop `boardIdx` and stay on to
+// `alightIdx`, ascending: the `times` the board/wait helpers below expect.
+export const _tripMinsAt = (trips, boardIdx, alightIdx = boardIdx) =>
+  trips.filter(t => t.start <= boardIdx && alightIdx <= t.end).map(t => t.mins);
 
 // ── Trip planner ────────────────────────────────────────────────────────────
 // One clean pass. Real PEDESTRIAN walk distances (Valhalla matrix) decide which
@@ -725,13 +826,14 @@ export function _isLastSefer(times, travelToBoardMins, fromMins) {
 export function lastTripsOnRoad(entry, paths, nowMins) {
   const found = new Map();
   for (const p of paths) {
-    const st = p.busStopList || [], times = schedTimesForPath(entry, p);
-    if (!st.length || !times.length) continue;
-    const last = times.reduce((a, b) => (_tmMin(b) > _tmMin(a) ? b : a));
-    const end = _tmMin(last) + _travelToStopMins(st[st.length - 1]);
-    if (_tmMin(last) > nowMins || nowMins >= end + LAST_BUS_LATE_SLACK_MIN) continue;
-    const dir = pickSchedDir(entry, p), key = dir + '|' + last;
-    if (!found.has(key) || end > found.get(key).end) found.set(key, { time: last, dir, path: p, end });
+    const st = p.busStopList || [], trips = schedTripsForPath(entry, p);
+    if (!st.length || !trips.length) continue;
+    // The last trip may start or end away from the path's terminals.
+    const last = trips.reduce((a, b) => (b.mins > a.mins ? b : a));
+    const leaves = last.mins + _travelToStopMins(st[last.start]), end = last.mins + _travelToStopMins(st[last.end]);
+    if (leaves > nowMins || nowMins >= end + LAST_BUS_LATE_SLACK_MIN) continue;
+    const dir = pickSchedDir(entry, p), key = dir + '|' + last.time;
+    if (!found.has(key) || end > found.get(key).end) found.set(key, { time: last.time, dir, path: p, end });
   }
   return [...found.values()].map(({ time, dir, path, end }) => ({ time, dir, path, onSchedule: nowMins < end }));
 }
@@ -1045,7 +1147,7 @@ export async function planTrips(origin, dest, {
     if (!entry && !hasLive) continue;
     usable.push({
       p, route: pe.route, st, code: p.displayRouteCode, buses: p.busList || [],
-      times: entry ? (schedTimesForPath(entry, p) || []).map(_tmMin).sort((a,b)=>a-b) : [],
+      trips: entry ? schedTripsForPath(entry, p, pathCache) : [],
     });
   }
 
@@ -1080,7 +1182,10 @@ export async function planTrips(origin, dest, {
   // past the closest stop to one farther along the route, which nobody wants —
   // people walk to the nearest stop and accept the extra stops on the bus. If
   // the nearest stop has no reachable alight after it (wrong direction), fall
-  // through to the next-nearest board.
+  // through to the next-nearest board. Only trips that call at both stops
+  // count, so the pair is the nearest that a trip serves in time (an evening
+  // section turns back before the stop nearest you); failing that, the
+  // nearest any trip serves, for the late-bus rule below.
   for (const u of usable) {
     const boards = [];
     for (let i = 0; i < u.st.length; i++) {
@@ -1088,16 +1193,33 @@ export async function planTrips(origin, dest, {
       if (w != null && w <= MAXW) boards.push({ i, w });
     }
     boards.sort((a, b) => a.w - b.w);
-    let chosen = null;
+    const inTime = (times, pair) => {
+      const travel = _travelToStopMins(u.st[pair.bi]), boardArr = nowMins + walkMins(pair.bw);
+      if (arriveByMins == null) return _waitFromTimes(times, travel, boardArr) < MAX_WAIT_MIN;
+      const latestAtBoard = arriveByMins - _rideMins(u.st, pair.bi, pair.ai) - walkMins(pair.aw);
+      return _latestBoardAt(times, travel, latestAtBoard, boardArr) != null;
+    };
+    let chosen = null, served = null;
     for (const b of boards) {
-      let ai = -1, aw = Infinity;
+      const alights = [];
       for (let j = b.i + 1; j < u.st.length; j++) {
         const w = alightWalk.get(u.st[j].stopId);
-        if (w != null && w <= MAXW && w < aw) { aw = w; ai = j; }
+        if (w != null && w <= MAXW) alights.push({ j, w });
       }
-      if (ai >= 0) { chosen = { bi: b.i, bw: b.w, ai, aw }; break; }
+      alights.sort((a, b) => a.w - b.w);
+      for (const a of alights) {
+        const pair = { bi: b.i, bw: b.w, ai: a.j, aw: a.w };
+        // A timetable whose trips all miss the pair means no bus, not an unknown schedule.
+        const times = _tripMinsAt(u.trips, pair.bi, pair.ai);
+        if (u.trips.length && !times.length) continue;
+        served ||= pair;
+        if (!u.trips.length || inTime(times, pair)) { chosen = pair; break; }
+      }
+      if (chosen) break;
     }
+    chosen ||= served;
     if (!chosen) continue;
+    const times = _tripMinsAt(u.trips, chosen.bi, chosen.ai);
     const boardArr = nowMins + walkMins(chosen.bw);
     let wait, eta, timing = null, liveOnly = false;
     if (arriveByMins != null) {
@@ -1105,7 +1227,7 @@ export async function planTrips(origin, dest, {
       // can physically reach from now. No wait to bound — you leave just in time.
       const ride = _rideMins(u.st, chosen.bi, chosen.ai);
       const latestAtBoard = arriveByMins - ride - walkMins(chosen.aw);
-      const busAtBoard = _latestBoardAt(u.times, _travelToStopMins(u.st[chosen.bi]), latestAtBoard, boardArr);
+      const busAtBoard = _latestBoardAt(times, _travelToStopMins(u.st[chosen.bi]), latestAtBoard, boardArr);
       if (busAtBoard == null) continue;
       wait = 0;
       const leaveAt = busAtBoard - walkMins(chosen.bw);
@@ -1114,14 +1236,14 @@ export async function planTrips(origin, dest, {
       timing = { _leaveAt: leaveAt, _arriveAt: arriveAt, _boardAt: busAtBoard };
     } else {
       const travelToBoard = _travelToStopMins(u.st[chosen.bi]);
-      wait = _waitFromTimes(u.times, travelToBoard, boardArr);
+      wait = _waitFromTimes(times, travelToBoard, boardArr);
       if (wait >= MAX_WAIT_MIN) {
         // When today's last bus has already passed the board stop (not just a
         // long gap before the next one), a late one may still be approaching.
         // Keep a recently-passed trip for the live pass to confirm (dropped
         // there if it can't); older ones are gone, which also keeps the extra
         // live fetches few.
-        const lastAt = u.times[u.times.length - 1] + travelToBoard;
+        const lastAt = times[times.length - 1] + travelToBoard;
         if (!live || lastAt >= boardArr || lastAt < boardArr - LAST_BUS_LATE_SLACK_MIN) continue;
         liveOnly = true;
       }
@@ -1132,7 +1254,7 @@ export async function planTrips(origin, dest, {
       board: u.st[chosen.bi], alight: u.st[chosen.ai],
       walkB: Math.round(chosen.bw), walkA: Math.round(chosen.aw),
       sc: chosen.ai - chosen.bi, _wait: wait, _eta: eta, _maxWalk: Math.max(chosen.bw, chosen.aw),
-      _lastBus: liveOnly || _isLastSefer(u.times, _travelToStopMins(u.st[chosen.bi]), timing ? timing._boardAt : boardArr),
+      _lastBus: liveOnly || _isLastSefer(times, _travelToStopMins(u.st[chosen.bi]), timing ? timing._boardAt : boardArr),
       _bi: chosen.bi, _bw: chosen.bw, // transient: board index + walk metres, for the live pass
       ...(liveOnly && { _liveOnly: true }), // transient: kept only if the live pass finds the bus
       ...timing,
@@ -1149,21 +1271,41 @@ export async function planTrips(origin, dest, {
   const destPaths = usable.map(u => ({
     u, alights: u.st.map((s,i)=>({s,i,w:alightWalk.get(s.stopId)})).filter(x => x.w != null && x.w <= MAXW),
   })).filter(x => x.alights.length);
+  // Board leg 1 at the closest stop on A that a bus still calls at in time,
+  // and leave leg 2 at the closest stop on B that a bus still reaches in time
+  // (an evening section starts or turns back away from the stop nearest you);
+  // with no such stop, the closest.
+  const nearest = (stops, inTime, trips) => {
+    const byWalk = stops.slice().sort((a, b) => a.w - b.w);
+    return (trips.length && byWalk.find(inTime)) || byWalk[0];
+  };
+  for (const B of destPaths) B.alight = nearest(B.alights, x => B.u.trips.some(t => {
+    const at = t.mins + _travelToStopMins(x.s);
+    return t.start < x.i && x.i <= t.end && at >= nowMins && (arriveByMins == null || at <= arriveByMins - walkMins(x.w));
+  }), B.u.trips);
 
   for (const A of originPaths) {
-    const board = A.boards.reduce((a,b)=> b.w < a.w ? b : a); // closest board on A
+    const board = nearest(A.boards, x => {
+      const times = _tripMinsAt(A.u.trips, x.i), travel = _travelToStopMins(x.s), at = nowMins + walkMins(x.w);
+      return times.length > 0 && (arriveByMins == null ? _waitFromTimes(times, travel, at) < MAX_WAIT_MIN
+        : _latestBoardAt(times, travel, arriveByMins, at) != null);
+    }, A.u.trips);
     const travelToBoard = _travelToStopMins(board.s);
     const earliestAtBoard = nowMins + walkMins(board.w);
+    // Leg 1's bus must call at the board stop and stay on to the transfer stop X.
+    const atX = new Map(), timesA = xi => atX.get(xi) ?? atX.set(xi, _tripMinsAt(A.u.trips, board.i, xi)).get(xi);
+    const boardTimes = _tripMinsAt(A.u.trips, board.i);
+    if (A.u.trips.length && !boardTimes.length) continue;
     // Forward mode boards leg 1 as soon as possible; arrive-by has no up-front
     // wait (the leg-1 bus is chosen backward from the leg-2 connection below).
     let leg1Wait = 0;
     if (arriveByMins == null) {
-      leg1Wait = _waitFromTimes(A.u.times, travelToBoard, earliestAtBoard);
+      leg1Wait = _waitFromTimes(boardTimes, travelToBoard, earliestAtBoard);
       if (leg1Wait >= MAX_WAIT_MIN) continue;
     }
     for (const B of destPaths) {
       if (B.u.code === A.u.code) continue;
-      const alight = B.alights.reduce((a,b)=> b.w < a.w ? b : a); // closest alight on B
+      const alight = B.alight;
       // Collect every viable transfer point for this route pair, then choose
       // among them with the B+C rule below.
       const boardToDest = haversine(+board.s.lat, +board.s.lng, D.lat, D.lng);
@@ -1175,12 +1317,14 @@ export async function planTrips(origin, dest, {
         const Y = B.u.st[yj];
         const ride2 = _rideMins(B.u.st, yj, alight.i);
         const travelToY = _travelToStopMins(Y);
+        const times = _tripMinsAt(B.u.trips, yj, alight.i);
+        if (B.u.trips.length && !times.length) { yInfo.push(null); continue; } // no leg-2 bus calls at Y and the alight stop
         let busAtYMax = null;
         if (arriveByMins != null) {
-          busAtYMax = _latestBoardAt(B.u.times, travelToY, arriveByMins - ride2 - walkMins(alight.w), -Infinity);
+          busAtYMax = _latestBoardAt(times, travelToY, arriveByMins - ride2 - walkMins(alight.w), -Infinity);
           if (busAtYMax == null) { yInfo.push(null); continue; } // no leg-2 bus lands by the deadline
         }
-        yInfo.push({ Y, ride2, travelToY, busAtYMax });
+        yInfo.push({ Y, ride2, travelToY, busAtYMax, times });
       }
       const xfers = [];
       for (let xi = board.i + 1; xi < A.u.st.length; xi++) {
@@ -1189,10 +1333,13 @@ export async function planTrips(origin, dest, {
         // to a far terminal and double back (e.g. home → İskele → faculty).
         if (haversine(+X.lat, +X.lng, D.lat, D.lng) > boardToDest) continue;
         const ride1 = _rideMins(A.u.st, board.i, xi);
+        if (A.u.trips.length && !timesA(xi).length) continue;
+        const wait1 = arriveByMins == null ? _waitFromTimes(timesA(xi), travelToBoard, earliestAtBoard) : 0;
+        if (wait1 >= MAX_WAIT_MIN) continue;
         for (let yj = 0; yj < alight.i; yj++) {
           const info = yInfo[yj];
           if (!info) continue;
-          const { Y, ride2, travelToY, busAtYMax } = info;
+          const { Y, ride2, travelToY, busAtYMax, times: timesB } = info;
           const t = (X.stopId === Y.stopId) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
           if (t > TRANSFER_WALK_MAX_M) continue;
           if (arriveByMins != null) {
@@ -1201,10 +1348,10 @@ export async function planTrips(origin, dest, {
             // that connection, then board the FIRST leg-2 bus you actually catch
             // after the transfer walk — it can only be the anchor or an earlier
             // one, so the deadline still holds.
-            const busAtBoard = _latestBoardAt(A.u.times, travelToBoard, busAtYMax - walkMins(t) - ride1, earliestAtBoard);
+            const busAtBoard = _latestBoardAt(timesA(xi), travelToBoard, busAtYMax - walkMins(t) - ride1, earliestAtBoard);
             if (busAtBoard == null) continue;
             const atY = busAtBoard + ride1 + walkMins(t);
-            const busAtY = _earliestBoardAt(B.u.times, travelToY, atY);
+            const busAtY = _earliestBoardAt(timesB, travelToY, atY);
             if (busAtY == null) continue; // unreachable: busAtYMax ≥ atY guarantees a hit
             const leg2Wait = busAtY - atY;
             if (leg2Wait >= MAX_WAIT_MIN) continue; // same absurd-transfer-wait cull as forward mode
@@ -1213,13 +1360,13 @@ export async function planTrips(origin, dest, {
             // _eta legitimately includes the mid-trip transfer wait: once you're
             // committed to leg 1 you can't leave later to avoid it.
             xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta: Math.round(arriveAt - leaveAt),
-                         leaveAt, arriveAt, boardAt: busAtBoard, leg2BoardAt: busAtY });
+                         leaveAt, arriveAt, boardAt: busAtBoard, leg2BoardAt: busAtY, wait1 });
           } else {
-            const arriveB2 = nowMins + walkMins(board.w) + leg1Wait + ride1 + walkMins(t);
-            const leg2Wait = _waitFromTimes(B.u.times, travelToY, arriveB2);
+            const arriveB2 = nowMins + walkMins(board.w) + wait1 + ride1 + walkMins(t);
+            const leg2Wait = _waitFromTimes(timesB, travelToY, arriveB2);
             if (leg2Wait >= MAX_WAIT_MIN) continue;
-            const eta = Math.round(walkMins(board.w) + leg1Wait + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(alight.w));
-            xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta });
+            const eta = Math.round(walkMins(board.w) + wait1 + ride1 + walkMins(t) + leg2Wait + ride2 + walkMins(alight.w));
+            xfers.push({ X, xi, Y, yj, t, leg2Wait, ride1, ride2, eta, wait1 });
           }
         }
       }
@@ -1247,9 +1394,9 @@ export async function planTrips(origin, dest, {
       const boardFrom = best.boardAt != null ? best.boardAt : nowMins + walkMins(board.w);
       const yFrom = best.boardAt != null
         ? best.boardAt + best.ride1 + walkMins(best.t)
-        : nowMins + walkMins(board.w) + leg1Wait + best.ride1 + walkMins(best.t);
-      const lastBus = _isLastSefer(A.u.times, _travelToStopMins(board.s), boardFrom)
-                   || _isLastSefer(B.u.times, _travelToStopMins(best.Y), yFrom);
+        : nowMins + walkMins(board.w) + best.wait1 + best.ride1 + walkMins(best.t);
+      const lastBus = _isLastSefer(timesA(best.xi), _travelToStopMins(board.s), boardFrom)
+                   || _isLastSefer(yInfo[best.yj].times, _travelToStopMins(best.Y), yFrom);
       candidates.push({
         isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w), _lastBus: lastBus,
         ...(best.boardAt != null
@@ -1257,7 +1404,7 @@ export async function planTrips(origin, dest, {
           : null),
         leg1: {
           path: A.u.p, route: A.u.route, board: board.s, alight: best.X,
-          walkB: Math.round(board.w), sc: best.xi - board.i, wait: leg1Wait,
+          walkB: Math.round(board.w), sc: best.xi - board.i, wait: best.wait1,
           ride: Math.round(best.ride1), buses: A.u.buses,
           _bi: board.i, _bw: board.w, // transient: board index + walk metres, for the live pass
         },
@@ -1407,10 +1554,11 @@ export function buildTripFromSpec(spec, {
     const ai = st.findIndex(s => String(s.stopId) === String(lg.alight));
     if (bi < 0 || ai < 0 || ai <= bi) return null;
     const entry = findSchedEntry(dayData, lg.code);
-    L.push({
-      p: pe.path, route: pe.route, st, bi, ai, buses: pe.path.busList || [],
-      times: entry ? (schedTimesForPath(entry, pe.path) || []).map(_tmMin).sort((a, b) => a - b) : [],
-    });
+    // Only trips that call at both of this leg's stops; none of them means no bus.
+    const trips = entry ? schedTripsForPath(entry, pe.path, pathCache) : [];
+    const times = _tripMinsAt(trips, bi, ai);
+    if (trips.length && !times.length) return null;
+    L.push({ p: pe.path, route: pe.route, st, bi, ai, buses: pe.path.busList || [], times });
   }
 
   const A = L[0];

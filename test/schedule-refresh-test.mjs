@@ -8,7 +8,7 @@ import vm from 'node:vm';
 import { refreshSchedules, sameSchedule, validateBundle } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
-import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT } from '../core.js';
+import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT, schedDepartures } from '../core.js';
 
 let passed = 0;
 async function test(name, fn) {
@@ -184,7 +184,7 @@ try {
     }
     const context = vm.createContext({
       document:{ getElementById:id => elements.get(id), createElement:() => new Element() },
-      getSchedule:() => data, scheduleForDay, todayParts:() => day,
+      getSchedule:() => data, scheduleForDay, schedDepartures, todayParts:() => day,
       renderScheduleHealth() {}, highlightNextTimes() {}, schedDayLabel:label => label,
       switchSchedTab:id => { activeTab = id; }, t:createT(() => 'tr'),
       Date:LateNightDate, esc:value => String(value), kentkartRouteMap:null,
@@ -209,6 +209,29 @@ try {
     vm.runInContext('renderSchedule()', context);
     assert.deepEqual(cards().map(c => c.dataset.code).sort(), Object.keys(thursday.routes).sort());
     assert.equal(cards().find(c => c.dataset.code === 'Ç4 ESENLER').innerHTML.includes('data-time="14:37"'), false);
+  });
+  await test('departure chips show each bus, where it starts and ends, and escape timetable text', () => {
+    const ui = readFileSync(new URL('../ui.js', import.meta.url), 'utf8');
+    const context = vm.createContext({ t:createT(() => 'en') });
+    vm.runInContext(ui.match(/^function esc\(s\) \{.*\}$/m)[0], context);
+    const start = ui.indexOf('const usualEndOf'), end = ui.indexOf('function renderRouteCards', start);
+    assert.ok(start >= 0 && end > start);
+    vm.runInContext(ui.slice(start, end), context);
+    context.block = { label:'GAZİ OKULU', times:['08:05', '09:00', '09:30'], trips:[
+      { time:'07:20', from:'ÇINARLI', to:'KEPEZ MEYDAN' },
+      { time:'08:05', to:'144 TOKİ KEPEZ', note:'iskele' }, { time:'08:05', to:'DARDANOS' },
+      { time:'09:00', to:'DARDANOS' }, { time:'10:00', from:'x" onmouseover="alert(1)' }] };
+    const chips = time => vm.runInContext(`timeChip(${JSON.stringify(time)}, block, usualEndOf(block))`, context);
+    // Most departures run to DARDANOS, so only the others say where they end.
+    assert.equal(chips('07:20'), '<span class="time-chip" data-time="07:20" title="This trip starts at ÇINARLI. This trip ends at KEPEZ MEYDAN.">'
+      + '07:20<small class="chip-tag">ÇINARLI → KEPEZ MEYDAN</small></span>');
+    assert.equal(chips('08:05'), '<span class="time-chip" data-time="08:05" title="This trip ends at 144 TOKİ KEPEZ. Timetable note: iskele">'
+      + '08:05<small class="chip-tag">→ 144 TOKİ KEPEZ</small></span><span class="time-chip" data-time="08:05">08:05</span>');
+    assert.equal(chips('09:30'), '<span class="time-chip" data-time="09:30">09:30</span>');
+    assert.ok(!/onmouseover="/.test(chips('10:00')), chips('10:00'));
+    // A direction whose departures mostly run to its end: the one early end shows.
+    context.block = { label:'DARDANOS', times:['06:00', '06:30', '07:00'], trips:[{ time:'07:20', from:'ÇINARLI', to:'KEPEZ MEYDAN' }] };
+    assert.ok(chips('07:20').includes('<small class="chip-tag">ÇINARLI → KEPEZ MEYDAN</small>'), chips('07:20'));
   });
   await test('Friday route replacements match route identity and leave dated holidays in control', () => {
     const route = (name, time) => ({ name, dir0:{ label:'MERKEZ', times:[time] }, dir1:{ label:'KAMPÜS', times:[] } });

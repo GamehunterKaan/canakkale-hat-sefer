@@ -534,6 +534,15 @@ const editProbes = [
   ['captioned direction loses its origin name', 13, /Page 21: ÇT2 direction KEPEZ - KAMPÜS has no departure column/, p => {
     for (const i of p.find(q => q.number === 21).items) if (i.text === 'KEPEZ 144 TOKİ') i.text = '144 TOKİ';
   }],
+  ['village legend wrapped over two lines', 15, null, p => {
+    for (const { items } of p) for (const i of items.filter(i => /UĞRAMAMAKTADIR/u.test(i.text))) {
+      items.push({ ...i, text:'ARAÇLAR YERLEŞKEYE UĞRAMAMAKTADIR.', y:i.y - i.h * 1.2, w:i.w * 0.4 });
+      Object.assign(i, { text:'ÇINARLI / KALABAKLI SEFERLERİNİ GERÇEKLEŞTİREN', w:i.w * 0.55 });
+    }
+  }],
+  ['village legend reworded past reading', 15, /Page 1: unreadable note about trips that skip a stop: ÇINARLI \/ KALABAKLI ARAÇLARI/, p => {
+    for (const { items } of p) for (const i of items) i.text = i.text.replace(/SEFERLERİNİ GERÇEKLEŞTİREN ARAÇLAR YERLEŞKEYE UĞRAMAMAKTADIR/u, 'ARAÇLARI YERLEŞKEYE UĞRAMAZ');
+  }],
   ['turnaround printed KALKIŞ over its arrival and VARIŞ over its departure', 13, /Page 3: Ç1 turnaround at GAZİ MECLİSİ has KALKIŞ over its arrival/, p => {
     const items = p.find(q => q.number === 3).items;
     const arrival = items.find(i => i.text === 'VARIŞ' && i.x > 300 && i.x < 350), departure = items.find(i => i.text === 'KALKIŞ' && i.x > 350 && i.x < 420);
@@ -546,6 +555,17 @@ const editProbes = [
   }],
   ['an intermediate stop printed with VARIŞ', 13, null, p => {
     for (const i of p.find(q => q.number === 3).items) if (i.text === 'İSKELE' && i.x < 300) i.text = 'İSKELE VARIŞ';
+  }],
+  ['village legend wrapped inside its list of places', 15, null, p => {
+    for (const { items } of p) for (const i of items.filter(i => /UĞRAMAMAKTADIR/u.test(i.text))) {
+      items.push({ ...i, text:'KALABAKLI SEFERLERİNİ GERÇEKLEŞTİREN ARAÇLAR YERLEŞKEYE UĞRAMAMAKTADIR.', y:i.y - i.h * 1.2, w:i.w * 0.85 });
+      Object.assign(i, { text:'ÇINARLI /', w:i.w * 0.12 });
+    }
+  }],
+  ['footnote saying trips call at a stop', 8, null, p => {
+    const { items } = p[0], last = items.reduce((a, b) => b.y < a.y ? b : a);
+    items.push({ ...last, text:'AKŞAM SEFERLERİ ESKİ HASTANEYE UĞRAYACAKTIR.', y:last.y - 12, w:180 },
+      { ...last, text:'BU SEFERLER KAMPÜSE UĞRAMAKTADIR.', y:last.y - 24, w:140 });
   }],
 ];
 for (const [name, index, failure, edit] of editProbes) await test('layout edit: ' + name, () => {

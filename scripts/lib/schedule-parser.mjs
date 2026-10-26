@@ -309,7 +309,18 @@ export function parsePages(rawPages) {
   let lastRoute = null;
   for (const page of pages) {
     const { items } = page;
-    for (const line of textLines(items)) { const legend = legendOf(line); if (legend) legends.push(legend); }
+    // A legend may wrap; its verb ("UĞRAMAMAKTADIR", not "UĞRAMAKTADIR")
+    // ends its last line, and a line ending in a list separator ("ÇINARLI /")
+    // continues on the next. An unreadable sentence about skipped stops would
+    // publish village trips as departures from the terminal they skip: fail.
+    const lines = textLines(items);
+    lines.forEach((line, k) => {
+      if (!/UGRAMA(?!K)|UGRAMI/.test(fold(line))) return;
+      const continued = n => /(?:[/,&-]|\bVE|\bILE)$/.test(fold(lines[k - n] || ''));
+      const legend = [1, 2, 3].map(n => !continued(n) && legendOf(lines.slice(Math.max(0, k + 1 - n), k + 1).join(' '))).find(Boolean);
+      if (legend) legends.push(legend);
+      else diagnostics.errors.push(`Page ${page.number}: unreadable note about trips that skip a stop: ${line}`);
+    });
     const groups = markerGroups(items);
     const timeItems = items.filter(i => leadingTime(i.text));
     const report = { page: page.number, markers: groups.reduce((n, g) => n + g.markers.length, 0), tables: [] };

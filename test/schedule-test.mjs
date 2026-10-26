@@ -119,6 +119,11 @@ await test('a note wrapped under its time is read however tightly it sits betwee
   assert.ok(getRoute(parsed[0], 'Ç11K EKSPRES').dir1.trips.some(t => t.time === '15:45' && t.note === 'KALABAKLI'));
   assert.ok(getRoute(parsed[2], 'Ç11K').dir1.trips.some(t => t.time === '16:50' && t.note === 'KALABAKLI'));
 });
+await test('a return trip whose KALKIŞ is printed VARIŞ fails instead of losing its direction', () => {
+  const altered = structuredClone(pages[13]);
+  for (const i of altered.find(p => p.number === 3).items.filter(i => !i.hidden && i.text === 'KALKIŞ' && i.x > 300)) i.text = 'VARIŞ';
+  assert.ok(parsePages(altered).diagnostics.errors.includes('Page 3: Ç1 return trip after GAZİ MECLİSİ VARIŞ has no departure column'));
+});
 await test('ÇT2 departs Kepez 144 TOKİ wherever and however its direction caption is set', () => {
   const kepez = edit => {
     const altered = structuredClone(pages[13]);

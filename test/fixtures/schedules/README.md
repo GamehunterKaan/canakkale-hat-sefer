@@ -34,7 +34,15 @@ Rendered source pages were inspected for the difficult layouts:
 - The Friday Ç4 PDF has 62 origin and 65 return departures. Its 14:37 departure is absent from the regular weekday timetable. Five rows above the table ("07:35 - çataltepelilerden çt-3", "07:00 Kepez meydandan 11-K Esenler", ...) describe other routes' trips and are not Ç4 departures.
 - The Friday Kepez PDF has Ç11K express, Ç11K, and Ç11Ç tables. Express arrivals explicitly identify both origins even though Dardanos omits KALKIŞ. The small route description above the headers must not become another terminal column or silently suppress Dardanos departures. The corrected October fixture expectations include both express directions.
 
-Tests also repeat extraction results with reordered text, scaled geometry, alternate dash/clock typography and fragmented clock glyphs. They exercise missing pages/headings, invalid clocks and unknown tables, and a set of layout edits (KALKIŞ over the closing arrival, an origin without KALKIŞ, a lost or shifted EKSPRES subtitle, a reworded shuttle title, a renamed captioned origin, re-wrapped notes, margin labels, vehicle duty labels). Each edit must leave the routes unchanged or fail the PDF; a silent change is a bug.
+Tests also repeat extraction results with reordered text, scaled geometry, alternate dash/clock typography and fragmented clock glyphs. They exercise missing pages/headings, invalid clocks and unknown tables, and a set of layout edits (KALKIŞ over the closing arrival, an origin without KALKIŞ, a lost or shifted EKSPRES subtitle, a reworded shuttle title, a renamed captioned origin, re-wrapped notes, margin labels, vehicle duty labels, a moved or reworded direction caption, a turnaround KALKIŞ printed VARIŞ, a second table whose title was lost). Each edit must leave the routes unchanged or fail the PDF; a silent change is a bug.
+
+Not detected, and seen in no edition so far. Each publishes a wrong timetable without an error:
+- Both turnaround labels swapped (KALKIŞ over the arrival, VARIŞ over the departure): arrival times are published as departures.
+- A village legend reworded or wrapped past recognition: village trips become terminal departures with the village as a note, as before the legend was read.
+- A time-led cell wider than its column and alone in its row (a village note reworded at length): it is skipped as a banner.
+- A Ç4-style note row that lost its route code but still has stop times: it is read as a departure.
+- A sub-table header without KALKIŞ markers: its rows join the table above.
+- A blank, unlabelled column: its times join a neighbouring column.
 
 ## What the parser reads
 

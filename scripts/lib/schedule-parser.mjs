@@ -517,6 +517,18 @@ export function parsePages(rawPages) {
         diagnostics.errors.push(`Page ${page.number}: ${heading.id} origin ${unconfirmed.label} is not a confirmed departure`);
         continue;
       }
+      // Times after the arrival at the other terminal are a return trip. With
+      // no departure column leading it (its KALKIŞ printed VARIŞ), fail rather
+      // than publish the table without that direction.
+      if (columns.filter(c => c.departure).length === 1) {
+        const at = columns.findIndex(c => c.departure);
+        const turn = columns.findIndex((c, j) => j > at && /VARIS/.test(fold(c.label)) &&
+          !matchesTerminal(fold(c.label).replace(/VARIS/g, '').trim(), columns[at].label));
+        if (turn >= 0 && columns.slice(turn + 1).some(hasTimes)) {
+          diagnostics.errors.push(`Page ${page.number}: ${heading.id} return trip after ${clean(columns[turn].label)} has no departure column`);
+          continue;
+        }
+      }
       columns.forEach(c => { c.times = []; c.cells = []; });
       const columnOf = i => columns.find(c => timeX(i) >= c.left && timeX(i) < c.right);
       // A time item wider than its column is a merged cell spanning several.

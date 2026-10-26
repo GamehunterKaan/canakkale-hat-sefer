@@ -225,14 +225,7 @@ PDFs labelled with named weekdays (including day lists and ranges) are recurring
 
 The hourly workflow commits valid data and failure status, saves failing PDFs and a detailed report in the **timetable-diagnostics** artifact for seven days, and still finishes with a failed result when any source is unverified. It explicitly requests a Pages rebuild when the deployment is behind: [GitHub token commits alone do not trigger branch-based Pages builds](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#troubleshooting-publishing-from-a-branch).
 
-Timetables are only ever produced by the deterministic parser; AI never writes or approves schedule data. With an `ANTHROPIC_API_KEY` repository secret, the **Parser Fix Agent** workflow gives a failing run's artifact to Claude. In a read-only job, Claude repairs the parser, checks the fixed parser's output for the rejected PDF against the PDF itself, and adds that PDF as a regression fixture. A separate job runs the regression suite on the patch, and again with the parser change against the existing test files unchanged, so a fix can add tests but never alter one. A fix that passes both is merged into `main` without review, recorded on a `parser-fix/<key>` branch, and the data run starts again. Otherwise an issue is opened. Each set of failing PDFs is handled once, so a fix that does not work cannot loop.
-
-The agent reads untrusted PDFs, so it is fenced off from the key:
-- **Commands:** they run without credentials in their environment and in their own PID namespace. If that isolation cannot be set up, the agent does not run.
-- **File tools:** they cannot read outside the checkout, including `/proc`.
-- **Publishing:** output containing anything shaped like a token is not published.
-
-Use a key that expires (for example after 30 days) and rotate it, so that a leaked key stops working on its own.
+Timetables are only ever produced by the deterministic parser. When a data run fails, the **Timetable Issues** workflow opens a GitHub issue (label `timetable`) for the PDFs the parser rejected and another for errors reading the timetable page, once per distinct problem while its issue is open. A server's error page instead of a PDF opens no issue.
 
 Run the parser checks entirely offline:
 

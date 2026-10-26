@@ -475,7 +475,7 @@ try {
     h.state.pdf = '<html>Bakım çalışması</html>';
     await h.run({ parsePdf:parsePDF });
     const report = JSON.parse(readFileSync(join(h.options.diagnosticsDir, 'report.json'), 'utf8'));
-    // The parser-fix workflow gives no agent a response that is not a PDF,
+    // The Timetable Issues workflow opens no issue for a response that is not a PDF,
     // and opens an issue for the page's own errors.
     assert.equal(report.sources[0].error, 'Response is not a PDF');
     assert.ok(report.sources[0].sha256);

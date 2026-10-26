@@ -1,0 +1,65 @@
+name: Timetable Issues
+
+# When the hourly data run cannot verify the timetable, open an issue: one per
+# distinct set of rejected PDFs or page errors while it is open. The affected
+# services keep their last verified timetables until the parser is fixed.
+on:
+  workflow_run:
+    workflows: ['Update Transit Data']
+    types: [completed]
+
+concurrency:
+  group: timetable-issues
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read          # the failing run's timetable-diagnostics artifact
+      issues: write
+    steps:
+      - name: Download the failing run's report
+        id: evidence
+        # Absent when only the stops source failed.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: timetable-diagnostics
+          path: evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Open an issue for rejected PDFs and page errors
+        if: steps.evidence.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          gh label create timetable --color d97706 --description "Timetable data could not be verified" --force
+          open_issue() {  # $1 kind, $2 key, $3 title, body.md
+            if gh api "repos/$GH_REPO/issues?labels=timetable&state=open&per_page=100" --jq '.[].title' | grep -qF "[$1-$2]"; then
+              echo "Already reported under $1-$2."; return
+            fi
+            gh issue create --label timetable --title "$3 [$1-$2]" --body-file body.md
+          }
+          # A rejected PDF (not a server's error page): its parser errors. The
+          # municipality's text stays inside a code block.
+          pdfs="$(jq -r '.sources[] | select(.state != "ok" and .sha256 and ((.error // "") | startswith("Response is not a PDF") | not)) | "\(.label) (\(.url)): \((.error // "") | gsub("[\\r\\n]+"; "; "))"' evidence/report.json)"
+          if [ -n "$pdfs" ]; then
+            key="$(jq -r '[.sources[] | select(.state != "ok" and .sha256) | .sha256] | sort | join(",")' evidence/report.json | sha256sum | cut -c1-12)"
+            { echo "Failing data run: $RUN_URL"; echo
+              echo "The parser rejected these timetable PDFs. Their services keep the last verified timetable. The PDFs and report.json are in the run's timetable-diagnostics artifact; see test/fixtures/schedules/README.md for adding them as regression fixtures."; echo
+              echo '````'; printf '%s\n' "$pdfs"; echo '````'; } > body.md
+            open_issue pdf "$key" "Timetable parser rejected a PDF"
+          fi
+          errors="$(jq -r '.discoveryErrors // [] | sort | .[]' evidence/report.json)"
+          if [ -n "$errors" ]; then
+            key="$(printf %s "$errors" | sha256sum | cut -c1-12)"
+            { echo "Failing data run: $RUN_URL"; echo
+              echo "The refresh could not classify these links on the municipality timetable page. Their services keep the last verified timetable; every other service still updates. The page as read is page.html in the run's timetable-diagnostics artifact."; echo
+              echo '````'; printf '%s\n' "$errors"; echo '````'; } > body.md
+            open_issue discovery "$key" "Timetable page needs a manual fix"
+          fi

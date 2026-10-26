@@ -94,7 +94,7 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     const discovery = discoverPdfLinks(html.toString('utf8'), MUNICIPALITY_URL, now);
     links = discovery.links;
     report.ignoredLinks = discovery.ignored;
-    // The parser-fix workflow opens an issue for these, with the page as read.
+    // The Timetable Issues workflow opens an issue for these, with the page as read.
     report.discoveryErrors = discovery.errors;
     writeFileSync(join(diagnosticsDir, 'page.html'), html);
     report.sources = links.map(({ id, label, url }) => ({ id, label, url }));

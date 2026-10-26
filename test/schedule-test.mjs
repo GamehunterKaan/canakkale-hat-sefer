@@ -683,6 +683,9 @@ await test('each label form keeps its kind, days and dates', () => {
     ['Ç4 Hattı Cuma Tarifesi', '/t.pdf', ['recurring', [5], []]],
     ['28 Ekim Tarifesi', '/r.pdf', ['special', ['10-28'], []]],
     ['1 Kasım - 3 Kasım Sefer Saatleri', '/n.pdf', ['special', ['11-01','11-02','11-03'], []]],
+    // A week part the link dates is that day's timetable, beside the regular one (27 Oct 2026).
+    ['27 EKİM GÜNÜ HAFTA İÇİ SEFER SAATLERİ', '/27-EKIM-5.pdf', ['special', ['10-27'], []]],
+    ['31 EKİM GÜNÜ HAFTA SONU SEFER SAATLERİ', '/31-EKIM-11.pdf', ['special', ['10-31'], []]],
   ]) assert.deepEqual(link(label, href), expected, label);
   for (const joined of ['28 ile 29 Ekim', '28 & 29 Ekim']) assert.deepEqual(parseDates(joined).dates, ['10-28','10-29'], joined);
 });

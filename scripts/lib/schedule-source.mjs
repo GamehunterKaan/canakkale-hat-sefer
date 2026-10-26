@@ -127,7 +127,12 @@ export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL) {
         // A blank link (whitespace, &nbsp;) is named by its title, then its file.
         const text = clean(nodeText(node)) || clean(attrs.title) || clean(basename);
         const textKind = classification(text);
-        const kind = textKind === 'unknown' ? classification(basename) : textKind;
+        // "27 Ekim günü hafta içi": a week part its link dates (not from a
+        // date on, "itibariyle") is that day's timetable, like "28 Ekim günü".
+        // A file name's date stays its publication date.
+        let dated = false;
+        try { dated = ['weekday', 'weekend'].includes(textKind) && parseDates(text).dates.length > 0; } catch {}
+        const kind = dated ? 'special' : textKind === 'unknown' ? classification(basename) : textKind;
         if (kind === 'ignore') ignored.push({ url: url.href, label: text, reason: 'Separate cemetery/library service' });
         else {
           const recurringText = textKind === 'recurring' ? text : basename;

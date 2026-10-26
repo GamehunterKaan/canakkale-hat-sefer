@@ -382,6 +382,65 @@ try {
     assert.deepEqual(JSON.parse(h.bytes()).schedules[1], oldWeekend);
     assert.equal(result.status.sources[1].state, 'error');
   });
+  await test('two PDFs claiming the weekday fail alone; the other services still update', async () => {
+    const h = harness();
+    await h.run();
+    const weekday = JSON.parse(h.bytes()).schedules[0];
+    // 26 October: a second link was read as the weekday and froze every service.
+    h.state.html = page(oldUrl, true) + '<a href="' + newUrl + '">Hafta İçi Sefer Saatleri</a>';
+    h.state.parsed.routes['Ç1 MERKEZ'].dir0.times.push('10:00');
+    const result = await h.run({ now:now + 1000 });
+    const data = JSON.parse(h.bytes());
+    assert.equal(result.ok, false);
+    assert.deepEqual(data.schedules.map(s => s.id), ['weekday', 'weekend', 'bayram-2026-10-29']);
+    assert.deepEqual(data.schedules[0], weekday);
+    for (const s of data.schedules.slice(1)) assert.ok(s.routes['Ç1 MERKEZ'].dir0.times.includes('10:00'), s.id);
+    assert.deepEqual(result.status.sources.map(s => s.state), ['error', 'error', 'ok', 'ok']);
+  });
+  await test('a page that loses a week part\'s link keeps its verified copy and updates the rest', async () => {
+    const h = harness();
+    await h.run();
+    const weekday = JSON.parse(h.bytes()).schedules[0];
+    h.state.html = '<a href="' + weekendUrl + '">Hafta Sonu Sefer Saatleri</a>';
+    h.state.parsed.routes['Ç1 MERKEZ'].dir0.times.push('10:00');
+    const result = await h.run({ now:now + 1000 });
+    const data = JSON.parse(h.bytes());
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.report.errors, ['Municipality page is missing its weekday schedule']);
+    assert.deepEqual(data.schedules.map(s => s.kind), ['weekday', 'weekend']);
+    assert.deepEqual(data.schedules[0], weekday);
+    assert.ok(data.schedules[1].routes['Ç1 MERKEZ'].dir0.times.includes('10:00'));
+  });
+  await test('a truncated page keeps every service it no longer lists', async () => {
+    const h = harness(), friday = '<a href="https://example.test/friday.pdf">Ç1 Hattı Cuma Seferleri</a>';
+    h.state.html = page(oldUrl, true) + friday;
+    await h.run();
+    const before = JSON.parse(h.bytes()).schedules;
+    // The page now ends after its weekday link and a new special.
+    h.state.html = page(newUrl).split('<a href="' + weekendUrl)[0] + '<a href="https://example.test/30.pdf">30 Ekim 2026 Sefer Saatleri</a>';
+    h.state.parsed.routes['Ç1 MERKEZ'].dir0.times.push('10:00');
+    const result = await h.run({ now:now + 1000 });
+    const data = JSON.parse(h.bytes()).schedules;
+    assert.equal(result.ok, false);
+    assert.deepEqual(data.map(s => s.id), ['weekday', 'weekend', 'bayram-2026-10-29', 'recurring-5-C1-HATTI-CUMA-SEFERLERI', 'special-2026-10-30']);
+    assert.equal(data[0].url, newUrl);
+    assert.deepEqual(data.slice(1, 4), before.slice(1));
+  });
+  await test('a page that loses the week part in force keeps it in force', async () => {
+    const h = harness(), weekend = '<a href="' + weekendUrl + '">Hafta Sonu Sefer Saatleri</a>';
+    await h.run();
+    h.state.html = '<a href="' + newUrl + '">2 Ekim 2026 itibariyle Hafta İçi Sefer Saatleri</a>' + weekend;
+    await h.run({ now:now + 1 });
+    const october = Date.UTC(2026, 9, 2, 12);
+    await h.run({ now:october });
+    const before = JSON.parse(h.bytes()).schedules;
+    assert.deepEqual(before.map(s => s.kind), ['weekend', 'effective-weekday']);
+    h.state.html = weekend;
+    assert.equal((await h.run({ now:october + 1000 })).ok, false);
+    const data = JSON.parse(h.bytes()).schedules;
+    assert.deepEqual(data, before);
+    assert.equal(pickActiveScheduleId(data, { year:2026, mmdd:'10-05', isWeekend:false }), 'effective-weekday-2026-10-02');
+  });
   await test('regular schedule fallback survives a date change in the filename', async () => {
     const h = harness();
     const old = 'https://example.test/12-EYLUL-11.pdf', next = 'https://example.test/19-EYLUL-5.pdf';

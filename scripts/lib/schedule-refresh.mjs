@@ -89,13 +89,16 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     links = discovery.links;
     report.ignoredLinks = discovery.ignored;
     report.sources = links.map(({ id, label, url }) => ({ id, label, url }));
-    if (discovery.pageErrors.length) throw new Error(discovery.pageErrors.join('\n'));
+    if (!links.length) throw new Error(discovery.pageErrors.join('\n'));
+    // A page problem (a week part with no link) fails the run but cannot
+    // freeze the services the page does list; see below for the rest.
+    report.errors.push(...discovery.pageErrors);
     for (let index = 0; index < links.length; index++) {
       const link = links[index];
       log(`Checking ${link.label}: ${link.url}`);
       try {
-        // A supplemental source with an invalid label/date cannot block the
-        // regular PDFs. Its own service still retains explicit failure status.
+        // A link with an invalid or conflicting label cannot block the other
+        // PDFs. Its own service still retains explicit failure status.
         const sourceErrors = discovery.sourceErrors.filter(e => e.url === link.url);
         if (sourceErrors.length) throw new Error(sourceErrors.map(e => e.message).join('\n'));
         const bytes = await fetchBytes(link.url);
@@ -138,10 +141,18 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
             saved = rebuilt;
           } catch (error) { report.warnings.push('Could not reparse saved ' + link.id + ': ' + error.message); }
         }
-        // Each advertised service remains represented. A new, unreadable
-        // special must not silently fall through to regular weekday times.
-        schedules.push(saved || { ...link, unavailable: true, routes: {} });
+        // Each advertised service remains represented, once even when two
+        // PDFs claim it. A new, unreadable special must not silently fall
+        // through to regular weekday times.
+        if (!schedules.some(s => s.id === link.id)) schedules.push(saved || { ...link, unavailable: true, routes: {} });
       }
+    }
+    // A page missing a week part may be truncated or relabelled: the services
+    // it no longer lists (a holiday, a Friday supplement, the week part in
+    // force) are not withdrawn. Keep them, in their order, beside the updates.
+    if (discovery.pageErrors.length) {
+      const added = schedules.filter(s => !previous?.schedules?.some(p => p.id === s.id));
+      schedules = [...(previous?.schedules || []).map(p => schedules.find(s => s.id === p.id) || p), ...added];
     }
     // A page that lists only an upcoming week part ("2 Kasım itibariyle hafta
     // içi") still runs the current one until then: keep its last verified copy.

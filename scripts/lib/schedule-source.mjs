@@ -177,7 +177,7 @@ export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL, now = Date.no
           const previous = seen.get(url.href);
           if (!previous) { links.push(link); seen.set(url.href, link); }
           else if (previous.kind !== kind || JSON.stringify(previous.dates) !== JSON.stringify(dates) ||
-              JSON.stringify(previous.weekdays) !== JSON.stringify(link.weekdays)) pageError(`Conflicting labels for PDF: ${url.href}`);
+              JSON.stringify(previous.weekdays) !== JSON.stringify(link.weekdays)) sourceError(url.href, `Conflicting labels for PDF: ${url.href}`);
         }
       }
     }
@@ -191,11 +191,10 @@ export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL, now = Date.no
   for (const { url, text, days } of exceptions)
     if (days.some(day => !links.some(l => l.weekdays?.includes(day))))
       sourceError(url, `${text}: No schedule serves the weekdays the week part excepts`);
-  const ids = new Set();
-  for (const link of links) {
-    if (ids.has(link.id)) pageError(`More than one PDF claims schedule ${link.id}`);
-    ids.add(link.id);
-  }
+  // Two PDFs claiming one service ("27 Ekim günü hafta içi" read as the
+  // weekday) are both in doubt; the other services are not.
+  for (const link of links) if (links.some(other => other !== link && other.id === link.id))
+    sourceError(link.url, `More than one PDF claims schedule ${link.id}`);
   const order = { weekday:0, weekend:1, special:2, 'effective-weekday':3, 'effective-weekend':4, recurring:5 };
   links.sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9) || a.id.localeCompare(b.id));
   return { links, errors, pageErrors, sourceErrors, ignored };

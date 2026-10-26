@@ -694,7 +694,15 @@ await test('recurring service identity survives renamed PDFs and rejects contrad
   const effective = discoverPdfLinks(baseHtml + '<a href="/other.pdf">8 Ekim itibariyle Ç4 Hattı Cuma Seferleri</a>').links[2];
   assert.equal(effective.effectiveFrom, '10-08');
   const conflict = discoverPdfLinks(html + '<a href="/friday.pdf">Ç4 Hattı Perşembe Seferleri</a>');
-  assert.ok(conflict.pageErrors.some(e => /Conflicting labels/.test(e)));
+  assert.deepEqual(conflict.pageErrors, []);
+  assert.deepEqual(conflict.sourceErrors.map(e => e.url + ' ' + e.message),
+    ['https://ulasim.canakkale.bel.tr/friday.pdf Conflicting labels for PDF: https://ulasim.canakkale.bel.tr/friday.pdf']);
+});
+await test('two PDFs claiming one service fail only those two links', () => {
+  const result = discoverPdfLinks(baseHtml + '<a href="/27-EKIM-5.pdf">HAFTA İÇİ SEFER SAATLERİ</a>');
+  assert.deepEqual(result.pageErrors, []);
+  assert.deepEqual(result.sourceErrors.map(e => e.url.split('/').pop() + ' ' + e.message),
+    ['weekday.pdf More than one PDF claims schedule weekday', '27-EKIM-5.pdf More than one PDF claims schedule weekday']);
 });
 await test('HTML parsing handles attributes, entities, nested text, relative URLs and queries', () => {
   const result = discoverPdfLinks("<a class=x HREF='/new.PDF?v=2&amp;x=3#page=1'><b>HAFTA</b><br>İÇİ SEFER SAATLERİ</a>" +

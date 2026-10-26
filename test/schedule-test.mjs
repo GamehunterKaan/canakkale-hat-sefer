@@ -543,6 +543,19 @@ const editProbes = [
   ['village legend reworded past reading', 15, /Page 1: unreadable note about trips that skip a stop: ÇINARLI \/ KALABAKLI ARAÇLARI/, p => {
     for (const { items } of p) for (const i of items) i.text = i.text.replace(/SEFERLERİNİ GERÇEKLEŞTİREN ARAÇLAR YERLEŞKEYE UĞRAMAMAKTADIR/u, 'ARAÇLARI YERLEŞKEYE UĞRAMAZ');
   }],
+  ['another route\'s note row beside stop times loses its route code', 8, /Page 1: Ç4 merged cell is neither a departure nor a trip note: 07:00 Kepez meydandan Esenler/, p => {
+    for (const i of p[0].items) if (i.text === '07:00 Kepez meydandan 11-K Esenler') i.text = '07:00 Kepez meydandan Esenler';
+  }],
+  ['other routes\' trip note rows lose their route codes', 8, null, p => {
+    for (const i of p[0].items) i.text = i.text.replace(/ çt-3$|(?<=okulundan) 11-K$/u, '');
+  }],
+  ['village trip note says where the trip comes from', 12, /Page 15: Ç11K departure note describes a trip from elsewhere: \d\d:\d\d çınarlıdan/, p => {
+    const cell = p.find(q => q.number === 15).items.find(i => /^\d\d:\d\d çınarlı$/u.test(i.text));
+    cell.text += 'dan';
+  }],
+  ['trip banner reworded to name one place', 11, /Page 16: Ç11K EKSPRES merged cell is neither a departure nor a trip note: 7:30 ÇINARLI KÖYÜ/, p => {
+    for (const i of p.find(q => q.number === 16).items) if (i.text === "7:30 SSK'dan ÇINARLI") i.text = '7:30 ÇINARLI KÖYÜ';
+  }],
   ['turnaround printed KALKIŞ over its arrival and VARIŞ over its departure', 13, /Page 3: Ç1 turnaround at GAZİ MECLİSİ has KALKIŞ over its arrival/, p => {
     const items = p.find(q => q.number === 3).items;
     const arrival = items.find(i => i.text === 'VARIŞ' && i.x > 300 && i.x < 350), departure = items.find(i => i.text === 'KALKIŞ' && i.x > 350 && i.x < 420);
@@ -567,7 +580,27 @@ const editProbes = [
     items.push({ ...last, text:'AKŞAM SEFERLERİ ESKİ HASTANEYE UĞRAYACAKTIR.', y:last.y - 12, w:180 },
       { ...last, text:'BU SEFERLER KAMPÜSE UĞRAMAKTADIR.', y:last.y - 24, w:140 });
   }],
+  ['trip banner spelled without its apostrophe', 11, null, p => {
+    for (const i of p.find(q => q.number === 16).items) if (i.text === "7:30 SSK'dan ÇINARLI") i.text = '7:30 SSK dan ÇINARLI';
+  }],
 ];
+await test('every way of saying a trip comes from elsewhere fails the departure', () => {
+  for (const note of ['kepezden', 'kampüsten', "Kepez'den", 'SSK dan', 'SSK HAREKET', 'SSK-ÇINARLI']) {
+    const altered = structuredClone(pages[12]);
+    const cell = altered.find(q => q.number === 15).items.find(i => /^\d\d:\d\d çınarlı$/u.test(i.text));
+    cell.text = cell.text.slice(0, 5) + ' ' + note;
+    assert.ok(parsePages(altered).diagnostics.errors.some(e => e.startsWith('Page 15: Ç11K departure note describes a trip from elsewhere')), note);
+  }
+});
+await test('a departure note naming one place that ends like "from" (MEYDAN) is still a departure', () => {
+  const altered = structuredClone(pages[12]);
+  const cell = altered.find(q => q.number === 15).items.find(i => /^\d\d:\d\d çınarlı$/u.test(i.text));
+  const time = cell.text.slice(0, 5);
+  cell.text = time + ' Kepez Meydan';
+  const result = parsePages(altered), r = getRoute(result, 'Ç11K');
+  assert.deepEqual(result.diagnostics.errors, []);
+  assert.ok([r.dir0, r.dir1].some(d => d.trips?.some(t => t.time === time && t.note === 'Kepez Meydan')));
+});
 for (const [name, index, failure, edit] of editProbes) await test('layout edit: ' + name, () => {
   const altered = structuredClone(pages[index]);
   edit(altered);

@@ -25,6 +25,12 @@ const namesOtherRoute = (text, code) => [...fold(text).matchAll(/(?<![A-Z0-9])(C
 const stopName = label => clean(String(label || '').replace(/(?:^|\s)(?:VARI[ŞS]|KALKI[ŞS]|HAREKET)(?=\s|$)/giu, ' '));
 // The timetable's own words after a departure time ("çınarlı", "-SSK"), kept for riders.
 const annotation = text => clean(text).replace(/^[\s\-–—.,:;/()]+|[\s\-–—.,:;/()]+$/gu, '');
+// Words that describe a trip between places or from one: "SSK-ÇINARLI",
+// "SSK'dan ÇINARLI", "SSK dan", "Kepez meydandan", "kepezden", "kampüsten",
+// "SSK HAREKET". A departure's own note names one place ("çınarlı", "SSK",
+// "iskele"); MEYDAN alone is a place.
+const describesTrip = text =>
+  /[A-Z]{2,}\s*-\s*[A-Z]{2,}|[A-Z]['’\s]\s*[DT][AE]N\b|[A-Z]{2,}[AEIOUBCDGJLMNRVZ]D[AE]N\b|[A-Z]{2,}[CFHKPST]T[AE]N\b|\b(?:HAREKET|KALKIS)\b/.test(fold(text));
 function textLines(items) {
   const lines = [];
   for (const i of [...items].sort((a, b) => b.y - a.y || a.x - b.x)) {
@@ -566,9 +572,19 @@ export function parsePages(rawPages) {
         if (note(text) || namesOtherRoute(text.slice(parsed.length), heading.code)) { skip(`Note is not a ${heading.id} departure`); continue; }
         // A merged cell with no stop times beside it, only other merged cells,
         // is a banner about a trip ("7:30 SSK'dan ÇINARLI", "07:45 SSK-ÇINARLI"),
-        // wherever its centred time happens to fall.
-        if (banner(item) && !body.some(i => i !== item && !banner(i) && Math.abs(i.y - item.y) < h * 0.6)) {
-          skip(`Merged note row is not a ${heading.id} departure`);
+        // wherever its centred time happens to fall. Any other merged cell may
+        // be another trip's note row that lost its route code ("07:00 Kepez
+        // meydandan 11-K Esenler", beside stop times) or a departure whose note
+        // ran out of its cell: fail rather than guess.
+        if (banner(item)) {
+          if (describesTrip(text.slice(parsed.length)) && !body.some(i => i !== item && !banner(i) && Math.abs(i.y - item.y) < h * 0.6))
+            skip(`Merged note row is not a ${heading.id} departure`);
+          else diagnostics.errors.push(`Page ${page.number}: ${heading.id} merged cell is neither a departure nor a trip note: ${text}`);
+          continue;
+        }
+        // A note saying the trip comes from elsewhere is not a departure here.
+        if (describesTrip(text.slice(parsed.length))) {
+          diagnostics.errors.push(`Page ${page.number}: ${heading.id} departure note describes a trip from elsewhere: ${text}`);
           continue;
         }
         if (!parsed.valid) { diagnostics.errors.push(`Page ${page.number}: invalid departure ${parsed.time} for ${heading.id}`); continue; }

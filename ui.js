@@ -360,8 +360,18 @@ function renderSchedule() {
       if (pdfLink) panel.insertBefore(pdfLink, panel.firstChild);
     }
   }
+  // Only an upcoming timetable is published for today's week part: say so
+  // rather than show another day's timetable as today's.
+  if (!active) {
+    const panel = document.createElement('div'), message = document.createElement('p');
+    panel.className = 'sched-content';
+    panel.id = 'routes-none';
+    message.textContent = t('schedNoTimetableToday');
+    panel.appendChild(message);
+    panels.insertBefore(panel, panels.firstChild);
+  }
 
-  switchSchedTab(activeId);
+  switchSchedTab(activeId ?? 'none');
   highlightNextTimes();
 }
 

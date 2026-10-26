@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { parsePDF } from './schedule-parser.mjs';
 import { discoverPdfLinks, requestBytes, MUNICIPALITY_URL, COLORS_URL } from './schedule-source.mjs';
+import { todayParts, effectiveInForce } from '../../core.js';
 
 const HEARTBEAT_MS = 12 * 60 * 60 * 1000;
 const readJson = (path, warnings) => {
@@ -141,6 +142,15 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
         // special must not silently fall through to regular weekday times.
         schedules.push(saved || { ...link, unavailable: true, routes: {} });
       }
+    }
+    // A page that lists only an upcoming week part ("2 Kasım itibariyle hafta
+    // içi") still runs the current one until then: keep its last verified copy.
+    const today = todayParts(new Date(now));
+    for (const family of ['weekday', 'weekend']) {
+      const upcoming = schedules.filter(s => s.kind === 'effective-' + family);
+      const kept = previous?.schedules?.find(s => s.kind === family && s.source && !s.unavailable);
+      if (kept && upcoming.length && !upcoming.some(s => effectiveInForce(s, today)) && !schedules.some(s => s.kind === family))
+        schedules.splice(family === 'weekday' ? 0 : schedules.filter(s => s.kind === 'weekday').length, 0, kept);
     }
     let routes = previous?.routes || [];
     try {

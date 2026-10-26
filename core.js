@@ -60,15 +60,18 @@ export function pickActiveScheduleId(schedules, today) {
   // 2. Effective-from override matching today's day-of-week.
   const wantKind = today.isWeekend ? 'effective-weekend' : 'effective-weekday';
   const eff = schedules
-    .filter(s => s.kind === wantKind)
-    .filter(s => s.year == null || s.year === today.year)
-    .filter(s => s.effectiveFrom && s.effectiveFrom <= today.mmdd)
+    .filter(s => s.kind === wantKind && effectiveInForce(s, today))
     .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
   if (eff.length) return eff[0].id;
-  // 3. Regular weekday / weekend
+  // 3. Regular weekday / weekend. Never the other week part's: with only an
+  //    upcoming timetable for today's, no timetable applies today.
   const reg = schedules.find(s => s.kind === (today.isWeekend ? 'weekend' : 'weekday'));
-  return reg?.id || schedules[0].id;
+  return reg?.id ?? null;
 }
+
+// An effective-from timetable is in force from its date on.
+export const effectiveInForce = (s, today) =>
+  !!s.effectiveFrom && (s.year == null || s.year === today.year) && s.effectiveFrom <= today.mmdd;
 
 // A route-specific weekday PDF replaces those routes on the named days.
 // Other routes keep the selected regular/effective timetable. A dated holiday
@@ -298,6 +301,7 @@ export const STR = {
     schedError: 'Hata: {err}', schedLoadFail: 'Yüklenemedi: {err}', stopsLoaded: '{n} durak',
     schedRemaining: '{n} sefer kaldı', schedNoneLeft: 'Sefer kalmadı', schedTotal: '{n} sefer', schedLastBusOnRoad: '🚌 Son otobüs yolda',
     schedNoneTodayLong: 'Bugün için sefer kalmadı.', schedNoneForDay: 'Bu gün tipi için sefer bulunamadı.',
+    schedNoTimetableToday: 'Bugün için geçerli bir tarife yayımlanmadı. Diğer günlerin tarifelerine sekmelerden bakabilirsiniz.',
     schedOpenPdf: 'PDF aç', schedOpenPdfTitle: 'Bu tarifenin ulasim.canakkale.bel.tr üzerindeki orijinal PDF’i',
     schedHealthFailed: 'Bazı sefer tarifeleri güncellenemedi. Gösterilen saatler eski olabilir.',
     schedHealthOverdue: 'Seferler son 48 saatte doğrulanamadı. Saatleri belediyenin güncel tarifesinden kontrol edin.',
@@ -476,6 +480,7 @@ export const STR = {
     schedError: 'Error: {err}', schedLoadFail: 'Could not load: {err}', stopsLoaded: '{n} stops',
     schedRemaining: '{n} runs left', schedNoneLeft: 'No runs left', schedTotal: '{n} runs', schedLastBusOnRoad: '🚌 Last bus on the way',
     schedNoneTodayLong: 'No more runs today.', schedNoneForDay: 'No runs found for this day type.',
+    schedNoTimetableToday: 'No timetable is published for today. The tabs show the timetables of other days.',
     schedOpenPdf: 'Open PDF', schedOpenPdfTitle: 'The original PDF for this timetable on ulasim.canakkale.bel.tr',
     schedHealthFailed: 'Some timetables could not be updated. Displayed times may be outdated.',
     schedHealthOverdue: 'Timetables have not been verified in 48 hours. Check the current municipal timetable.',

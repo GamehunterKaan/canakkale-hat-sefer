@@ -613,6 +613,13 @@ console.log('\n── service day ──\n');
      day('2026-10-31T00:30:00+03:00') === '["10-30",5,false,2026]' && day('2026-10-31T03:59:00+03:00') === '["10-30",5,false,2026]');
   ck('from 04:00 it is the calendar day', day('2026-10-31T04:00:00+03:00') === '["10-31",6,true,2026]');
   ck('New Year\'s night still belongs to 31 December', day('2027-01-01T01:00:00+03:00') === '["12-31",4,false,2026]');
+  // Only an upcoming weekday timetable: before its date no timetable applies, never the weekend's.
+  const upcoming = [{ id: 'weekend', kind: 'weekend' },
+    { id: 'effective-weekday-2026-11-02', kind: 'effective-weekday', effectiveFrom: '11-02', year: 2026 }];
+  ck('a weekday with only an upcoming weekday timetable has none, not the weekend\'s',
+     core.pickActiveScheduleId(upcoming, { year: 2026, mmdd: '10-27', isWeekend: false }) === null &&
+     core.scheduleForDay(upcoming, { year: 2026, mmdd: '10-27', isWeekend: false }) === null &&
+     core.pickActiveScheduleId(upcoming, { year: 2026, mmdd: '11-02', isWeekend: false }) === 'effective-weekday-2026-11-02');
 }
 
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);

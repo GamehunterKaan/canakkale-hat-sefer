@@ -56,6 +56,19 @@ try {
     assert.notEqual(JSON.parse(h.bytes()).schedules[0].source.sha256, before);
     assert.ok(JSON.parse(h.bytes()).schedules[0].routes['Ç1 MERKEZ'].dir0.times.includes('10:00'));
   });
+  await test('a page listing only an upcoming week part keeps the current one until its date', async () => {
+    const h = harness();
+    assert.equal((await h.run()).ok, true);
+    // 18 September: the page now lists only "2 Ekim 2026 itibariyle hafta içi".
+    h.state.html = '<a href="' + newUrl + '">2 Ekim 2026 itibariyle Hafta İçi Sefer Saatleri</a>' +
+      '<a href="' + weekendUrl + '">Hafta Sonu Sefer Saatleri</a>';
+    assert.equal((await h.run({ now:now + 1 })).ok, true);
+    const kinds = () => JSON.parse(h.bytes()).schedules.map(s => s.kind + ':' + s.url.split('/').pop());
+    assert.deepEqual(kinds(), ['weekday:old.pdf', 'weekend:weekend.pdf', 'effective-weekday:new.pdf']);
+    // From 2 October the new timetable is in force, and the old one is gone.
+    assert.equal((await h.run({ now:Date.UTC(2026, 9, 2, 12) })).ok, true);
+    assert.deepEqual(kinds(), ['weekend:weekend.pdf', 'effective-weekday:new.pdf']);
+  });
   await test('a route that loses a whole direction keeps its verified copy', async () => {
     const h = harness();
     assert.equal((await h.run()).ok, true);
@@ -225,6 +238,14 @@ try {
     clock = [0, 30];
     assert.equal(upcoming(), 1, '00:30');
     clock = [23, 55];
+    // Only an upcoming weekday timetable is published: today has none, and the
+    // weekend's does not stand in for it.
+    context.getSchedule = () => ({ schedules:[data.schedules.find(s => s.kind === 'weekend'),
+      { id:'effective-weekday-2026-11-02', kind:'effective-weekday', label:'2 Kasım', effectiveFrom:'11-02', year:2026, dates:['11-02'], routes:{} }] });
+    vm.runInContext('renderSchedule()', context);
+    assert.equal(activeTab, 'none');
+    assert.equal(elements.get('schedPanels').children[0].children[0].textContent, STR.tr.schedNoTimetableToday);
+    context.getSchedule = () => data;
   });
   await test('departure chips show each bus, where it starts and ends, and escape timetable text', () => {
     const ui = readFileSync(new URL('../ui.js', import.meta.url), 'utf8');

@@ -556,6 +556,29 @@ const editProbes = [
   ['trip banner reworded to name one place', 11, /Page 16: Ç11K EKSPRES merged cell is neither a departure nor a trip note: 7:30 ÇINARLI KÖYÜ/, p => {
     for (const i of p.find(q => q.number === 16).items) if (i.text === "7:30 SSK'dan ÇINARLI") i.text = '7:30 ÇINARLI KÖYÜ';
   }],
+  ['evening header printed without KALKIŞ', 12, /Page 16: Ç11K EKSPRES has a header without KALKIŞ between its rows: KEPEZ TOKİ/, p => {
+    for (const i of p.find(q => q.number === 16).items) if (i.text === 'KALKIŞ' && i.y > 125 && i.y < 142) i.text = '';
+  }],
+  ['evening header printed with stop names alone', 12, /Page 16: Ç11K EKSPRES has a header without KALKIŞ between its rows: KEPEZ/, p => {
+    for (const i of p.find(q => q.number === 16).items) if (/^(?:KALKIŞ|VARIŞ)$/u.test(i.text) && i.y > 125 && i.y < 142) i.text = '';
+  }],
+  ['evening header printed with its two terminals alone', 12, /Page 16: Ç11K EKSPRES has a header without KALKIŞ between its rows: KEPEZ TOKİ \| GAZİ OKULU$/, p => {
+    for (const i of p.find(q => q.number === 16).items)
+      if (i.y > 125 && i.y < 142 && !(i.y > 138 && (i.text === 'KEPEZ TOKİ' && i.x < 200 || i.text === 'GAZİ OKULU' && i.x > 300))) i.text = '';
+  }],
+  ['two-word stop note wrapped between the rows of its column', 1, null, p => {
+    const note = p.find(q => q.number === 14).items.find(i => i.text === 'KEPEZ TOKİ');
+    Object.assign(note, { text:'KEPEZ', y:note.y - 4.6, w:14 });
+    p.find(q => q.number === 14).items.push({ ...note, text:'MEYDAN', x:note.x + 17.5, w:18 });
+  }],
+  ['stop names beside the times of one row', 12, null, p => {
+    const items = p.find(q => q.number === 16).items, time = (x, y) => items.find(i => /^\d\d:\d\d$/.test(i.text) && i.x > x && i.x < x + 15 && y(i.y));
+    const meydan = time(200, y => y > 400 && y < 500), iskele = time(385, y => Math.abs(y - meydan.y) < 1);
+    for (const [cell, text] of [[meydan, 'KEPEZ'], [iskele, 'İSKELE']]) items.push({ ...cell, text, x:cell.x + cell.w + 4.5, w:24 });
+  }],
+  ['repeated terminal header printed without KALKIŞ', 6, /Page 6: Ç4 has a header without KALKIŞ between its rows/, p => {
+    for (const i of p.find(q => q.number === 6).items) if (i.y > 175 && i.y < 190) i.text = i.text.replace(/\s*KALKIŞ$/u, '');
+  }],
   ['turnaround printed KALKIŞ over its arrival and VARIŞ over its departure', 13, /Page 3: Ç1 turnaround at GAZİ MECLİSİ has KALKIŞ over its arrival/, p => {
     const items = p.find(q => q.number === 3).items;
     const arrival = items.find(i => i.text === 'VARIŞ' && i.x > 300 && i.x < 350), departure = items.find(i => i.text === 'KALKIŞ' && i.x > 350 && i.x < 420);

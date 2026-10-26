@@ -555,6 +555,19 @@ export function parsePages(rawPages) {
         diagnostics.errors.push(`Page ${page.number}: ${heading.id} turnaround at ${stopName(swapped.label)} has KALKIŞ over its arrival`);
         continue;
       }
+      // A line between the rows naming this table's stops in two columns is
+      // the header of a section whose KALKIŞ was not printed. Its rows would
+      // join this table under this header's terminals: fail.
+      const rowsTop = Math.max(...body.map(t => t.y)), rowsBottom = Math.min(...body.map(t => t.y));
+      const named = items.filter(i => i.y < rowsTop - h * 0.6 && i.y > rowsBottom + h * 0.6 && !hasTime(i.text) &&
+        !body.some(t => Math.abs(t.y - i.y) < h * 0.6) && columns.some(c => matchesTerminal(stopName(c.label), i.text)));
+      const subheader = named.find(i => new Set(named.filter(j => Math.abs(j.y - i.y) < h * 0.5)
+        .map(j => columns.find(c => centre(j) >= c.left && centre(j) < c.right)).filter(Boolean)).size >= 2);
+      if (subheader) {
+        diagnostics.errors.push(`Page ${page.number}: ${heading.id} has a header without KALKIŞ between its rows: ${
+          named.filter(j => Math.abs(j.y - subheader.y) < h * 0.5).sort((a, b) => a.x - b.x).map(j => j.text).join(' | ')}`);
+        continue;
+      }
       columns.forEach(c => { c.times = []; c.cells = []; });
       const columnOf = i => columns.find(c => timeX(i) >= c.left && timeX(i) < c.right);
       // A time item wider than its column is a merged cell spanning several.

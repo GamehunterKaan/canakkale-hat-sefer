@@ -4,17 +4,21 @@
  */
 
 import { writeFileSync, readFileSync } from 'fs';
+import { pathToFileURL } from 'url';
+import { _travelToStopMins } from '../core.js';
 
 const API    = 'https://service.kentkart.com/rl1/';
 const REGION = '007';
 const QS     = `region=${REGION}&lang=tr&authType=4&resultType=111`;
 
 // A failed request is retried, then fails the run: the previous stops.json stays
-// in place rather than silently losing that route's path.
+// in place rather than silently losing that route's path. kentkart answers through
+// Cloudflare, which caches each response for 12 s: a retry must bypass that cache,
+// or every attempt receives the same broken copy.
 async function getJson(url, tries = 3) {
   for (let attempt = 1; ; attempt++) {
     try {
-      const r = await fetch(url);
+      const r = await fetch(attempt === 1 ? url : `${url}&_=${Date.now()}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const text = await r.text();
       // kentkart occasionally sends broken UTF-8 (a stop named "KAMPÜS��"): retry instead of storing it.
@@ -25,6 +29,23 @@ async function getJson(url, tries = 3) {
       await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
     }
   }
+}
+
+// kentkart can time a path from one of its later stops: 11K-E toward Gazi Okulu
+// gives its first stops no offset (seconds after the path's first stop), then
+// restarts near zero. Count such offsets from the last untimed stop, at the
+// app's own estimate for it, so a bus never reaches a stop before the one
+// ahead of it.
+export function rebaseOffsets(stops) {
+  let shift = 0;
+  return stops.map((stop, i) => {
+    const before = stops[i - 1], arr = +stop.arrival_offset;
+    if (i > 1 && arr > 0 && !(+before.arrival_offset > 0) && arr < _travelToStopMins(before) * 60)
+      shift = _travelToStopMins(before) * 60;
+    if (!shift || !(arr > 0)) return stop;
+    return { ...stop, arrival_offset: String(arr + shift),
+      ...(+stop.departure_offset > 0 && { departure_offset: String(+stop.departure_offset + shift) }) };
+  });
 }
 
 async function main() {
@@ -71,7 +92,7 @@ async function main() {
       // Strip live bus data — positions change every minute, no point caching
       const { busList: _buses, ...rest } = path;
       // busOnStop is live (a bus is at that stop now); keeping it would rewrite the file every run.
-      const pathWithoutBuses = { ...rest, busStopList: (rest.busStopList || []).map(({ busOnStop: _live, ...stop }) => stop) };
+      const pathWithoutBuses = { ...rest, busStopList: rebaseOffsets((rest.busStopList || []).map(({ busOnStop: _live, ...stop }) => stop)) };
       paths.push({ path: pathWithoutBuses, route });
 
       for (const s of path.busStopList || []) {
@@ -120,4 +141,5 @@ async function main() {
   console.log('✅ stops.json written');
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main().catch(e => { console.error(e); process.exit(1); });

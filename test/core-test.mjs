@@ -494,6 +494,15 @@ console.log('\n── trips placed on their path ──\n');
      JSON.stringify(core.schedTripsForPath(offPath, T2, pathCache).map(t => [t.time, t.start, t.end, t.mins])) ===
      JSON.stringify([['08:05', 0, 4, 485], ['13:00', 1, 4, 770]]),
      JSON.stringify(core.schedTripsForPath(offPath, T2, pathCache).map(t => [t.time, t.start, t.end, t.mins])));
+  // 11K-E toward Gazi Okulu: no offsets for its first stops, then they restart near zero.
+  const { rebaseOffsets } = await import('../scripts/fetch-stops.mjs');
+  const restart = rebaseOffsets(['0', '0', '0', '5', '65'].map((arrival_offset, i) =>
+    ({ seq: String(i + 1), arrival_offset, departure_offset: arrival_offset })));
+  const travel = restart.map(s => core._travelToStopMins(s));
+  ck('offsets that restart after untimed stops count from the last of them',
+     JSON.stringify(travel.map(m => +m.toFixed(2))) === '[0,1.5,3,3.08,4.08]', JSON.stringify(travel));
+  const timed = ['0', '60', '0', '200'].map((arrival_offset, i) => ({ seq: String(i + 1), arrival_offset }));
+  ck('offsets that carry on after an untimed stop stay as kentkart gives them', JSON.stringify(rebaseOffsets(timed)) === JSON.stringify(timed));
 }
 
 console.log('\n── every leg counts only the trips that serve it ──\n');

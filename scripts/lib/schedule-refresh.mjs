@@ -45,9 +45,13 @@ export function validateBundle(schedules, links) {
       for (const dir of ['dir0', 'dir1']) {
         const block = route[dir];
         if (!Array.isArray(block?.times)) { errors.push(`${schedule.id}/${key}/${dir}: missing times`); continue; }
-        count += block.times.length;
+        const trips = Array.isArray(block.trips) ? block.trips : [];
+        count += block.times.length + trips.filter(t => t.from).length;
         if (block.times.length && !block.label?.trim()) errors.push(`${schedule.id}/${key}/${dir}: missing terminal`);
-        if (block.times.some(t => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t))) errors.push(`${schedule.id}/${key}/${dir}: invalid clock time`);
+        const clocks = [...block.times, ...trips.flatMap(t => [t.time, ...(t.stops || []).map(s => s[1])])];
+        if (clocks.some(t => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t))) errors.push(`${schedule.id}/${key}/${dir}: invalid clock time`);
+        if (trips.some(t => ['from', 'to'].some(k => k in t && !String(t[k]).trim())))
+          errors.push(`${schedule.id}/${key}/${dir}: trip without a stop name`);
       }
       if (!count) errors.push(`${schedule.id}/${key}: no departures`);
     }
@@ -55,6 +59,20 @@ export function validateBundle(schedules, links) {
   for (const link of links) if (!schedules.some(s => s.id === link.id && s.url === link.url))
     errors.push(`${link.id}: advertised PDF did not produce a schedule`);
   return errors;
+}
+
+// A route that keeps its name but loses a whole direction against the last
+// verified edition of the same service is a header the parser misread (a
+// missing KALKIŞ, a renamed origin), not a timetable change. Routes may still
+// come and go between editions.
+const departureCount = d => (d?.times?.length || 0) + (d?.trips || []).filter(t => t.from).length;
+export function lostDirections(schedule, previousSchedules = []) {
+  const before = previousSchedules.find(s => s.id === schedule.id && s.source && !s.unavailable)?.routes || {};
+  return Object.entries(schedule.routes || {}).flatMap(([name, route]) => {
+    const was = ['dir0', 'dir1'].filter(d => departureCount(before[name]?.[d])).length;
+    const now = ['dir0', 'dir1'].filter(d => departureCount(route[d])).length;
+    return now < was ? [`${schedule.id}/${name}: ${was - now} of ${was} directions lost their departures since the last verified edition`] : [];
+  });
 }
 
 export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 'tmp/schedule-parser/last-refresh',
@@ -91,7 +109,7 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
         if (parsed.diagnostics.indexOnlyRoutes?.length)
           report.sources[index].indexOnlyRoutes = parsed.diagnostics.indexOnlyRoutes;
         const schedule = { ...link, source: { sha256: hash, pages: parsed.numPages }, routes: parsed.routes };
-        const errors = validateBundle([schedule], [link]);
+        const errors = [...validateBundle([schedule], [link]), ...lostDirections(schedule, previous?.schedules)];
         if (errors.length) throw new Error(errors.join('\n'));
         schedules.push(schedule);
         report.sources[index].state = 'ok';

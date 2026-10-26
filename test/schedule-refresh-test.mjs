@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import vm from 'node:vm';
-import { refreshSchedules, sameSchedule } from '../scripts/lib/schedule-refresh.mjs';
+import { refreshSchedules, sameSchedule, validateBundle } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
 import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT } from '../core.js';
@@ -53,6 +53,27 @@ try {
     assert.equal((await h.run({ now:now + 2 })).changed, true);
     assert.notEqual(JSON.parse(h.bytes()).schedules[0].source.sha256, before);
     assert.ok(JSON.parse(h.bytes()).schedules[0].routes['Ç1 MERKEZ'].dir0.times.includes('10:00'));
+  });
+  await test('a route that loses a whole direction keeps its verified copy', async () => {
+    const h = harness();
+    assert.equal((await h.run()).ok, true);
+    h.state.pdf += '\nnext edition';
+    h.state.parsed.routes['Ç1 MERKEZ'].dir1.times = [];
+    const result = await h.run({ now:now + 1 });
+    assert.equal(result.ok, false);
+    assert.ok(result.report.errors.some(e => /Ç1 MERKEZ: 1 of 2 directions lost their departures/.test(e)));
+    assert.deepEqual(JSON.parse(h.bytes()).schedules[0].routes['Ç1 MERKEZ'].dir1.times, ['08:30']);
+    // A trip that starts at another stop is still a departure of its direction.
+    h.state.parsed.routes['Ç1 MERKEZ'].dir1.trips = [{ time:'08:30', from:'KEPEZ', stops:[] }];
+    assert.equal((await h.run({ now:now + 2 })).ok, true);
+  });
+  await test('published trips are validated like departures', async () => {
+    const check = trip => validateBundle([{ id:'weekday', kind:'weekday', routes:{ R:{ name:'R',
+      dir0:{ label:'A', times:['08:00'], trips:[trip] }, dir1:{ label:'B', times:['09:00'] } } } }], []);
+    assert.deepEqual(check({ time:'08:10', from:'C', stops:[['D','08:20']] }), []);
+    assert.ok(check({ time:'25:10', from:'C', stops:[] }).some(e => /invalid clock time/.test(e)));
+    assert.ok(check({ time:'08:10', from:'C', stops:[['D','8:20']] }).some(e => /invalid clock time/.test(e)));
+    assert.ok(check({ time:'08:10', to:' ' }).some(e => /trip without a stop name/.test(e)));
   });
   await test('index-only route in a real PDF updates the timetable without a warning banner', async () => {
     const h = harness();

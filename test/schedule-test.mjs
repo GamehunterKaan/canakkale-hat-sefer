@@ -372,6 +372,78 @@ await test('date ranges, Turkish months, effective dates and invalid dates', () 
   assert.deepEqual(holiday.errors, []);
   assert.equal(holiday.links[2].kind, 'special');
 });
+await test('timetable wording, week parts, exceptions and day lists keep their meaning', () => {
+  const weekend = '<a href="/weekend.pdf">HAFTA SONU SEFER SAATLERİ</a>';
+  const link = (label, href, html) => discoverPdfLinks(html + '<a href="' + href + '">' + label + '</a>');
+  // TARİFESİ ("timetable") contains ARİFE but is no holiday eve.
+  const winter = link('KIŞ TARİFESİ HAFTA İÇİ SEFER SAATLERİ', '/weekday.pdf', weekend);
+  assert.deepEqual(winter.errors, []);
+  assert.equal(winter.links[0].kind, 'weekday');
+  assert.ok(link('YENİ TARİFE', '/26-EKIM.pdf', baseHtml).errors.includes('Unrecognized PDF schedule label: YENİ TARİFE'));
+  // A city-wide week part that also names days stays that week part.
+  const effective = link('2 Kasım Pazartesi itibariyle Hafta İçi Sefer Saatleri', '/n.pdf', baseHtml).links[2];
+  assert.deepEqual([effective.kind, effective.effectiveFrom], ['effective-weekday', '11-02']);
+  assert.equal(link('Hafta İçi (Pazartesi-Cuma) Sefer Saatleri', '/weekday.pdf', weekend).links[0].kind, 'weekday');
+  assert.ok(link('Hafta İçi ve Cumartesi Sefer Saatleri', '/weekday.pdf', weekend).errors.some(e => /contradict the label's week part/.test(e)));
+  // A route's own supplement runs on the days it names, except those it excepts.
+  assert.deepEqual(link('Ç4 Hattı Hafta İçi (Cuma Hariç) Sefer Saatleri', '/x.pdf', baseHtml).links[2].weekdays, [1,2,3,4]);
+  assert.deepEqual(link('Ç4 Hattı Hafta İçi Sefer Saatleri', '/x.pdf', baseHtml).links[2].weekdays, [1,2,3,4,5]);
+  assert.ok(link('Ç4 Hattı Cuma Hariç Sefer Saatleri', '/x.pdf', baseHtml).errors.some(e => /Cannot tell which weekdays/.test(e)));
+  // An exception covers every day joined before it, and a range.
+  for (const days of ['Perşembe ve Cuma', 'Perşembe-Cuma', 'Perşembe, Cuma Günleri'])
+    assert.deepEqual(link(`Ç4 Hattı Hafta İçi (${days} Hariç) Sefer Saatleri`, '/x.pdf', baseHtml).links[2].weekdays, [1,2,3], days);
+  assert.deepEqual(link('Ç4 Hattı Pazartesi-Cuma (Çarşamba Hariç) Sefer Saatleri', '/x.pdf', baseHtml).links[2].weekdays, [1,2,4,5]);
+  // A week part checks the days of whichever of text and file named it, and
+  // a day it leaves out needs a schedule of its own.
+  const contradicts = discoverPdfLinks('<a href="/HAFTA-ICI-VE-CUMARTESI-SEFER-SAATLERI.pdf">PDF</a>' + weekend);
+  assert.ok(contradicts.errors.some(e => /contradict the label's week part/.test(e)));
+  const noFriday = link('Hafta İçi (Cuma Hariç) Sefer Saatleri', '/weekday.pdf', weekend);
+  assert.ok(noFriday.errors.some(e => /No schedule serves the weekdays the week part excepts/.test(e)));
+  assert.deepEqual(link('Cuma Günü Sefer Saatleri', '/f.pdf',
+    '<a href="/weekday.pdf">Hafta İçi (Cuma Hariç) Sefer Saatleri</a>' + weekend).errors, []);
+  // "VE" joins days; a range may run into the next year; a school year is no date.
+  assert.deepEqual(parseDates('28 ve 29 Ekim Sefer Saatleri').dates, ['10-28','10-29']);
+  assert.deepEqual(parseDates('28, 29 ve 30 Ekim').dates, ['10-28','10-29','10-30']);
+  assert.deepEqual(parseDates('30 Aralık - 2 Ocak').dates, ['01-01','01-02','12-30','12-31']);
+  // One written year cannot date both sides of the year end.
+  assert.throws(() => parseDates('30 Aralık - 2 Ocak 2027 Yılbaşı Sefer Saatleri'), /Ambiguous schedule years/);
+  assert.throws(() => parseDates('31 Aralık ve 1 Ocak 2027'), /Ambiguous schedule years/);
+  assert.deepEqual(parseDates('2026-2027 Hafta İçi'), { dates:[], year:null });
+  // Holidays by name; a blank link is named by its title or file, never a crash.
+  assert.equal(link('Yılbaşı Sefer Saatleri', '/1-OCAK.pdf', baseHtml).links[2].kind, 'special');
+  assert.equal(link('Resmi Tatil Sefer Saatleri', '/23-NISAN.pdf', baseHtml).links[2].dates[0], '04-23');
+  // A week part that mentions public holidays is still that week part.
+  const holidays = discoverPdfLinks('<a href="/26-EKIM.pdf">HAFTA İÇİ (RESMİ TATİLLER HARİÇ) SEFER SAATLERİ</a>' +
+    '<a href="/31-EKIM-10.pdf">HAFTA SONU VE RESMİ TATİL GÜNLERİ SEFER SAATLERİ</a>');
+  assert.deepEqual([holidays.errors, holidays.links.map(l => l.kind)], [[], ['weekday', 'weekend']]);
+  assert.ok(link('&nbsp;', '/y.pdf', baseHtml).errors.includes('Unrecognized PDF schedule label: y'));
+  assert.equal(discoverPdfLinks(baseHtml + '<a href="/f.pdf" title="Ç4 Hattı Cuma Seferleri"> </a>').links[2].weekdays[0], 5);
+});
+await test('each label form keeps its kind, days and dates', () => {
+  const link = (label, href) => {
+    const result = discoverPdfLinks(baseHtml + '<a href="' + href + '">' + label + '</a>'), l = result.links.find(l => l.url.endsWith(href));
+    return [l.kind, l.weekdays || l.dates, result.errors];
+  };
+  for (const [label, href, expected] of [
+    // A route's own supplement: its route named as "HATTI", a "ÇT" code or a "11-K" code.
+    ['KEPEZ HATTI HAFTA İÇİ SEFER SAATLERİ', '/k.pdf', ['recurring', [1,2,3,4,5], []]],
+    ['ÇT3 HAFTA SONU SEFER SAATLERİ', '/c.pdf', ['recurring', [0,6], []]],
+    ['11-K HAFTA İÇİ SEFER SAATLERİ', '/e.pdf', ['recurring', [1,2,3,4,5], []]],
+    // Named days win over the week part; "dışında" excepts like "hariç"; "ile" joins.
+    ['Ç4 Hattı Hafta İçi Cuma Günü Sefer Saatleri', '/x.pdf', ['recurring', [5], []]],
+    ['Ç4 Hattı Hafta İçi Cuma Günleri Dışında Sefer Saatleri', '/x.pdf', ['recurring', [1,2,3,4], []]],
+    ['Ç4 Hattı Hafta İçi Perşembe ile Cuma Hariç Sefer Saatleri', '/x.pdf', ['recurring', [1,2,3], []]],
+    ['Ç4 Hattı Hafta İçi ve Cumartesi Sefer Saatleri', '/x.pdf',
+      ['recurring', [], ["Ç4 Hattı Hafta İçi ve Cumartesi Sefer Saatleri: Named weekdays contradict the label's week part"]]],
+    // Holidays by name, "tarife" for "sefer saatleri", and ranges within a month.
+    ['Resmi Tatil Sefer Saatleri', '/23-NISAN.pdf', ['special', ['04-23'], []]],
+    ['Zafer Günü Sefer Saatleri', '/30-AGUSTOS.pdf', ['special', ['08-30'], []]],
+    ['Ç4 Hattı Cuma Tarifesi', '/t.pdf', ['recurring', [5], []]],
+    ['28 Ekim Tarifesi', '/r.pdf', ['special', ['10-28'], []]],
+    ['1 Kasım - 3 Kasım Sefer Saatleri', '/n.pdf', ['special', ['11-01','11-02','11-03'], []]],
+  ]) assert.deepEqual(link(label, href), expected, label);
+  for (const joined of ['28 ile 29 Ekim', '28 & 29 Ekim']) assert.deepEqual(parseDates(joined).dates, ['10-28','10-29'], joined);
+});
 await test('fetch retries transient failures, bypasses caches and succeeds', async () => {
   let calls = 0;
   const waits = [];

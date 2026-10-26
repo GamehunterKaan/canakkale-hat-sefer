@@ -4,15 +4,50 @@ import { fileURLToPath } from 'node:url';
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url).href;
 const fonts = fileURLToPath(new URL('../node_modules/pdfjs-dist/standard_fonts/', import.meta.url));
 
-export const clean = text => String(text || '').normalize('NFKC')
-  .replace(/[‐‑‒–—−]/g, '-').replace(/\s+/g, ' ').trim();
-export const fold = text => clean(text).toLocaleUpperCase('tr')
-  .replace(/[ÇĞİÖŞÜ]/g, c => ({ Ç:'C', Ğ:'G', İ:'I', Ö:'O', Ş:'S', Ü:'U' })[c]);
+// Cell geometry is compared against every nearby cell, so the pure text
+// helpers see the same strings thousands of times per page: remember them.
+const remember = fn => { const seen = new Map(); return text => seen.has(text) ? seen.get(text) : seen.set(text, fn(text)).get(text); };
+export const clean = remember(text => String(text || '').normalize('NFKC')
+  .replace(/[‐‑‒–—−]/g, '-').replace(/\s+/g, ' ').trim());
+export const fold = remember(text => clean(text).toLocaleUpperCase('tr')
+  .replace(/[ÇĞİÖŞÜ]/g, c => ({ Ç:'C', Ğ:'G', İ:'I', Ö:'O', Ş:'S', Ü:'U' })[c]));
 const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] || 7;
 const centre = item => item.x + item.w / 2;
-const hasTime = text => /\d{1,2}\s*[:.]\s*\d{2}/.test(text);
+// A clock reads 07:45, 7.45 or a typed 07,45 (a comma without spaces, unlike a list).
+const hasTime = text => /\d{1,2}(?:\s*[:.]\s*|,)\d{2}/.test(text);
 const departure = text => /(?:^|\s)(?:KALKIS|HAREKET)(?:\s+SAAT[IILERI]*)?\s*:?$/.test(fold(text)) && !hasTime(text);
-const note = text => /(?:OLARAK|DEVAM|BITIS|BASLAYACAK|SEFER YOK|IPTAL)/.test(fold(text));
+const note = text => /(?:OLARAK|DEVAM|BITIS|BASLAYACAK|SEFER YOK|IPTAL|ITIBAR|SADECE)/.test(fold(text));
+// Route codes named in free text: Ç960, ÇT-3, (Ç11G), 11-K.
+const routeKey = code => fold(code).replace(/[^A-Z0-9]/g, '').replace(/^C/, '');
+const namesOtherRoute = (text, code) => [...fold(text).matchAll(/(?<![A-Z0-9])(C\s*-?\s*(?:T\s*-?\s*)?\d{1,3}[A-Z]?|\d{1,3}\s*-\s*[KGC])(?![A-Z0-9])/g)]
+  .some(m => routeKey(m[1]) !== routeKey(code));
+// A stop as riders know it: a column label without its KALKIŞ/VARIŞ marker.
+const stopName = label => clean(String(label || '').replace(/(?:^|\s)(?:VARI[ŞS]|KALKI[ŞS]|HAREKET)(?=\s|$)/giu, ' '));
+// The timetable's own words after a departure time ("çınarlı", "-SSK"), kept for riders.
+const annotation = text => clean(text).replace(/^[\s\-–—.,:;/()]+|[\s\-–—.,:;/()]+$/gu, '');
+function textLines(items) {
+  const lines = [];
+  for (const i of [...items].sort((a, b) => b.y - a.y || a.x - b.x)) {
+    const line = lines.find(l => Math.abs(l.y - i.y) < Math.min(l.h, i.h) * 0.5);
+    if (line) line.items.push(i); else lines.push({ y: i.y, h: i.h, items: [i] });
+  }
+  return lines.map(l => l.items.sort((a, b) => a.x - b.x).map(i => i.text).join(' '));
+}
+// A page legend such as "ÇINARLI / KALABAKLI SEFERLERİNİ GERÇEKLEŞTİREN ARAÇLAR
+// YERLEŞKEYE UĞRAMAMAKTADIR" says which annotated trips skip which terminal.
+function legendOf(text) {
+  const m = fold(text).match(/^(.+?)\s*SEFERLERI(?:NI)?\s+(?:GERCEKLESTIREN|YAPAN)\s+ARACLAR\s+(.+?)\s+UGRAMA(?:MAKTADIR|Z|YACAKTIR)/);
+  if (!m) return null;
+  const places = m[1].split(/\s*(?:[/,&]|\bVE\b)\s*/).map(p => p.trim()).filter(p => p.length >= 3);
+  return places.length ? { places, skipped: m[2].trim().replace(/Y?[EA]$/, '') } : null;
+}
+// A direction caption names the two ends of a trip: "KAMPÜS - KEPEZ", "144
+// TOKİ - KAMPÜS". A route path listing every stop ("GAZİ OKULU - İSKELE - … -
+// DARDANOS") is not one, and neither is a span of times.
+const directionCaption = text => {
+  const m = clean(text).match(/^([^-]{3,}?)\s+-\s+([^-]{3,})$/u);
+  return m && /\p{L}{3}/u.test(m[1]) && /\p{L}{3}/u.test(m[2]) ? m : null;
+};
 const serialTime = time => { const [h, m] = time.split(':').map(Number); return h * 60 + m + (h < 4 ? 1440 : 0); };
 
 export function routeHeading(text) {
@@ -25,19 +60,48 @@ export function routeHeading(text) {
   return { code, id: code + (express ? ' EKSPRES' : ''), name: [code, rest].filter(Boolean).join(' ') };
 }
 
-function leadingTime(text) {
-  const m = clean(text).match(/^(\d{1,2})\s*[:.]\s*(\d{2})(?!\d)/);
+// A cell's words continue on its baseline after a word gap, even past the
+// column edge ("14:00 BİTİŞ"), and on wrapped lines below it that hold no
+// times and stay within its column ("07:45" over "çınarlı"). A row-wide
+// banner below, or the next section's header, is not part of the cell. Its
+// annotation is judged on all of it.
+function cellText(items, cell, h, col, bottom) {
+  const parts = [cell.text];
+  let end = cell.x + cell.w;
+  for (const i of items.filter(i => i !== cell && Math.abs(i.y - cell.y) < h * 0.6 && i.x >= end - 1).sort((a, b) => a.x - b.x)) {
+    if (leadingTime(i.text) || i.x - end > h * 2) break;
+    parts.push(i.text);
+    end = i.x + i.w;
+  }
+  for (let line = cell; ;) {
+    const near = items.filter(i => i.y > bottom && i.y < line.y - line.h * 0.3 && line.y - i.y <= Math.max(line.h, i.h) * 1.6 &&
+      !/KALKIS|VARIS|HAREKET/.test(fold(i.text)) &&
+      i.x < end && i.x + i.w > cell.x && i.x >= Math.min(cell.x, col.left) - h && i.x + i.w <= Math.max(end, col.right) + h);
+    if (!near.length) break;
+    const y = Math.max(...near.map(i => i.y)), below = near.filter(i => y - i.y < h * 0.3);
+    // A line level with a row of times, or near a time in this cell's own
+    // column, is the next row. A wrapped line sits between the rows of the
+    // columns beside it ("17:20" over "kalabaklı" in a two-line cell).
+    if (items.some(t => leadingTime(t.text) && Math.abs(t.y - y) < h * (t.x < end && t.x + t.w > cell.x ? 0.6 : 0.3))) break;
+    parts.push(...below.sort((a, b) => a.x - b.x).map(i => i.text));
+    line = below[0];
+  }
+  return clean(parts.join(' '));
+}
+
+const leadingTime = remember(text => {
+  const m = clean(text).match(/^(\d{1,2})(?:\s*[:.]\s*|,)(\d{2})(?!\d)/);
   if (!m) return null;
   return { time: `${m[1].padStart(2, '0')}:${m[2]}`, length: m[0].length,
     valid: +m[1] < 24 && +m[2] < 60, annotation: note(text) };
-}
+});
 
 // Text order is not reading order in a PDF. Join fragments by their baseline
 // and bounding boxes; retain column gaps so different cells cannot be joined.
 function preparePage(page) {
   const targetWidth = page.width > page.height ? 842 : 595;
   const scale = targetWidth / page.width;
-  const items = page.items.filter(i => clean(i.text)).map(i => ({
+  const items = page.items.filter(i => clean(i.text) && !i.hidden).map(i => ({
     text: clean(i.text), x: i.x * scale, y: i.y * scale,
     w: i.w * scale, h: Math.max(1, i.h * scale),
   })).sort((a, b) => b.y - a.y || a.x - b.x);
@@ -62,6 +126,40 @@ function preparePage(page) {
   return { ...page, width: targetWidth, height: page.height * scale, items: joined };
 }
 
+// The text layer can hold text no reader sees, such as white digits left in a
+// white cell. Render the page and measure, for each glyph box, the share of
+// pixels whose colour clearly differs from the box's background, its most
+// common colour. Colour, not brightness: black text on a dark red cell
+// differs from it in red alone. Readable text covers over a tenth of its box
+// at this scale; hidden text covers none of it.
+const INK_SCALE = 2;
+async function inkMeter(pdf, page) {
+  const viewport = page.getViewport({ scale: INK_SCALE });
+  const width = Math.ceil(viewport.width), height = Math.ceil(viewport.height);
+  const { canvas, context } = pdf.canvasFactory.create(width, height);
+  let data;
+  try {
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, width, height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    ({ data } = context.getImageData(0, 0, width, height));
+  } finally { pdf.canvasFactory.destroy({ canvas, context }); }
+  // x and baseline y in unscaled viewport units (y down from the top).
+  return (x, y, w, h) => {
+    const box = [], colours = new Map();
+    for (let py = Math.max(0, Math.floor((y - h * 0.8) * INK_SCALE)); py < Math.min(height, Math.ceil((y - h * 0.05) * INK_SCALE)); py++)
+      for (let px = Math.max(0, Math.floor(x * INK_SCALE) + 1); px < Math.min(width, Math.ceil((x + w) * INK_SCALE) - 1); px++) {
+        const k = (py * width + px) * 4, colour = data[k] << 16 | data[k + 1] << 8 | data[k + 2];
+        box.push(k);
+        colours.set(colour, (colours.get(colour) || 0) + 1);
+      }
+    if (box.length < 4) return 1;
+    const background = [...colours].reduce((a, b) => b[1] > a[1] ? b : a)[0];
+    const [r, g, b] = [background >> 16, background >> 8 & 255, background & 255];
+    return box.filter(k => Math.max(Math.abs(data[k] - r), Math.abs(data[k + 1] - g), Math.abs(data[k + 2] - b)) > 64).length / box.length;
+  };
+}
+
 export async function extractPdf(bytes) {
   if (!Buffer.from(bytes).subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw new Error('Response is not a PDF');
   const task = pdfjs.getDocument({ data: new Uint8Array(bytes), disableFontFace: true,
@@ -75,10 +173,16 @@ export async function extractPdf(bytes) {
       const page = await pdf.getPage(number);
       const viewport = page.getViewport({ scale: 1 });
       const tc = await page.getTextContent();
+      const ink = await inkMeter(pdf, page);
+      // pdf.js draws nothing in a font the PDF does not embed and it has no
+      // substitute for (Calibri, Tahoma): its text cannot be measured, so it counts as seen.
+      const drawn = font => !(page.commonObjs.has(font) && page.commonObjs.get(font).missingFile);
       pages.push({ number, width: viewport.width, height: viewport.height,
         items: tc.items.filter(i => i.str?.trim()).map(i => {
           const tr = pdfjs.Util.transform(viewport.transform, i.transform);
-          return { text: i.str, x: tr[4], y: viewport.height - tr[5], w: i.width, h: i.height };
+          const item = { text: i.str, x: tr[4], y: viewport.height - tr[5], w: i.width, h: i.height };
+          // Text under 2pt (sheet names in a footer) is too small to read.
+          return i.height < 2 || drawn(i.fontName) && ink(tr[4], tr[5], i.width, i.height) < 0.02 ? { ...item, hidden: true } : item;
         }) });
       page.cleanup();
     }
@@ -113,7 +217,7 @@ function headerColumns(items, group, route, width, floor) {
   const candidates = items.filter(i => i.y >= Math.min(minY - h * 0.5, floor) && i.y <= maxY + h * 3 &&
     i.h >= h * 0.55 &&
     !hasTime(i.text) && !/^\d+$/.test(i.text) && !routeHeading(i.text) &&
-    i.w < width * 0.3 && !/^(?:BLD|DOSYA|SAYFA)|DONEMI|HAFTA|KAMPUS\s*-\s*KEPEZ|KEPEZ\s*-\s*KAMPUS/.test(fold(i.text)) &&
+    i.w < width * 0.3 && !/^(?:BLD|DOSYA|SAYFA)|DONEMI|HAFTA/.test(fold(i.text)) && !directionCaption(i.text) &&
     (!route || centre(i) > route.x + route.w));
   const cols = group.markers.map(marker => ({ x: centre(marker), items: [marker], departure: true }));
   for (const item of candidates.filter(i => !group.markers.includes(i))) {
@@ -151,7 +255,7 @@ function mirroredOrigin(columns) {
   return terminalKey(first.label) === terminalKey(last.label.replace(/VARI[ŞS]/giu, '')) ? first : null;
 }
 
-function mergeTable(route, table, errors) {
+function mergeTable(route, table, errors, departing) {
   const cols = table.columns.filter(c => c.departure);
   if (cols.length > 2 || cols.length === 0) { errors.push(`Page ${table.page}: ${route.name} has ${cols.length} departure columns`); return; }
   let assignment;
@@ -160,6 +264,15 @@ function mergeTable(route, table, errors) {
     const known = cols.map(c => route.directions.findIndex(d => d.labels.some(label => matchesTerminal(label, c.label))));
     if (known.some(i => i >= 0)) {
       assignment = known.map((i, j) => i >= 0 ? i : 1 - known[1 - j]);
+      // A terminal no earlier table named may start a direction beside the
+      // route's own table on the same page (an evening section from an
+      // intermediate terminal). On a later page it means another route whose
+      // title was lost: refuse to pool its times into a labelled direction.
+      const pooled = assignment.find((d, j) => known[j] < 0 && route.directions[d].labels.length);
+      if (pooled !== undefined && !route.tables.some(t => t.page === table.page)) {
+        errors.push(`Page ${table.page}: ${route.name} departure terminal ${cols[assignment.indexOf(pooled)].label} matches no earlier ${route.name} table`);
+        return;
+      }
     } else if (cols.length === 1 && !route.directions[1].labels.length) assignment = [1];
     else { errors.push(`Page ${table.page}: cannot align ${route.name} departure terminals (${cols.map(c => c.label).join(', ')})`); return; }
   }
@@ -171,6 +284,7 @@ function mergeTable(route, table, errors) {
     if (!dir) { errors.push(`Page ${table.page}: unknown direction for ${route.name}`); continue; }
     if (col.label && !dir.labels.includes(col.label)) dir.labels.push(col.label);
     for (const time of col.times) dir.times.add(time);
+    dir.cells.push(...departing[i].cells.map(cell => ({ ...cell, label: col.label, end: departing[i].end })));
   }
   route.tables.push(table);
 }
@@ -181,15 +295,21 @@ export function parsePages(rawPages) {
   const pages = rawPages.map(preparePage);
   const diagnostics = { pages: [], expectedRoutes: [], parsedRoutes: [], indexOnlyRoutes: [],
     errors: [], warnings: [], ignored: [] };
+  for (const page of rawPages) {
+    const hidden = page.items.filter(i => i.hidden && leadingTime(i.text)).map(i => clean(i.text));
+    if (hidden.length) diagnostics.ignored.push({ page: page.number, reason: `Invisible text is not read: ${hidden.join(', ')}` });
+  }
   const pageNumbers = pages.map(page => page.number);
   for (let number = Math.min(...pageNumbers); number < Math.max(...pageNumbers); number++)
     if (!pageNumbers.includes(number)) diagnostics.errors.push(`PDF page ${number} was not extracted`);
   const routes = new Map();
+  const legends = [];
   const manifest = new Map();
   const namedManifest = new Set();
   let lastRoute = null;
   for (const page of pages) {
     const { items } = page;
+    for (const line of textLines(items)) { const legend = legendOf(line); if (legend) legends.push(legend); }
     const groups = markerGroups(items);
     const timeItems = items.filter(i => leadingTime(i.text));
     const report = { page: page.number, markers: groups.reduce((n, g) => n + g.markers.length, 0), tables: [] };
@@ -217,21 +337,70 @@ export function parsePages(rawPages) {
       const top = Math.min(...group.markers.map(i => i.y)) - h * 0.5;
       const body = timeItems.filter(i => i.y < top && i.y > bottom);
       const floor = body.length ? Math.max(...body.map(i => i.y)) + h * 0.5 : top;
+      const timeX = t => t.x + t.w * Math.min(1, leadingTime(t.text).length / t.text.length) / 2;
+      const hasTimes = c => body.some(t => timeX(t) >= c.left && timeX(t) < c.right);
+      // A table's columns are its data. A header word left of the first column
+      // with times beneath it (a heading qualifier, a margin label) is no stop.
+      const dataColumns = cols => {
+        while (cols.length > 2 && !cols[0].departure && !hasTimes(cols[0])) {
+          cols.shift();
+          cols[0].left = cols[0].x - (cols[1].x - cols[0].x) / 2;
+        }
+        return cols;
+      };
       let columns;
+      // A route title sits in the header band. A code with time rows between
+      // it and this header belongs to the previous section's body, and a code
+      // stacked over a vehicle duty ("11-K" / "EKSPRES" / "7.DOSYA") is a label.
+      const markerTop = Math.max(...group.markers.map(i => i.y));
+      const stack = i => {
+        const lines = [];
+        for (let line = i; ;) {
+          const near = items.filter(s => s.y < line.y - line.h * 0.3 && line.y - s.y <= Math.max(line.h, s.h) * 1.6 &&
+            s.x < i.x + i.w && s.x + s.w > i.x);
+          if (!near.length) return lines;
+          const y = Math.max(...near.map(s => s.y));
+          if (timeItems.some(t => Math.abs(t.y - y) < h * 0.6)) return lines;
+          line = near.find(s => s.y === y);
+          lines.push(...near.filter(s => y - s.y < h * 0.3));
+        }
+      };
       const nearby = items.filter(i => i.y <= group.y + h * 8 && i.y >= group.y - h * 2 &&
         i.x < firstX - h && routeHeading(i.text) && i.h >= h * 0.55 &&
-        !items.some(t => leadingTime(t.text) && Math.abs(t.y - i.y) < h * 0.5));
+        !items.some(t => leadingTime(t.text) && Math.abs(t.y - i.y) < h * 0.5) &&
+        !timeItems.some(t => t.y < i.y - h * 0.5 && t.y > markerTop + h * 0.5) &&
+        !stack(i).some(s => /DOSYA/.test(fold(s.text))));
       nearby.sort((a, b) => Math.abs(a.y - group.y) - Math.abs(b.y - group.y) || a.x - b.x);
       const routeItem = nearby[0];
       let routeCell = routeItem;
       let heading = routeItem && routeHeading(routeItem.text), edge = null;
       if (heading) {
-        const extra = items.filter(i => Math.abs(i.x - routeItem.x) < h * 4 &&
+        // The heading cell is the code plus the words that follow it on its
+        // line after a word gap, and the lines centred under it (EKSPRES,
+        // ESENLER). Joining by the gap and the shared centre, not by distance
+        // from the code's left edge, keeps a wider code or subtitle from
+        // turning a qualifier into a phantom column or dropping EKSPRES.
+        // A word with times beneath it is a column caption, never part of the title.
+        const word = i => centre(i) < firstX - h && !hasTime(i.text) && !routeHeading(i.text) &&
+          !/\d|DOSYA|BLD|KALKIS|VARIS|HAREKET/.test(fold(i.text)) &&
+          !body.some(t => timeX(t) >= i.x && timeX(t) <= i.x + i.w);
+        const extra = items.filter(i => i !== routeItem && word(i) && Math.abs(i.x - routeItem.x) < h * 4 &&
           i.y < routeItem.y + h * 0.3 && i.y > routeItem.y - h * 3 &&
-          (i.x > routeItem.x + routeItem.w || i.y < routeItem.y - h * 0.4) &&
-          centre(i) < firstX - h && !hasTime(i.text) && !routeHeading(i.text) &&
-          !/\d|DOSYA|BLD|KALKIS|VARIS|HAREKET/.test(fold(i.text)))
-          .sort((a, b) => b.y - a.y);
+          (i.x > routeItem.x + routeItem.w || i.y < routeItem.y - h * 0.4));
+        for (let grown = true; grown;) {
+          grown = false;
+          const cell = [routeItem, ...extra];
+          const left = Math.min(...cell.map(i => i.x)), right = Math.max(...cell.map(i => i.x + i.w));
+          const lowest = cell.reduce((a, b) => (b.y < a.y ? b : a));
+          for (const i of items) {
+            if (cell.includes(i) || !word(i)) continue;
+            const sameLine = Math.abs(i.y - routeItem.y) < routeItem.h * 0.5 && i.x >= right - 1 && i.x - right < routeItem.h * 3;
+            const under = i.y < lowest.y - lowest.h * 0.3 && lowest.y - i.y <= Math.max(lowest.h, i.h) * 1.6 &&
+              Math.abs(centre(i) - (left + right) / 2) < Math.max(i.w, right - left) / 2;
+            if (sameLine || under) { extra.push(i); grown = true; break; }
+          }
+        }
+        extra.sort((a, b) => Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.5 ? a.x - b.x : b.y - a.y);
         heading = routeHeading([heading.name, ...extra.map(i => i.text)].join(' '));
         routeCell = { ...routeItem, w: Math.max(routeItem.x + routeItem.w, ...extra.map(i => i.x + i.w)) - routeItem.x };
         lastRoute = heading;
@@ -242,45 +411,73 @@ export function parsePages(rawPages) {
         // A mirrored origin column with this table's times beneath it, not
         // the first KALKIŞ, is the table's left edge.
         const knownTerminals = routes.get(lastRoute?.id)?.directions.flatMap(d => d.labels) || [];
-        columns = headerColumns(items, group, null, page.width, floor);
+        columns = dataColumns(headerColumns(items, group, null, page.width, floor));
         const mirrored = mirroredOrigin(columns);
         const origin = edge = mirrored && body.some(t => centre(t) >= mirrored.left && centre(t) < mirrored.right) ? mirrored : null;
         const left = origin ? origin.x : firstX;
         // A wide caption over a departure column (or the origin) can start
         // well left of that column's centre. Lying wholly inside the column's
-        // span makes it that column's heading; a title starts left of the table.
+        // span makes it that column's heading; a title starts left of the table,
+        // beside the header and never on a time row (a margin label such as
+        // "BAHRİYE ÜÇOK CADDESİ" belongs to its trip), and may hold any words.
         const otherTitle = items.find(i => i.x < left - h * 3 && Math.abs(i.y - group.y) < h * 2 &&
-          /^[A-Z ]{4,}$/.test(fold(i.text)) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)) &&
+          !body.some(t => Math.abs(t.y - i.y) < h) &&
+          /[A-Z]{4,}/.test(fold(i.text)) && !hasTime(i.text) && !departure(i.text) && !/BLD|DOSYA/.test(fold(i.text)) &&
           !columns.some(c => (c.departure || c === origin) && i.x >= c.left && i.x + i.w <= c.right) &&
           !(centre(i) >= left - h * 3 && knownTerminals.some(label => matchesTerminal(label, i.text))));
         if (otherTitle) {
-          // This village shuttle has no route identifier in the city network.
-          // An unfamiliar title must never be swallowed into the preceding route.
-          if (fold(otherTitle.text) === 'KALABAKLI') diagnostics.ignored.push({ page: page.number, reason: 'Separate Kalabaklı shuttle; use the source PDF.' });
+          // A title aligned with the page's numbered route heading that names
+          // one of this table's own departure terminals heads a separate line
+          // without a route number (the Kalabaklı village shuttle). Any other
+          // unfamiliar title must never be swallowed into the preceding route.
+          if (columns.some(c => c.departure && matchesTerminal(c.label, otherTitle.text)) &&
+              items.some(r => r !== otherTitle && routeHeading(r.text) && Math.abs(r.x - otherTitle.x) < h))
+            diagnostics.ignored.push({ page: page.number, reason: `Separate ${otherTitle.text} line without a route number; use the source PDF.` });
           else diagnostics.errors.push(`Page ${page.number}: unknown unnumbered table: ${otherTitle.text}`);
           continue;
         }
         heading = lastRoute;
       }
       if (!heading) { diagnostics.errors.push(`Page ${page.number}: departure table has no identifiable route`); continue; }
-      columns ||= headerColumns(items, group, routeCell, page.width, floor);
+      // An untitled header repeats a table above it on the same page. On a new
+      // page, a missing title is a lost heading, not a continuation: routes
+      // that share a terminal (Ç1, Ç3, Ç3 EKSPRES) must not absorb each other.
+      if (!routeItem && !report.tables.some(t => t.route === heading.id)) {
+        diagnostics.errors.push(`Page ${page.number}: untitled table has no ${heading.id} table above it on this page`);
+        continue;
+      }
+      columns ||= dataColumns(headerColumns(items, group, routeCell, page.width, floor));
       // A round trip ends where it began. Some editions print KALKIŞ over that
-      // final arrival too: with three KALKIŞ columns, the last one repeating the
-      // first column's terminal is the trip's arrival, not a third departure.
-      const marked = columns.filter(c => c.departure);
-      if (marked.length === 3 && marked[0] === columns[0] && marked[2] === columns.at(-1) &&
-          terminalKey(marked[0].label) === terminalKey(marked[2].label)) marked[2].departure = false;
+      // final arrival: the last column, repeating the terminal of the first
+      // column with times beneath it, is the trip's end however it is labelled,
+      // and that first column is the trip's origin.
+      const first = columns[0], last = columns.at(-1);
+      if (columns.length >= 3 && last.departure && columns.filter(c => c.departure).length >= 2 &&
+          terminalKey(first.label) === terminalKey(last.label) && hasTimes(first)) {
+        last.departure = false;
+        first.departure = true;
+      }
       if (!routeItem && !columns.some(c => c.departure && routes.get(heading.id)?.directions.some(d =>
         d.labels.some(label => matchesTerminal(label, c.label))))) {
         diagnostics.errors.push(`Page ${page.number}: untitled table cannot be matched to ${heading.id}`);
         continue;
       }
       // A labelled origin may omit KALKIŞ in a two-direction table. Only infer
-      // it when the source explicitly labels both trip directions above it.
-      if (columns.filter(c => c.departure).length === 1 && items.some(i => /KAMPUS\s*-\s*KEPEZ/.test(fold(i.text))) &&
-          items.some(i => /KEPEZ\s*-\s*KAMPUS/.test(fold(i.text)))) {
-        const implicit = columns.find(c => !c.departure && /KEPEZ.*TOKI/.test(fold(c.label)) && !/VARIS/.test(fold(c.label)));
-        if (implicit) implicit.departure = true;
+      // it when the source explicitly labels both trip directions above it: a
+      // caption "A - B" over the columns of one direction, with times under
+      // them but no KALKIŞ, makes its first column that names A the origin. A
+      // caption need not be centred: it covers a column it overlaps by a line.
+      if (columns.filter(c => c.departure).length === 1) {
+        for (const caption of items.filter(i => i.y > markerTop - h && i.y < markerTop + h * 6 && directionCaption(i.text))) {
+          const under = columns.filter(c => Math.min(c.right, caption.x + caption.w) - Math.max(c.left, caption.x) > Math.min(h, (c.right - c.left) / 2));
+          if (under.length < 2 || under.some(c => c.departure)) continue;
+          const implicit = under.find(c => !/VARIS/.test(fold(c.label)) && matchesTerminal(c.label, directionCaption(caption.text)[1]));
+          if (implicit && hasTimes(implicit)) implicit.departure = true;
+          // A captioned direction with times but no departure column would be
+          // published without that direction. Fail instead.
+          else if (under.some(hasTimes))
+            diagnostics.errors.push(`Page ${page.number}: ${heading.id} direction ${clean(caption.text)} has no departure column`);
+        }
       }
       // Some editions omit KALKIŞ at the first origin. Infer it only from
       // reciprocal, explicitly labelled arrivals for BOTH endpoints.
@@ -312,33 +509,66 @@ export function parsePages(rawPages) {
         const under = col => previous.columns.filter(c => c.x >= col.left && c.x < col.right).length === 1;
         if (origin && previous && under(origin) && under(known)) origin.departure = true;
       }
-      // A mirrored origin that set this table's left edge has times beneath it.
-      // If no rule confirms it departs, fail rather than drop those times.
-      if (edge && !edge.departure) {
-        diagnostics.errors.push(`Page ${page.number}: ${heading.id} origin ${edge.label} is not a confirmed departure`);
+      // Times under a column left of the first departure belong to an origin
+      // that no rule confirmed (titled or not). Fail rather than publish the
+      // table without that direction.
+      const unconfirmed = columns.slice(0, Math.max(0, columns.findIndex(c => c.departure))).find(hasTimes);
+      if (unconfirmed) {
+        diagnostics.errors.push(`Page ${page.number}: ${heading.id} origin ${unconfirmed.label} is not a confirmed departure`);
         continue;
       }
-      columns.forEach(c => { c.times = []; });
+      columns.forEach(c => { c.times = []; c.cells = []; });
+      const columnOf = i => columns.find(c => timeX(i) >= c.left && timeX(i) < c.right);
+      // A time item wider than its column is a merged cell spanning several.
+      const banner = i => { const c = columnOf(i); return !c || i.w > c.right - c.left; };
       for (const item of body) {
         const parsed = leadingTime(item.text);
-        const x = item.x + item.w * Math.min(1, parsed.length / item.text.length) / 2;
-        const col = columns.find(c => x >= c.left && x < c.right);
+        const col = columnOf(item);
         if (!col?.departure || parsed.annotation) continue;
         const row = items.filter(i => i.x >= col.left && i.x < col.right && Math.abs(i.y - item.y) < h * 0.6).map(i => i.text).join(' ');
         if (note(row)) continue;
-        if (!parsed.valid) diagnostics.errors.push(`Page ${page.number}: invalid departure ${parsed.time} for ${heading.id}`);
-        else col.times.push(parsed.time);
+        const text = cellText(items, item, h, col, bottom);
+        const skip = reason => diagnostics.ignored.push({ page: page.number, reason: `${reason}: ${text}` });
+        // A time captioned with another route's code describes that route's
+        // trip ("07:30 - JANDARMA IŞIKLARINDAN- Ç960"), not a departure here.
+        if (note(text) || namesOtherRoute(text.slice(parsed.length), heading.code)) { skip(`Note is not a ${heading.id} departure`); continue; }
+        // A merged cell with no stop times beside it, only other merged cells,
+        // is a banner about a trip ("7:30 SSK'dan ÇINARLI", "07:45 SSK-ÇINARLI"),
+        // wherever its centred time happens to fall.
+        if (banner(item) && !body.some(i => i !== item && !banner(i) && Math.abs(i.y - item.y) < h * 0.6)) {
+          skip(`Merged note row is not a ${heading.id} departure`);
+          continue;
+        }
+        if (!parsed.valid) { diagnostics.errors.push(`Page ${page.number}: invalid departure ${parsed.time} for ${heading.id}`); continue; }
+        col.times.push(parsed.time);
+        // The trip's later stops are the timed cells of its row up to the
+        // section's end: the turnaround's arrival column (VARIŞ, or the same
+        // terminal printed before its KALKIŞ), else the next KALKIŞ itself.
+        const at = columns.indexOf(col), next = columns.findIndex((c, j) => j > at && c.departure);
+        const arrival = next > at + 1 && (/VARIS/.test(fold(columns[next - 1].label)) ||
+          matchesTerminal(stopName(columns[next - 1].label), stopName(columns[next].label)));
+        const end = next < 0 ? columns.length - 1 : arrival ? next - 1 : next;
+        const stops = [];
+        for (let j = at + 1; j <= end; j++) {
+          const cell = body.find(t => timeX(t) >= columns[j].left && timeX(t) < columns[j].right &&
+            Math.abs(t.y - item.y) < h * 0.8 && leadingTime(t.text).valid);
+          if (cell && columns[j].label) stops.push([stopName(columns[j].label), leadingTime(cell.text).time]);
+        }
+        col.end = stopName(columns[end].label);
+        col.cells.push({ time: parsed.time, note: annotation(text.slice(parsed.length)), stops,
+          reachesEnd: stops.at(-1)?.[0] === col.end });
       }
-      const table = { page: page.number, route: heading.id, headers: columns.map(c => c.label), columns: columns.filter(c => c.departure).map(c => ({
+      const departing = columns.filter(c => c.departure);
+      const table = { page: page.number, route: heading.id, headers: columns.map(c => c.label), columns: departing.map(c => ({
         departure: true, label: c.label, times: c.times, x: Math.round(c.x * 100) / 100,
       })) };
       if (!table.columns.some(c => c.times.length)) diagnostics.errors.push(`Page ${page.number}: ${heading.id} table has no departures`);
       if (table.columns.some(c => !c.label)) diagnostics.errors.push(`Page ${page.number}: ${heading.id} departure terminal is missing`);
       report.tables.push(table);
       if (!routes.has(heading.id)) routes.set(heading.id, { ...heading, tables: [], directions: [
-        { labels: [], times: new Set() }, { labels: [], times: new Set() },
+        { labels: [], times: new Set(), cells: [] }, { labels: [], times: new Set(), cells: [] },
       ] });
-      mergeTable(routes.get(heading.id), table, diagnostics.errors);
+      mergeTable(routes.get(heading.id), table, diagnostics.errors, departing);
     }
   }
   for (const label of namedManifest) {
@@ -357,15 +587,49 @@ export function parsePages(rawPages) {
   for (const id of routes.keys()) if (manifest.size && !manifest.has(id))
     diagnostics.warnings.push(`Parsed route ${id} is absent from the PDF index`);
   if (!routes.size) diagnostics.errors.push('No timetable routes were parsed');
+  // A legend's terminal also covers a shorter column label for it, when
+  // another header joins both ("DARDANOS" is the "DARDANOS YERLEŞKE").
+  const headers = diagnostics.pages.flatMap(p => p.tables.flatMap(t => t.headers)).filter(Boolean);
+  const skipsTerminal = (label, note) => legends.some(l => l.places.some(p => matchesTerminal(p, note)) &&
+    [label, ...headers.filter(H => matchesTerminal(H, label))].some(H => matchesTerminal(H, l.skipped)));
   const result = {};
   for (const route of routes.values()) {
     if (route.directions.some(d => d.labels.length && !d.times.size))
       diagnostics.errors.push(`${route.name}: a departure direction has no times`);
     // The cover gives the complete name when a coloured table heading wraps.
     const name = manifest.get(route.id) || route.name;
-    result[name] = { name, ...Object.fromEntries(route.directions.map((d, i) => ['dir' + i, {
-      label: d.labels[0] || '', times: [...d.times].sort((a, b) => serialTime(a) - serialTime(b)),
-    }])) };
+    result[name] = { name, ...Object.fromEntries(route.directions.map((d, i) => ['dir' + i, publish(d)])) };
+  }
+  // A direction lists the departures from its terminal. Trips that start at
+  // another terminal (a later section's KALKIŞ, or a village the page legend
+  // says skips this terminal) are listed with their stops instead, and when
+  // the direction's sections end at different stops every trip names its end,
+  // so a rider is never shown a bus where none calls.
+  function publish(d) {
+    // The direction's terminal is where most of its departures leave from,
+    // not whichever section happens to come first.
+    const share = new Map();
+    for (const cell of d.cells) {
+      const key = d.labels.find(l => matchesTerminal(l, cell.label)) ?? cell.label;
+      share.set(key, (share.get(key) || 0) + 1);
+    }
+    const label = [...share].sort((a, b) => b[1] - a[1])[0]?.[0] ?? (d.labels[0] || '');
+    const times = new Set(), trips = new Map(), ends = [];
+    for (const { end } of d.cells) if (end && !ends.some(e => matchesTerminal(e, end))) ends.push(end);
+    for (const cell of d.cells) {
+      const village = cell.note && skipsTerminal(cell.label, cell.note) ? cell.note.toLocaleUpperCase('tr') : null;
+      const from = village || (!matchesTerminal(cell.label, label) ? stopName(cell.label) : null);
+      // A trip from elsewhere that leaves the route ends at its last timed stop.
+      const to = from && cell.stops.length && !cell.reachesEnd ? cell.stops.at(-1)[0] : ends.length > 1 ? cell.end : null;
+      // A trip cannot end where it starts: another route's table was pooled in.
+      if (to && matchesTerminal(to, from || label)) diagnostics.errors.push(`${label}: the ${cell.time} trip ends where it starts`);
+      if (!from) times.add(cell.time);
+      const trip = { time: cell.time, ...(from && { from, stops: cell.stops }), ...(to && { to }),
+        ...(cell.note && !village && { note: cell.note }) };
+      if (from || to || trip.note) trips.set(JSON.stringify(trip), trip);
+    }
+    return { label, times: [...times].sort((a, b) => serialTime(a) - serialTime(b)),
+      ...(trips.size && { trips: [...trips.values()].sort((a, b) => serialTime(a.time) - serialTime(b.time)) }) };
   }
   return { routes: result, numPages: pages.length, diagnostics };
 }

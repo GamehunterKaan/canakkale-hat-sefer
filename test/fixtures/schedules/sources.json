@@ -82,5 +82,17 @@
     "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/28-EKIM-9.pdf",
     "sha256": "7435c3a8b7968d3468cee3e2f84712739f33213decd4c15085d0f95b875738df",
     "bytes": 2067184
+  },
+  {
+    "name": "weekend-2026-10-31",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/31-EKIM-10.pdf",
+    "sha256": "2faed305e9a2e80f20c0d8d5bc6817831a32dc1ccb758231537756760e326fdd",
+    "bytes": 1663588
+  },
+  {
+    "name": "friday-kepez-2026-10-26",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/KEPEZ-HATTI-CUMA-GUNU-SEFERLERI.pdf",
+    "sha256": "f405b1004abafcc0d9a7ebeff55b0fac715313d791c682164df6bbd58c8f9e96",
+    "bytes": 1067665
   }
 ]

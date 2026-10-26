@@ -23,6 +23,8 @@ const page = (weekday = oldUrl, special = false) =>
   '<a href="' + weekday + '">Hafta İçi Sefer Saatleri</a>' +
   '<a href="' + weekendUrl + '">Hafta Sonu Sefer Saatleri</a>' +
   (special ? '<a href="' + specialUrl + '">29 Ekim 2026 Bayram Sefer Saatleri</a>' : '');
+// A direction's departures: those from its terminal and the trips that start at another stop.
+const departures = d => [...new Set([...d.times, ...(d.trips || []).filter(t => t.from).map(t => t.time)])];
 const valid = () => ({ numPages:1, diagnostics:{ errors:[], ignored:[] },
   routes:{ 'Ç1 MERKEZ':{ name:'Ç1 MERKEZ', dir0:{ label:'MERKEZ', times:['08:00','09:00'] }, dir1:{ label:'KAMPÜS', times:['08:30'] } } } });
 let caseIndex = 0;
@@ -123,9 +125,10 @@ try {
     assert.equal(active.url, currentUrl);
     assert.equal(active.unavailable, undefined);
     const route = active.routes['Ç4 ESENLER'];
-    assert.deepEqual([route.dir0.times.length, route.dir1.times.length], [90,89]);
+    // 87: three note rows about Ç960 and ÇT3 trips are not Ç4 departures.
+    assert.deepEqual([departures(route.dir0).length, departures(route.dir1).length], [87,89]);
     assert.ok(route.dir0.times.includes('22:00'));
-    assert.ok(route.dir1.times.includes('22:20'));
+    assert.ok(route.dir1.trips.some(t => t.time === '22:20' && t.from === 'ESKİ HASTANE'));
     assert.equal(scheduleHealth(result.status, data, checkedAt), null);
   });
   await test('current page and real Friday PDFs publish and replace only their routes on Fridays', async () => {
@@ -151,8 +154,12 @@ try {
     assert.equal(Object.keys(friday.routes).length, 17);
     assert.equal(thursday.routes['Ç4 ESENLER'].dir0.times.includes('14:37'), false);
     assert.equal(friday.routes['Ç4 ESENLER'].dir0.times.includes('14:37'), true);
-    assert.equal(friday.routes['Ç4 ESENLER'].dir0.times.length, 66);
-    assert.equal(friday.routes['Ç11K EKSPRES'].dir0.times.length, 76);
+    // 62: four note rows about 11-K and ÇT3 trips are not Ç4 departures.
+    assert.equal(friday.routes['Ç4 ESENLER'].dir0.times.length, 62);
+    // 76 departures, 62 of them from the campus: Çınarlı trips and the evening
+    // section start elsewhere.
+    assert.equal(departures(friday.routes['Ç11K EKSPRES'].dir0).length, 76);
+    assert.equal(friday.routes['Ç11K EKSPRES'].dir0.times.length, 62);
     assert.equal(friday.routes['Ç11K EKSPRES'].dir1.times.length, 81);
     for (const [key, route] of Object.entries(thursday.routes))
       if (!/^Ç(?:4\s|11K\s|11Ç\s)/.test(key)) assert.deepEqual(friday.routes[key], route, key + ' keeps its regular times');
@@ -203,6 +210,9 @@ try {
     const fridayC4 = cards().find(c => c.dataset.code === 'Ç4 ESENLER');
     assert.ok(fridayC4.innerHTML.includes('data-time="14:37"'));
     assert.ok(fridayC4.innerHTML.includes(STR.tr.schedNoneLeft));
+    // Evening express trips leave Kepez 144 TOKİ, not the campus: their chips say so.
+    const express = cards().find(c => c.dataset.code === 'Ç11K EKSPRES').innerHTML;
+    assert.ok(express.includes('data-time="19:55" title="Bu sefer KEPEZ 144 TOK durağından kalkar.">19:55<small class="chip-tag">KEPEZ 144 TOK</small>'));
     assert.deepEqual(elements.get('routes-' + activeTab).children.filter(a => a.href).map(a => a.href),
       [friday.url, ...friday.appliedOverrides.map(s => s.url)]);
     day = { year:2026, mmdd:'10-08', isWeekend:false };

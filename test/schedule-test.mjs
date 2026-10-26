@@ -688,6 +688,12 @@ await test('each label form keeps its kind, days and dates', () => {
     ['31 EKİM GÜNÜ HAFTA SONU SEFER SAATLERİ', '/31-EKIM-11.pdf', ['special', ['10-31'], []]],
   ]) assert.deepEqual(link(label, href), expected, label);
   for (const joined of ['28 ile 29 Ekim', '28 & 29 Ekim']) assert.deepEqual(parseDates(joined).dates, ['10-28','10-29'], joined);
+  // An effective date without a year is its latest occurrence at most three months after it was found.
+  const effectiveYear = (label, found) => discoverPdfLinks(baseHtml + '<a href="/e.pdf">' + label + '</a>', undefined, Date.parse(found))
+    .links.find(l => l.url.endsWith('/e.pdf')).year;
+  assert.equal(effectiveYear('15 Aralık itibariyle Hafta İçi Sefer Saatleri', '2026-12-01T12:00:00Z'), 2026);
+  assert.equal(effectiveYear('15 Aralık itibariyle Hafta İçi Sefer Saatleri', '2027-06-20T12:00:00Z'), 2026, 'still in force half a year on');
+  assert.equal(effectiveYear('15 Ocak itibariyle Hafta İçi Sefer Saatleri', '2026-12-20T12:00:00Z'), 2027, 'announced in December');
 });
 await test('fetch retries transient failures, bypasses caches and succeeds', async () => {
   let calls = 0;

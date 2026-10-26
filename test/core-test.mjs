@@ -620,6 +620,19 @@ console.log('\n── service day ──\n');
      core.pickActiveScheduleId(upcoming, { year: 2026, mmdd: '10-27', isWeekend: false }) === null &&
      core.scheduleForDay(upcoming, { year: 2026, mmdd: '10-27', isWeekend: false }) === null &&
      core.pickActiveScheduleId(upcoming, { year: 2026, mmdd: '11-02', isWeekend: false }) === 'effective-weekday-2026-11-02');
+  // A timetable in force from 15 December 2026 stays in force in January.
+  const winter = [{ id: 'weekday', kind: 'weekday', routes: { A: { name: 'A' } } },
+    { id: 'effective-weekday-2026-12-15', kind: 'effective-weekday', effectiveFrom: '12-15', year: 2026, routes: { B: { name: 'B' } } },
+    { id: 'recurring-5-friday', kind: 'recurring', weekdays: [5], effectiveFrom: '12-15', year: 2026, dates: ['12-15'], routes: { C: { name: 'C' } } }];
+  const on = iso => core.scheduleForDay(winter, core.todayParts(new Date(iso)));
+  ck('an effective-from timetable stays in force across New Year', on('2027-01-08T12:00:00+03:00')?.id === 'effective-weekday-2026-12-15' &&
+     on('2026-12-14T12:00:00+03:00')?.id === 'weekday');
+  ck('so does an effective-from Friday supplement', Object.keys(on('2027-01-08T12:00:00+03:00')?.routes || {}).join() === 'B,C' &&
+     Object.keys(on('2026-12-11T12:00:00+03:00')?.routes || {}).join() === 'A');
+  const lateFirst = [{ id: 'weekday', kind: 'weekday' }, { id: 'e-2026-12-15', kind: 'effective-weekday', effectiveFrom: '12-15', year: 2026 },
+    { id: 'e-2027-01-04', kind: 'effective-weekday', effectiveFrom: '01-04', year: 2027 }];
+  ck('the latest effective-from timetable in force wins across New Year',
+     core.pickActiveScheduleId(lateFirst, core.todayParts(new Date('2027-01-08T12:00:00+03:00'))) === 'e-2027-01-04');
 }
 
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);

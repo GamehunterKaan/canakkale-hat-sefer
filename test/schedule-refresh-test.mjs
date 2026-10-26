@@ -163,7 +163,8 @@ try {
     const thursday = scheduleForDay(data.schedules, { year:2026, mmdd:'10-08', isWeekend:false });
     const friday = scheduleForDay(data.schedules, { year:2026, mmdd:'10-09', isWeekend:false });
     const laterFriday = scheduleForDay(data.schedules, { year:2026, mmdd:'10-16', isWeekend:false });
-    assert.equal(thursday.id, 'effective-weekday-x-10-08');
+    // "8 Ekim itibariyle" found on 7 October 2026 dates from 8 October 2026.
+    assert.equal(thursday.id, 'effective-weekday-2026-10-08');
     assert.equal(Object.keys(friday.routes).length, 17);
     assert.equal(thursday.routes['Ç4 ESENLER'].dir0.times.includes('14:37'), false);
     assert.equal(friday.routes['Ç4 ESENLER'].dir0.times.includes('14:37'), true);

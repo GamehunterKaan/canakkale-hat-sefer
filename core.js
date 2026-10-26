@@ -61,7 +61,7 @@ export function pickActiveScheduleId(schedules, today) {
   const wantKind = today.isWeekend ? 'effective-weekend' : 'effective-weekday';
   const eff = schedules
     .filter(s => s.kind === wantKind && effectiveInForce(s, today))
-    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+    .sort((a, b) => effectiveDate(b, today).localeCompare(effectiveDate(a, today)));
   if (eff.length) return eff[0].id;
   // 3. Regular weekday / weekend. Never the other week part's: with only an
   //    upcoming timetable for today's, no timetable applies today.
@@ -69,9 +69,12 @@ export function pickActiveScheduleId(schedules, today) {
   return reg?.id ?? null;
 }
 
-// An effective-from timetable is in force from its date on.
+// An effective-from timetable is in force from its date on, across New Year.
+// Discovery gives the date its year; older data without one counts within
+// today's year.
+const effectiveDate = (s, today) => `${s.year ?? today.year}-${s.effectiveFrom}`;
 export const effectiveInForce = (s, today) =>
-  !!s.effectiveFrom && (s.year == null || s.year === today.year) && s.effectiveFrom <= today.mmdd;
+  !!s.effectiveFrom && effectiveDate(s, today) <= (today.ymd ?? `${today.year}-${today.mmdd}`);
 
 // A route-specific weekday PDF replaces those routes on the named days.
 // Other routes keep the selected regular/effective timetable. A dated holiday
@@ -81,9 +84,8 @@ export function scheduleForDay(schedules, today) {
   if (!base || base.kind === 'special' || base.unavailable) return base || null;
   const day = today.dayOfWeek ?? new Date(`${today.year}-${today.mmdd}T12:00:00Z`).getUTCDay();
   const overrides = schedules.filter(s => s.kind === 'recurring' && s.weekdays?.includes(day) &&
-    (s.year == null || s.year === today.year) &&
-    (!s.effectiveFrom || s.effectiveFrom <= today.mmdd) &&
-    (s.effectiveFrom || !s.dates?.length || s.dates.includes(today.mmdd)));
+    (s.effectiveFrom ? effectiveInForce(s, today)
+      : (s.year == null || s.year === today.year) && (!s.dates?.length || s.dates.includes(today.mmdd))));
   if (!overrides.length) return base;
   // Without a last verified copy we cannot safely infer which routes an
   // unreadable supplement changes. Keep the affected day's data unavailable.

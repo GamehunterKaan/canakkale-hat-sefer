@@ -110,7 +110,7 @@ function nodeText(node) {
   return (node.childNodes || []).map(nodeText).join('');
 }
 
-export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL) {
+export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL, now = Date.now()) {
   const links = [], seen = new Map(), errors = [], pageErrors = [], sourceErrors = [], ignored = [], exceptions = [];
   const pageError = message => { errors.push(message); pageErrors.push(message); };
   const sourceError = (url, message) => { errors.push(message); sourceErrors.push({ url, message }); };
@@ -149,6 +149,13 @@ export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL) {
             if (!dates.length && (kind !== 'recurring' || isEffective)) ({ dates, year } = parseDates(basename));
           } catch (error) { sourceError(url.href, `${text}: ${error.message}`); }
           const first = dates[0];
+          // An effective-from date without a year is its latest occurrence at
+          // most three months after the day it was found: announced shortly
+          // before, and in force for good after, across New Year.
+          if (isEffective && first && !year) {
+            const [m, d] = first.split('-').map(Number), y = new Date(now).getUTCFullYear();
+            year = [y + 1, y, y - 1].find(at => Date.UTC(at, m - 1, d) <= now + 92 * 86400000);
+          }
           const prefix = kind === 'special' ? (/\bAR[EI]FE(?:SI)?\b/.test(fold(text)) ? 'arefe' : /\bBAYRAM/.test(fold(text)) ? 'bayram' : 'special') : kind;
           const id = ['weekday', 'weekend'].includes(kind) ? kind : kind === 'recurring' ?
             `recurring-${weekdays.join('')}-${fold(recurringText).replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '')}` :

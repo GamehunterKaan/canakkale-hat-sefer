@@ -85,7 +85,7 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
   mkdirSync(diagnosticsDir, { recursive: true });
   try {
     const html = await fetchBytes(MUNICIPALITY_URL, { maxBytes: 3 * 1024 * 1024 });
-    const discovery = discoverPdfLinks(html.toString('utf8'));
+    const discovery = discoverPdfLinks(html.toString('utf8'), MUNICIPALITY_URL, now);
     links = discovery.links;
     report.ignoredLinks = discovery.ignored;
     report.sources = links.map(({ id, label, url }) => ({ id, label, url }));

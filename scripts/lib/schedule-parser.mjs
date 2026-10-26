@@ -572,6 +572,28 @@ export function parsePages(rawPages) {
       const columnOf = i => columns.find(c => timeX(i) >= c.left && timeX(i) < c.right);
       // A time item wider than its column is a merged cell spanning several.
       const banner = i => { const c = columnOf(i); return !c || i.w > c.right - c.left; };
+      // A column holds one time per row: a second one beside it (not the
+      // same time drawn twice) belongs to a column whose header is blank, and
+      // so do bare times stacked outside every column on half as many rows as
+      // the fullest column has (not a few margin duties, "16:25 / FEN
+      // LİSESİ"). They would join a neighbour or vanish: fail.
+      const outside = body.filter(t => !columnOf(t)), bare = t => leadingTime(t.text).length === t.text.length;
+      const copy = (t, u) => t.text === u.text && Math.abs(t.x - u.x) < Math.min(t.w, u.w) / 2;
+      const fullest = Math.max(0, ...columns.map(c => body.filter(t => columnOf(t) === c).length));
+      const stacked = t => outside.filter(u => bare(u) && Math.abs(u.x - t.x) < h).length;
+      const unlabelled = body.find(t => columnOf(t) && body.some(u => u !== t && columnOf(u) === columnOf(t) &&
+          Math.abs(u.y - t.y) < h * 0.6 && !copy(t, u))) ||
+        outside.find(t => bare(t) && stacked(t) >= 2 && stacked(t) * 2 >= fullest);
+      if (unlabelled) {
+        diagnostics.errors.push(`Page ${page.number}: ${heading.id} has times in a column without a header: ${unlabelled.text}`);
+        continue;
+      }
+      // A bus's duty in the margin ("07:20 ÇINARLI") and a time inside a line
+      // of text ("8. DOSYA 07:40 ÇT3 PARK 17 EVLERİ-GAZİ MECLİSİ") are not
+      // departures here. List them; never drop them unseen.
+      for (const t of outside) diagnostics.ignored.push({ page: page.number, reason: `Time outside the ${heading.id} columns is not read: ${t.text}` });
+      for (const t of items.filter(i => i.y < top && i.y > bottom && hasTime(i.text) && !leadingTime(i.text)))
+        diagnostics.ignored.push({ page: page.number, reason: `Time inside a line of text is not read: ${t.text}` });
       for (const item of body) {
         const parsed = leadingTime(item.text);
         const col = columnOf(item);

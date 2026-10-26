@@ -579,6 +579,23 @@ const editProbes = [
   ['repeated terminal header printed without KALKIŞ', 6, /Page 6: Ç4 has a header without KALKIŞ between its rows/, p => {
     for (const i of p.find(q => q.number === 6).items) if (i.y > 175 && i.y < 190) i.text = i.text.replace(/\s*KALKIŞ$/u, '');
   }],
+  ['stop column printed without its header', 13, /Page 3: Ç1 has times in a column without a header/, p => {
+    for (const i of p.find(q => q.number === 3).items) if (i.text === 'İSKELE' && i.x < 300) i.text = '';
+  }],
+  ['column of bare times printed in the margin without a header', 13, /Page 3: Ç1 has times in a column without a header: \d\d:\d\d$/, p => {
+    const items = p.find(q => q.number === 3).items;
+    for (const row of items.filter(i => /^\d\d:\d\d$/.test(i.text) && i.x > 100 && i.x < 160 && !i.hidden))
+      items.push({ ...row, x:30, text:'06:' + row.text.slice(3) });
+  }],
+  ['two margin duties printed as a time over a place', 1, null, p => {
+    const items = p.find(q => q.number === 14).items, duty = items.find(i => i.text === '16:25' && i.x < 100);
+    const place = items.find(i => i.text === 'FEN LİSESİ' && i.x < 100);
+    items.push({ ...duty, y:duty.y - 30 }, { ...place, y:place.y - 30 });
+  }],
+  ['the same time drawn twice over itself', 13, null, p => {
+    const items = p.find(q => q.number === 3).items, cell = items.find(i => /^\d\d:\d\d$/.test(i.text) && !i.hidden);
+    items.push({ ...cell, x:cell.x + 0.3, y:cell.y - 0.3 });
+  }],
   ['turnaround printed KALKIŞ over its arrival and VARIŞ over its departure', 13, /Page 3: Ç1 turnaround at GAZİ MECLİSİ has KALKIŞ over its arrival/, p => {
     const items = p.find(q => q.number === 3).items;
     const arrival = items.find(i => i.text === 'VARIŞ' && i.x > 300 && i.x < 350), departure = items.find(i => i.text === 'KALKIŞ' && i.x > 350 && i.x < 420);
@@ -607,6 +624,14 @@ const editProbes = [
     for (const i of p.find(q => q.number === 16).items) if (i.text === "7:30 SSK'dan ÇINARLI") i.text = '7:30 SSK dan ÇINARLI';
   }],
 ];
+await test('times the parser cannot place are listed, never dropped unseen', () => {
+  // August's margin duties: village trips before the bus's first departure.
+  for (const t of ['07:20 ÇINARLI', '10:15 ÇINARLI', '16:50 KALABAKLI'])
+    assert.ok(parsed[0].diagnostics.ignored.some(i => i.page === 12 && i.reason === 'Time outside the Ç11K EKSPRES columns is not read: ' + t));
+  // A full-width duty line: bus 9 runs a ÇT3 trip from Park 17 Evleri first.
+  assert.ok(parsed[13].diagnostics.ignored.some(i => i.page === 13 &&
+    i.reason === 'Time inside a line of text is not read: 9. DOSYA 07:30 ÇT3 PARK 17 EVLERİ-GAZİ MECLİSİ'));
+});
 await test('every way of saying a trip comes from elsewhere fails the departure', () => {
   for (const note of ['kepezden', 'kampüsten', "Kepez'den", 'SSK dan', 'SSK HAREKET', 'SSK-ÇINARLI']) {
     const altered = structuredClone(pages[12]);

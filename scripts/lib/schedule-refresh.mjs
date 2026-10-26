@@ -68,7 +68,13 @@ export function validateBundle(schedules, links) {
 // come and go between editions.
 const departureCount = d => (d?.times?.length || 0) + (d?.trips || []).filter(t => t.from).length;
 export function lostDirections(schedule, previousSchedules = []) {
-  const before = previousSchedules.find(s => s.id === schedule.id && s.source && !s.unavailable)?.routes || {};
+  // A reworded supplement label changes its recurring id: its last edition
+  // is then the one for the same weekdays sharing the most of its routes.
+  const verified = previousSchedules.filter(s => s.source && !s.unavailable);
+  const shared = s => Object.keys(s.routes || {}).filter(name => name in (schedule.routes || {})).length;
+  const before = (verified.find(s => s.id === schedule.id) || (schedule.kind === 'recurring' ? verified
+    .filter(s => s.kind === 'recurring' && stable(s.weekdays) === stable(schedule.weekdays))
+    .sort((a, b) => shared(b) - shared(a))[0] : null))?.routes || {};
   return Object.entries(schedule.routes || {}).flatMap(([name, route]) => {
     const was = ['dir0', 'dir1'].filter(d => departureCount(before[name]?.[d])).length;
     const now = ['dir0', 'dir1'].filter(d => departureCount(route[d])).length;

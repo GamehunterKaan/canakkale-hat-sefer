@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import vm from 'node:vm';
-import { refreshSchedules, sameSchedule, validateBundle } from '../scripts/lib/schedule-refresh.mjs';
+import { refreshSchedules, sameSchedule, validateBundle, lostDirections } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
 import { MUNICIPALITY_URL, COLORS_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
 import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT, schedDepartures, _schedFrame, _tmMin } from '../core.js';
@@ -81,6 +81,34 @@ try {
     // A trip that starts at another stop is still a departure of its direction.
     h.state.parsed.routes['Ç1 MERKEZ'].dir1.trips = [{ time:'08:30', from:'KEPEZ', stops:[] }];
     assert.equal((await h.run({ now:now + 2 })).ok, true);
+  });
+  await test('a reworded supplement keeps its last edition as the baseline', async () => {
+    const h = harness(), supplement = label => '<a href="https://example.test/friday.pdf">' + label + '</a>';
+    h.state.html = page() + supplement('Ç1 Hattı Cuma Günü Sefer Saatleri');
+    assert.equal((await h.run()).ok, true);
+    h.state.html = page() + supplement('Ç1 Hattı Cuma Seferleri');
+    h.state.pdf += '\nnext edition';
+    h.state.parsed.routes['Ç1 MERKEZ'].dir1.times = [];
+    const errors = (await h.run({ now:now + 1 })).report.errors;
+    assert.ok(errors.some(e => /^recurring-5-C1-HATTI-CUMA-SEFERLERI: .*Ç1 MERKEZ: 1 of 2 directions lost/.test(e)), errors.join('\n'));
+    // A supplement for other days is a new service, compared with nothing.
+    const fresh = harness();
+    fresh.state.html = page() + supplement('Ç1 Hattı Cuma Günü Sefer Saatleri');
+    await fresh.run();
+    fresh.state.html = page() + supplement('Ç1 Hattı Perşembe Seferleri');
+    fresh.state.parsed.routes['Ç1 MERKEZ'].dir1.times = [];
+    const other = (await fresh.run({ now:now + 1 })).report.errors;
+    assert.equal(other.some(e => /^recurring-4-/.test(e)), false, other.join('\n'));
+  });
+  await test('a reworded supplement is compared with the edition sharing most of its routes, a new date with nothing', () => {
+    const route = back => ({ dir0:{ label:'A', times:['08:00'] }, dir1:{ label:'B', times:back ? ['08:30'] : [] } });
+    const friday = (id, routes) => ({ id, kind:'recurring', weekdays:[5], source:{}, routes });
+    const previous = [friday('recurring-5-C4', { 'Ç4': route(true) }),
+      friday('recurring-5-KEPEZ', { 'Ç11K': route(true), 'Ç11K EKSPRES': route(true) })];
+    assert.deepEqual(lostDirections(friday('recurring-5-KEPEZ-NEW', { 'Ç11K': route(false), 'Ç11K EKSPRES': route(true) }), previous),
+      ['recurring-5-KEPEZ-NEW/Ç11K: 1 of 2 directions lost their departures since the last verified edition']);
+    const special = (id, back) => ({ id, kind:'special', source:{}, routes:{ 'Ç1': route(back) } });
+    assert.deepEqual(lostDirections(special('special-2026-10-29', false), [special('special-2026-10-28', true)]), []);
   });
   await test('published trips are validated like departures', async () => {
     const check = trip => validateBundle([{ id:'weekday', kind:'weekday', routes:{ R:{ name:'R',

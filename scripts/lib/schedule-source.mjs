@@ -123,7 +123,7 @@ export function discoverPdfLinks(html, baseUrl = MUNICIPALITY_URL, now = Date.no
         url.hash = '';
         let basename = url.pathname.split('/').pop();
         try { basename = decodeURIComponent(basename); } catch { sourceError(url.href, `Malformed PDF URL: ${url.href}`); }
-        basename = basename.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+        basename = clean(basename.replace(/\.pdf$/i, '').replace(/_/g, ' '));
         // A blank link (whitespace, &nbsp;) is named by its title, then its file.
         const text = clean(nodeText(node)) || clean(attrs.title) || clean(basename);
         const textKind = classification(text);

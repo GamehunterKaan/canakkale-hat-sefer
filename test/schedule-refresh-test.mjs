@@ -469,6 +469,19 @@ try {
     assert.deepEqual(data, before);
     assert.equal(pickActiveScheduleId(data, { year:2026, mmdd:'10-05', isWeekend:false }), 'effective-weekday-2026-10-02');
   });
+  await test('the evidence names each source\'s error and keeps the page as read', async () => {
+    const h = harness();
+    h.state.html = page() + '<a href="https://example.test/other.pdf">Yeni Tarife</a>';
+    h.state.pdf = '<html>Bakım çalışması</html>';
+    await h.run({ parsePdf:parsePDF });
+    const report = JSON.parse(readFileSync(join(h.options.diagnosticsDir, 'report.json'), 'utf8'));
+    // The parser-fix workflow gives no agent a response that is not a PDF,
+    // and opens an issue for the page's own errors.
+    assert.equal(report.sources[0].error, 'Response is not a PDF');
+    assert.ok(report.sources[0].sha256);
+    assert.deepEqual(report.discoveryErrors, ['Unrecognized PDF schedule label: Yeni Tarife']);
+    assert.equal(readFileSync(join(h.options.diagnosticsDir, 'page.html'), 'utf8'), h.state.html);
+  });
   await test('regular schedule fallback survives a date change in the filename', async () => {
     const h = harness();
     const old = 'https://example.test/12-EYLUL-11.pdf', next = 'https://example.test/19-EYLUL-5.pdf';

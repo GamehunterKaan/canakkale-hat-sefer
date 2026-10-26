@@ -16,6 +16,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A timetable page the refresh cannot classify (a renamed, duplicated or
+  # missing link) is no PDF for the agent to fix. Open one issue per distinct
+  # set of page errors; the affected services keep their verified timetables.
+  discovery:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read          # the failing run's timetable-diagnostics artifact
+      issues: write
+    steps:
+      - name: Download the failing run's report
+        id: evidence
+        # Absent when only the stops source failed.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: timetable-diagnostics
+          path: evidence
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Open an issue for timetable page errors
+        if: steps.evidence.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          errors="$(jq -r '.discoveryErrors // [] | sort | .[]' evidence/report.json)"
+          if [ -z "$errors" ]; then echo "The timetable page was read without errors."; exit 0; fi
+          key="$(printf %s "$errors" | sha256sum | cut -c1-12)"
+          # Open issues only: the same errors months later are a new problem.
+          if gh api "repos/$GH_REPO/issues?labels=parser-fix&state=open&per_page=100" --jq '.[].title' | grep -qF "[discovery-$key]"; then
+            echo "These page errors are already reported under discovery-$key."; exit 0
+          fi
+          gh label create parser-fix --color d97706 --description "Automated timetable parser fix" --force
+          # The errors quote the municipality's link text: keep it inert.
+          { echo "Failing data run: $RUN_URL"; echo
+            echo "The refresh could not classify these links on the municipality timetable page. Their services keep the last verified timetable; every other service still updates."; echo
+            echo '````'; printf '%s\n' "$errors"; echo '````'; echo
+            echo "The page as the refresh read it is page.html in the run's timetable-diagnostics artifact."; } > body.md
+          gh issue create --label parser-fix --title "Timetable page needs a manual fix [discovery-$key]" --body-file body.md
+
   agent:
     if: github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
@@ -53,8 +96,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          hashes="$(jq -r '[.sources[] | select(.state != "ok" and .sha256) | .sha256] | sort | join(",")' tmp/schedule-parser/last-refresh/report.json)"
-          if [ -z "$hashes" ]; then echo "No PDF was rejected (source page or network failure)."; exit 0; fi
+          # A response that is not a PDF (an error page) is no parser problem.
+          hashes="$(jq -r '[.sources[] | select(.state != "ok" and .sha256 and ((.error // "") | startswith("Response is not a PDF") | not)) | .sha256] | sort | join(",")' tmp/schedule-parser/last-refresh/report.json)"
+          if [ -z "$hashes" ]; then echo "No PDF was rejected (source page, link or network failure)."; exit 0; fi
           key="$(printf %s "$hashes" | sha256sum | cut -c1-12)"
           # A merged fix leaves its parser-fix/<key> branch; a failed attempt leaves an
           # issue. Either way these PDFs are not handed to the agent again, so a fix

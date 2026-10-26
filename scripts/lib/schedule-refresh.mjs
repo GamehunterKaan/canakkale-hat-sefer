@@ -94,6 +94,9 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
     const discovery = discoverPdfLinks(html.toString('utf8'), MUNICIPALITY_URL, now);
     links = discovery.links;
     report.ignoredLinks = discovery.ignored;
+    // The parser-fix workflow opens an issue for these, with the page as read.
+    report.discoveryErrors = discovery.errors;
+    writeFileSync(join(diagnosticsDir, 'page.html'), html);
     report.sources = links.map(({ id, label, url }) => ({ id, label, url }));
     if (!links.length) throw new Error(discovery.pageErrors.join('\n'));
     // A page problem (a week part with no link) fails the run but cannot
@@ -128,6 +131,7 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
         log(`  ${Object.keys(parsed.routes).length} timetable routes parsed`);
       } catch (e) {
         report.sources[index].state = 'error';
+        report.sources[index].error = e.message;
         report.errors.push(`${link.id}: ${e.message}`);
         let saved = previous?.schedules?.find(s => s.id === link.id && s.kind === link.kind &&
           (['weekday', 'weekend'].includes(link.kind) || stable(s.dates) === stable(link.dates) && s.year === link.year &&

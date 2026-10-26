@@ -698,6 +698,12 @@ await test('recurring service identity survives renamed PDFs and rejects contrad
   assert.deepEqual(conflict.sourceErrors.map(e => e.url + ' ' + e.message),
     ['https://ulasim.canakkale.bel.tr/friday.pdf Conflicting labels for PDF: https://ulasim.canakkale.bel.tr/friday.pdf']);
 });
+await test('a file name cannot carry a line break into a schedule id or error', () => {
+  const name = 'Duyuru%0A%60%60%60%60%0A%40someone.pdf';
+  const result = discoverPdfLinks(baseHtml + '<a href="/a/' + name + '"> </a><a href="/b/' + name + '"> </a>');
+  assert.ok(result.errors.some(e => /^More than one PDF claims schedule unknown-x-Duyuru ```` @someone$/.test(e)), result.errors.join('|'));
+  assert.ok(result.links.every(l => !/\s{2}|\n/.test(l.id)));
+});
 await test('two PDFs claiming one service fail only those two links', () => {
   const result = discoverPdfLinks(baseHtml + '<a href="/27-EKIM-5.pdf">HAFTA İÇİ SEFER SAATLERİ</a>');
   assert.deepEqual(result.pageErrors, []);

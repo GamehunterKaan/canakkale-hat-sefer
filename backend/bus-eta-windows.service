@@ -1,0 +1,11 @@
+[Unit]
+Description=17hatsefer bus ETA collector: polling windows from the timetable
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/bus-eta
+ExecStart=/usr/bin/node %h/bus-eta/backend/windows.mjs %h/bus-eta/data/site
+TimeoutStartSec=5min
+UMask=0077
+Nice=10
+NoNewPrivileges=true

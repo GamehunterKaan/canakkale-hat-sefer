@@ -1,6 +1,8 @@
 import copy
 import importlib.util
+import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -17,6 +19,31 @@ def payload(idx, trip="trip-1", direction="0", lat=None):
         "busList": [{"busId": "bus-1", "tripId": trip, "stopId": str(idx),
                      "lat": str(lat if lat is not None else 40.1 + idx * .001), "lng": "26.4"}],
     }]}
+
+
+class Kentkart:
+    """Fake pathInfo: stop lists on request, bus lists from a queue; records each call's resultType."""
+
+    def __init__(self, *bus_lists, path_codes=("path-1",)):
+        self.bus_lists, self.path_codes, self.calls = list(bus_lists), path_codes, []
+
+    def __call__(self, route, direction, timeout, result_type=collector.BUSES):
+        self.calls.append(result_type)
+        if result_type == collector.STOPS:
+            return {"result": {"code": 0}, "pathList": [{
+                "displayRouteCode": route, "direction": direction, "path_code": code,
+                "busStopList": payload(0)["pathList"][0]["busStopList"]} for code in self.path_codes]}, 20_000
+        buses = self.bus_lists.pop(0)
+        if isinstance(buses, Exception):
+            raise buses
+        code, buses = buses if isinstance(buses, tuple) else ("path-1", buses)
+        return {"result": {"code": 0}, "pathList": [{
+            "displayRouteCode": route, "direction": direction, "path_code": code, "busList": buses}]}, 1_000
+
+
+def bus(stop, bus_id="bus-1"):
+    lat = 40.1 + int(stop) * .001 if int(stop) < 6 else 40.2
+    return {"busId": bus_id, "tripId": "trip-1", "stopId": stop, "lat": str(lat), "lng": "26.4"}
 
 
 class CollectorTest(unittest.TestCase):
@@ -105,12 +132,6 @@ class CollectorTest(unittest.TestCase):
             with self.db:
                 collector.ingest(self.db, payload(0, direction="1"), "Ç1", "0", 1_000)
 
-    def test_one_direction_failure_does_not_block_the_other(self):
-        with patch.object(collector, "fetch_payload", side_effect=[TimeoutError("upstream"), (payload(0, direction="1"), 100)]):
-            self.assertEqual(collector.collect_once(self.db, [("Ç1", "0"), ("Ç1", "1")], 10), 1)
-        rows = self.db.execute("SELECT direction,ok FROM cycles ORDER BY id").fetchall()
-        self.assertEqual([tuple(row) for row in rows], [("0", 0), ("1", 1)])
-
     def test_retention_prunes_samples_but_keeps_transitions(self):
         self.add(0, 1_000)
         self.add(1, 31_000)
@@ -140,17 +161,92 @@ class CollectorTest(unittest.TestCase):
         with patch("sys.argv", ["collector.py", "--route", "Ç6:2"]), self.assertRaises(SystemExit):
             collector.main()
 
-    def test_retry_backoff_applies_only_to_the_failed_direction(self):
-        retries = {}
-        with patch.object(collector.time, "monotonic", return_value=1000):
-            with patch.object(collector, "fetch_payload", side_effect=[TimeoutError("upstream"), (payload(0, direction="1"), 100)]):
-                collector.collect_once(self.db, [("Ç1", "0"), ("Ç1", "1")], 10, retry_state=retries)
-        self.assertEqual(retries[("Ç1", "0")], (1, 1030))
-        with patch.object(collector.time, "monotonic", return_value=1001):
-            with patch.object(collector, "fetch_payload", return_value=(payload(0, direction="1"), 100)) as fetch:
-                collector.collect_once(self.db, [("Ç1", "0"), ("Ç1", "1")], 10, retry_state=retries)
-                self.assertEqual(fetch.call_count, 1)
-                self.assertEqual(fetch.call_args.args[1], "1")
+    def poll(self, target, kentkart, windows=None, now_s=1_000.0):
+        totals = collector.new_totals()
+        with patch.object(collector, "fetch_payload", side_effect=kentkart), patch.object(collector.time, "time", return_value=now_s):
+            collector.poll(self.db, target, 10, 30, windows, totals)
+        return totals
+
+    def test_stop_list_is_fetched_once_and_buses_alone_after(self):
+        target, kentkart = collector.Target("Ç1", "0"), Kentkart([bus("1")], [bus("2")])
+        self.poll(target, kentkart)
+        self.poll(target, kentkart, now_s=1_030.0)
+        self.assertEqual(kentkart.calls, [collector.STOPS, collector.BUSES, collector.BUSES])
+        kinds = [r[0] for r in self.db.execute("SELECT kind FROM cycles ORDER BY id")]
+        self.assertEqual(kinds, ["stops", "probe", "fast"])
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM transitions").fetchone()[0], 0)  # first sighting is censored
+
+    def test_active_route_polls_fast_until_two_empty_polls(self):
+        target, kentkart = collector.Target("Ç1", "0"), Kentkart([bus("1")], [], [])
+        self.poll(target, kentkart)
+        self.assertEqual((target.fast, target.due), (True, 1_030_000))
+        self.poll(target, kentkart, now_s=1_030.0)
+        self.assertEqual((target.fast, target.due), (True, 1_060_000))
+        self.poll(target, kentkart, now_s=1_060.0)
+        self.assertEqual((target.fast, target.due), (False, 1_060_000 + collector.PROBE_S * 1000))
+
+    def test_parked_bus_off_the_route_does_not_count_as_active(self):
+        target, kentkart = collector.Target("Ç1", "0"), Kentkart([bus("217")])
+        self.poll(target, kentkart)
+        self.assertFalse(target.fast)
+        self.assertEqual(kentkart.calls, [collector.STOPS, collector.BUSES])  # fresh stop list: not refetched
+
+    def test_new_path_code_refetches_the_stop_list(self):
+        target, kentkart = collector.Target("Ç1", "0"), Kentkart([bus("1")], ("path-2", [bus("2")]))
+        self.poll(target, kentkart)
+        kentkart.path_codes = ("path-2",)
+        self.poll(target, kentkart, now_s=1_030.0)
+        self.assertEqual(kentkart.calls, [collector.STOPS, collector.BUSES, collector.BUSES, collector.STOPS])
+        self.assertIn("path-2", target.stops)
+
+    def test_failed_route_backs_off_without_blocking_another(self):
+        failing, working = collector.Target("Ç1", "0"), collector.Target("Ç1", "1")
+        self.poll(failing, Kentkart(TimeoutError("upstream")))
+        self.poll(working, Kentkart([bus("1")]))
+        self.assertEqual(failing.due, 1_030_000)
+        self.assertTrue(working.fast)
+        rows = self.db.execute("SELECT direction, kind, ok FROM cycles ORDER BY id").fetchall()
+        self.assertEqual([tuple(r) for r in rows], [("0", "stops", 1), ("0", "probe", 0), ("1", "stops", 1), ("1", "probe", 1)])
+
+    def test_timetable_windows_decide_when_routes_are_polled(self):
+        windows = {"windows": {"Ç1|0": {"start": 10_000, "end": 20_000}}, "network": {"start": 5_000, "end": 30_000}}
+        scheduled, unscheduled = collector.Target("Ç1", "0"), collector.Target("Ç14", "1")
+        self.assertEqual(collector.may_poll(scheduled, windows, 15_000), (True, collector.PROBE_S))
+        self.assertFalse(collector.may_poll(scheduled, windows, 9_000)[0])
+        self.assertFalse(collector.may_poll(scheduled, windows, 21_000)[0])
+        self.assertEqual(collector.may_poll(unscheduled, windows, 25_000), (True, collector.UNSCHEDULED_PROBE_S))
+        self.assertFalse(collector.may_poll(unscheduled, windows, 31_000)[0])
+        scheduled.fast = True  # the last bus is still running after the window
+        self.assertTrue(collector.may_poll(scheduled, windows, 21_000)[0])
+        self.assertEqual(collector.may_poll(unscheduled, None, 31_000), (True, collector.PROBE_S))
+        closed, kentkart = collector.Target("Ç1", "0"), Kentkart()
+        self.poll(closed, kentkart, windows, now_s=21.0)
+        self.assertEqual((kentkart.calls, closed.due), ([], 21_000 + collector.PROBE_S * 1000))
+
+    def test_windows_file_counts_only_for_the_current_service_day(self):
+        path = Path(self.temp.name) / "windows.json"
+        windows = collector.Windows(path)
+        tuesday_0200 = 1_793_142_000_000  # 2026-10-28 02:00 local: still Tuesday's service day
+        self.assertIsNone(windows.today(tuesday_0200))
+        path.write_text('{"day": "2026-10-27", "unavailable": false, "windows": {}, "network": null}', encoding="utf-8")
+        self.assertEqual(windows.today(tuesday_0200)["day"], "2026-10-27")
+        self.assertIsNone(windows.today(tuesday_0200 + 3 * 3_600_000))  # 05:00: Wednesday, stale file
+        path.write_text('{"day": "2026-10-27", "unavailable": true}', encoding="utf-8")
+        os.utime(path, (1, 2))  # make sure the reload sees a new modification time
+        self.assertIsNone(windows.today(tuesday_0200))
+
+    def test_request_purpose_column_is_added_to_an_existing_database(self):
+        path = Path(self.temp.name) / "old.sqlite3"
+        old = sqlite3.connect(path)
+        old.execute("CREATE TABLE cycles (id INTEGER PRIMARY KEY, received_ms INTEGER NOT NULL, route TEXT NOT NULL, direction TEXT NOT NULL, "
+                    "ok INTEGER NOT NULL, response_bytes INTEGER NOT NULL, elapsed_ms INTEGER NOT NULL, observations INTEGER NOT NULL, "
+                    "transitions INTEGER NOT NULL, ignored INTEGER NOT NULL, error TEXT)")
+        old.execute("INSERT INTO cycles VALUES (1, 1, 'Ç1', '0', 1, 0, 0, 0, 0, 0, NULL)")
+        old.commit()
+        old.close()
+        db = collector.connect(path)
+        self.assertEqual(db.execute("SELECT kind FROM cycles").fetchone()[0], "fast")
+        db.close()
 
 
 if __name__ == "__main__":

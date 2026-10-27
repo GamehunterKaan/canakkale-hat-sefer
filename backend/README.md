@@ -1,7 +1,8 @@
 # ETA observation pilot
 
 The Pi collects every public route (29 routes, 57 route/direction pairs; OGR
-student routes are excluded like in the app) every 30 seconds. This first stage records
+student routes are excluded like in the app), polling each only while it can have
+buses (see Polling below). This first stage records
 observations for evaluating better arrival estimates; it does not change the
 website, train a prediction model, expose an HTTP server, or upload passenger GPS.
 It uses Python 3.10+ and SQLite from the standard library, with no pip packages.
@@ -32,6 +33,30 @@ Repeated failures back off that direction up to five minutes between attempts.
 Failed or malformed responses leave timing cursors untouched. A gap on recovery
 prevents the outage from becoming a travel-time sample.
 
+## Polling
+
+`windows.mjs` turns the day's timetable into one window per route direction, using
+the app's own `core.js` with the site's `schedule.json` and `stops.json` (downloaded
+hourly by `bus-eta-windows.timer`; the last good copy is kept). A window opens 15
+minutes before the first departure and its clock part ends 15 minutes after the
+last departure's scheduled arrival.
+
+- Inside its window an idle route is probed every 60 seconds. A route with a bus at
+  one of its stops is polled every 30 seconds until two polls in a row find none;
+  a bus still running when the window closes is followed until then.
+- Routes without a timetable that day are probed every 120 seconds during network
+  hours (the span of all windows), and polled every 30 seconds while a bus is
+  active: buses continue as such routes under other routes' timetables.
+- Buses parked off the route (a stop ID not on its path) do not make it active.
+- Polls ask for buses only (`resultType=010`, about 1 KB). Each route's stop list
+  (`resultType=001`) is fetched when polling starts, hourly, when a new
+  `path_code` appears, and at most every 10 minutes when a bus reports an unknown
+  stop. `cycles.kind` records each request as `probe`, `fast` or `stops`.
+- Without a timetable for today (missing, stale or unreadable `windows.json`) every
+  route is polled by activity alone.
+
+The journal gets a summary every five minutes plus a warning per failed request.
+
 ## Running locally
 
 ```powershell
@@ -40,17 +65,18 @@ python backend/collector.py --status
 python -m unittest discover -s test -p eta_collector_test.py -v
 ```
 
-`--once` performs two real Kentkart requests and returns a failure status if
-either direction fails. `--status` reads the database without network access.
+`--once` polls each route once, ignoring the timetable, and returns a failure
+status if any request fails. `--status` reads the database without network access.
 Repeat `--route` to collect more routes. Use `CODE:0` or `CODE:1` for a route
 that exists in one direction only (Ç6 has no direction 1); a bare `CODE` uses
-the `--direction` list. The journal gets one summary line per sweep plus a
-warning per failed request; per-request detail is in the `cycles` table.
+the `--direction` list. `node backend/windows.mjs <dir>` writes `<dir>/windows.json`;
+pass it with `--windows`.
 
 ## Pi service
 
 Copy `backend/` and `test/eta_collector_test.py` into `/home/pi/bus-eta/`, preserving
-their relative paths. Install `backend/bus-eta.service` in
+their relative paths. Install `backend/bus-eta.service`, `bus-eta-windows.service` and
+`bus-eta-windows.timer` in
 `/home/pi/.config/systemd/user/`. The default database is
 `/home/pi/bus-eta/data/eta.sqlite3`, outside Jarvis and PiSecCam repositories.
 Enable user lingering once if it is not already enabled:
@@ -58,6 +84,8 @@ Enable user lingering once if it is not already enabled:
 ```sh
 sudo loginctl enable-linger pi
 systemctl --user daemon-reload
+systemctl --user enable --now bus-eta-windows.timer
+systemctl --user start bus-eta-windows.service   # first windows.json
 systemctl --user enable --now bus-eta.service
 python3 ~/bus-eta/backend/collector.py --db ~/bus-eta/data/eta.sqlite3 --status
 systemctl --user show bus-eta.service -p MemoryCurrent -p CPUUsageNSec -p CPUQuotaPerSecUSec -p MemoryMax
@@ -71,11 +99,10 @@ The service runs at low priority, with a ceiling of 5% of one CPU core and
 96 MiB of process address space (`LimitAS`). It also sets `MemoryMax=96M` when
 the memory cgroup controller is available; the pilot Pi has that controller
 disabled, so `LimitAS` supplies the effective memory limit without kernel changes.
-These are limits, not predicted resource use. Each measured pair
-of responses was about 55 KB: polling every 30 seconds is approximately
-150 MiB/day of uncompressed incoming data. A sequential sweep of all public
-routes measured about 1.1 MB and 20 seconds of request time (2026-10-17), or
-roughly 3 GiB/day at a 30-second interval. SQLite writes are batched per response.
+These are limits, not predicted resource use. Polling every route every 30 seconds
+with full responses (28 KB each) was about 164k requests and 3 GiB a day; only
+about a third of those polls found a bus on the route. SQLite writes are batched
+per response.
 Position observations and request diagnostics have a seven-day retention target.
 Transition bounds are kept indefinitely: they are the running-time model's training
 data, roughly 1.5 GB a year with indexes. Hourly pruning deletes in 5,000-row

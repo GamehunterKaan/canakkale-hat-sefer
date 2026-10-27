@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly timetable windows for the bus ETA collector; 04:00:30 starts each service day
+
+[Timer]
+OnCalendar=*-*-* *:00:30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

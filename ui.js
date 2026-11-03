@@ -20,7 +20,7 @@ import {
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
   pickSchedDir, routeSliceCoords, schedCodeNorm, schedTripsForPath, schedDepartures, scheduleForDay,
   todayParts, withinM, foldTr as _foldTr, scheduleHealth, lastTripsOnRoad, lastBusRunning, expressBase,
-  QS, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
+  QS, REGION, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
   _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
   getActiveRoutes, getActiveSchedule, planTrips,
   getSchedule, setSchedule, getPathCache, setPathCache,
@@ -117,7 +117,7 @@ function showScreen(name) {
   if (name === 'settings') initSettingsScreen();
   // Load Kentkart only when the tab is first opened, not on every app start.
   const liveFrame = document.getElementById('live-frame');
-  if (name === 'live' && !liveFrame.src) liveFrame.src = 'https://m.kentkart.com/';
+  if (name === 'live' && !liveFrame.src) liveFrame.src = KENTKART_HOME;
   if (name === 'schedule') highlightNextTimes();
   if (name === 'stops') {
     renderStopsList();
@@ -1451,6 +1451,7 @@ function renderStopDetail() {
   +   '</button>'
   + '</div>'
   + '<button class="sd-cta" onclick="showStopOnPlanner(\'' + stop.stopId + '\')">'+t('showOnMapCta')+'</button>'
+  + '<button class="sd-cta" onclick="openStopLive(\'' + stop.stopId + '\')">'+t('liveStopCta')+'</button>'
   + '<div class="sd-routes-title">'+t('routesHere')+'</div>'
   + routesHtml;
 
@@ -1515,6 +1516,30 @@ async function loadStopDetailBuses(stopId, uniqRoutes) {
     const parent = meta[0]?.row?.parentNode;
     if (parent) for (const { row } of meta) if (row) parent.appendChild(row);
   } catch {}
+}
+
+// Kentkart's stop link (?id=) opens that stop's page. On phones Kentkart's own
+// code then hands off to its app and, failing that, the app store, which refuses
+// to be framed. So phones get Kentkart's home and the stop's name to search for.
+const KENTKART_HOME = 'https://m.kentkart.com/?cityCode=' + REGION;
+const IS_PHONE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || navigator.vendor);
+let liveStopName = '';
+function openStopLive(stopId) {
+  const stop = allStops.get(stopId);
+  if (!stop) return;
+  liveStopName = stop.stopName;
+  const label = document.getElementById('live-stop');
+  label.hidden = false;
+  label.innerHTML = '📍 ' + esc(stop.stopName)
+    + (IS_PHONE ? '<button onclick="copyLiveStop(this)">' + t('liveCopy') + '</button>' : '');
+  const frame = document.getElementById('live-frame');
+  if (!IS_PHONE) frame.src = KENTKART_HOME + '&id=' + encodeURIComponent(stopId) + '&type=1';
+  showScreen('live');
+}
+function copyLiveStop(btn) {
+  const ask = () => prompt(t('liveCopyPrompt'), liveStopName);
+  if (!navigator.clipboard?.writeText) return ask();
+  navigator.clipboard.writeText(liveStopName).then(() => { btn.textContent = t('liveCopied'); }, ask);
 }
 
 function showStopOnPlanner(stopId) {
@@ -4455,8 +4480,8 @@ document.addEventListener('click', e => {
 // which also forbids passing a bare identifier as a handler argument.
 Object.assign(window, {
 applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStopDetail,
-  closeTrackPanel, closeTripDetail, deleteBookmark, dismissOnboarding, downloadOfflineMap,
-  endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail,
+  closeTrackPanel, closeTripDetail, copyLiveStop, deleteBookmark, dismissOnboarding, downloadOfflineMap,
+  endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail, openStopLive,
   removeRecentDest, renderStopsList, requestNearbyOnce, resetOnboarding, resetPlanner,
   resetWalkRadius, resetWalkSpeed, saveLocationBookmark, selectTrackPath, setLang, setMode, setPlanMode, setPlanOffset,
   setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,

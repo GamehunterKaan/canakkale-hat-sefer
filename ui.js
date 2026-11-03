@@ -113,6 +113,9 @@ function showScreen(name) {
     renderBookmarksBar();
   }
   if (name === 'settings') initSettingsScreen();
+  // Load Kentkart only when the tab is first opened, not on every app start.
+  const liveFrame = document.getElementById('live-frame');
+  if (name === 'live' && !liveFrame.src) liveFrame.src = 'https://m.kentkart.com/';
   if (name === 'schedule') highlightNextTimes();
   if (name === 'stops') {
     renderStopsList();

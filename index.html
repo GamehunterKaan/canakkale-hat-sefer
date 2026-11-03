@@ -88,6 +88,8 @@
     .bm-dd-empty { padding: 10px 12px; color: #4a5568; font-size: .75rem; }
     /* Duraklar tab */
     #scr-stops { padding: 0; }
+    #live-open { flex-shrink: 0; padding: 6px 12px; text-align: right; font-size: .75rem; font-weight: 700; color: #7eb3f7; text-decoration: none; }
+    #live-frame { flex: 1; width: 100%; border: 0; background: #fff; }
     #stop-search-input {
       width: 100%; box-sizing: border-box; padding: 11px 14px; flex-shrink: 0;
       background: #1a1d2e; color: #e6ebf5; border: none; border-bottom: 1px solid #252d40;
@@ -1113,6 +1115,12 @@
     </div>
   </div>
 
+  <!-- Kentkart's own site, framed: live positions now need its signed requests -->
+  <div id="scr-live" class="screen">
+    <a id="live-open" href="https://m.kentkart.com/" target="_blank" rel="noopener" data-i18n="liveOpen">Kentkart’ta aç ↗</a>
+    <iframe id="live-frame" title="Kentkart"></iframe>
+  </div>
+
   <div id="scr-settings" class="screen">
     <div class="settings-wrap">
       <div class="settings-header">
@@ -1186,6 +1194,7 @@
   <button class="nb"        data-s="schedule" onclick="showScreen('schedule')" data-i18n-html="navSched"><span>📅</span>Seferler</button>
   <button class="nb active" data-s="planner"  onclick="showScreen('planner')" data-i18n-html="navPlanner"><span>🗺</span>Rota &amp; Harita</button>
   <button class="nb"        data-s="stops"    onclick="showScreen('stops')" data-i18n-html="navStops"><span>🚏</span>Duraklar</button>
+  <button class="nb"        data-s="live"     onclick="showScreen('live')" data-i18n-html="navLive"><span>📡</span>Canlı</button>
 </nav>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

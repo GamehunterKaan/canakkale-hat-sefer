@@ -312,6 +312,7 @@ export const STR = {
     schedCurrentSources: 'Belediyenin güncel tarifeleri',
     schedUnavailable: 'Bu tarife şu anda gösterilemiyor. Güncel saatler için PDF’i açın.',
     navSched: '<span>📅</span>Seferler', navPlanner: '<span>🗺</span>Rota &amp; Harita', navStops: '<span>🚏</span>Duraklar',
+    navLive: '<span>📡</span>Canlı', liveOpen: 'Kentkart’ta aç ↗',
   },
   en: {
     appName: 'Çanakkale Hat & Sefer',
@@ -491,6 +492,7 @@ export const STR = {
     schedCurrentSources: 'Current municipal timetables',
     schedUnavailable: 'This timetable is currently unavailable. Open the PDF for current times.',
     navSched: '<span>📅</span>Schedules', navPlanner: '<span>🗺</span>Route &amp; Map', navStops: '<span>🚏</span>Stops',
+    navLive: '<span>📡</span>Live', liveOpen: 'Open in Kentkart ↗',
   },
 };
 

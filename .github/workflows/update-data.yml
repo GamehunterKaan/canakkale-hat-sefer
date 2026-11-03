@@ -39,11 +39,6 @@ jobs:
         continue-on-error: true
         run: node scripts/fetch-schedule.mjs
 
-      - name: Fetch stops data (kentkart API → JSON)
-        id: stops
-        continue-on-error: true
-        run: node scripts/fetch-stops.mjs
-
       - name: Preserve failing timetable evidence
         if: steps.schedules.outcome == 'failure'
         uses: actions/upload-artifact@v4
@@ -60,7 +55,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/schedule.json data/schedule-status.json data/stops.json
+          git add data/schedule.json data/schedule-status.json
           if ! git diff --staged --quiet; then
             git commit -m "chore: update transit data $(date -u '+%Y-%m-%d')"
             git pull --rebase origin "$GITHUB_REF_NAME"
@@ -81,7 +76,7 @@ jobs:
           fi
 
       - name: Report upstream failures
-        if: always() && (steps.schedules.outcome == 'failure' || steps.stops.outcome == 'failure')
+        if: always() && steps.schedules.outcome == 'failure'
         run: |
           echo "::error::A transit source could not be verified. See the summary and timetable-diagnostics artifact."
           exit 1

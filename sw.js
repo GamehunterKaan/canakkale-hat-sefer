@@ -1,4 +1,4 @@
-// Service worker — Web Push + offline caching for app shell, JSON data, tiles.
+// Service worker — offline caching for app shell, JSON data, tiles.
 // Bump VERSION to invalidate every cache on the next activate.
 
 const VERSION     = 'v5';
@@ -156,43 +156,4 @@ self.addEventListener('fetch', event => {
   }
 
   // kentkart live data, everything else → passthrough (no cache)
-});
-
-self.addEventListener('push', event => {
-  let title = 'Çanakkale Hat & Sefer';
-  let body  = 'Otobüs yaklaşıyor.';
-  let tag   = 'bus-notify';
-
-  if (event.data) {
-    try {
-      const d = event.data.json();
-      title = d.title || title;
-      body  = d.body  || body;
-      tag   = d.tag   || tag;
-    } catch {}
-  }
-
-  const base = self.registration.scope;
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      tag,
-      icon:  base + 'icons/web-app-manifest-192x192.png',
-      badge: base + 'icons/favicon-96x96.png',
-      data:  { url: base },
-    })
-  );
-});
-
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  const target = event.notification.data?.url || self.location.origin;
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-      for (const c of list) {
-        if (c.url.startsWith(target) && 'focus' in c) return c.focus();
-      }
-      return clients.openWindow(target);
-    })
-  );
 });

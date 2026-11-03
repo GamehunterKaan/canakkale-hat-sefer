@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from '
 import { join, dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { parsePDF } from './schedule-parser.mjs';
-import { discoverPdfLinks, requestBytes, MUNICIPALITY_URL, COLORS_URL } from './schedule-source.mjs';
+import { discoverPdfLinks, requestBytes, MUNICIPALITY_URL } from './schedule-source.mjs';
 import { todayParts, effectiveInForce } from '../../core.js';
 
 const HEARTBEAT_MS = 12 * 60 * 60 * 1000;
@@ -173,13 +173,8 @@ export async function refreshSchedules({ outputDir = 'data', diagnosticsDir = 't
       if (kept && upcoming.length && !upcoming.some(s => effectiveInForce(s, today)) && !schedules.some(s => s.kind === family))
         schedules.splice(family === 'weekday' ? 0 : schedules.filter(s => s.kind === 'weekday').length, 0, kept);
     }
-    let routes = previous?.routes || [];
-    try {
-      const data = JSON.parse((await fetchBytes(COLORS_URL, { maxBytes: 2 * 1024 * 1024 })).toString('utf8'));
-      if (!Array.isArray(data.routeList) || !data.routeList.length) throw new Error('Empty route colors');
-      routes = data.routeList;
-    } catch (e) { report.warnings.push(`Using saved route colors: ${e.message}`); }
-    const next = { schedules, routes, fetchedAt: now };
+    // Route colors are a frozen copy: kentkart refuses unsigned requests.
+    const next = { schedules, routes: previous?.routes || [], fetchedAt: now };
     if (!previous || !sameSchedule(previous, next)) { atomicWriteJson(schedulePath, next); changed = true; }
   } catch (e) {
     if (!report.errors.length) report.errors.push(e.message);

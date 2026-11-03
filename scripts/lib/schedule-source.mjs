@@ -2,7 +2,6 @@ import { parse } from 'parse5';
 import { clean, fold } from './schedule-parser.mjs';
 
 export const MUNICIPALITY_URL = 'https://ulasim.canakkale.bel.tr/rehber/hatlar-otobus-saatleri/';
-export const COLORS_URL = 'https://service.kentkart.com/rl1/web/nearest/find?region=007&lang=tr&authType=4&resultType=111';
 const MONTHS = { OCAK:1, SUBAT:2, MART:3, NISAN:4, MAYIS:5, HAZIRAN:6,
   TEMMUZ:7, AGUSTOS:8, EYLUL:9, EKIM:10, KASIM:11, ARALIK:12 };
 const monthPattern = Object.keys(MONTHS).join('|');

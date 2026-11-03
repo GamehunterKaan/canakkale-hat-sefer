@@ -666,10 +666,6 @@ function setLang(l) {
   refreshActiveI18n();
 }
 
-// ── Push notification config (fill in after running generate-keys.js + deploying worker) ──
-const VAPID_PUBLIC_KEY = 'BHVCtR1I7eXOv825k0yVg3E6y59A0p7wlgO3rUD90sEOXIec97qg4z5ybGlGjcltgQQxytPw6LD9Q202YxZeC7s';
-const WORKER_URL       = 'https://bus-notify.17bus-notify.workers.dev'; // e.g. https://bus-notify.yourname.workers.dev
-
 let planOffset = 0; // minutes into the future to plan for
 
 // Arrive-by mode: 'depart' plans forward from a time (planOffset); 'arrive'
@@ -1998,7 +1994,6 @@ function resetPlanner() {
   selectedMatch = null; currentMatches = []; tripMatch = null; currentTaxi = null;
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
   closeTrackPanel();
-  stopBusNotify();
   // Clear map
   clearDrawn(); clearBuses(); showNetworkStops();
   // Reset UI
@@ -2923,138 +2918,6 @@ function closeTrackPanel() {
   setHint(t('hintClickStart'));
 }
 
-// ── Bus arrival notifications (Cloudflare Worker + Web Push) ─────────────────
-let notifyMatch  = null;
-let notifySubId  = null; // subscription ID returned by the Worker
-
-async function toggleBusNotify() {
-  // Cancel if already watching this trip
-  if (notifyMatch && tripMatch && !tripMatch.isMultiLeg && notifyMatch.path.path_code === tripMatch.path.path_code) {
-    await stopBusNotify();
-    const btn = document.getElementById('notify-btn');
-    if (btn) { btn.textContent = t('notifyOff'); btn.classList.remove('active'); }
-    return;
-  }
-
-  if (WORKER_URL === 'REPLACE_WITH_YOUR_WORKER_URL') {
-    alert(t('pushWorkerNotSet'));
-    return;
-  }
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    alert(t('pushUnsupported'));
-    return;
-  }
-
-  // Permission
-  const perm = Notification.permission === 'granted'
-    ? 'granted' : await Notification.requestPermission();
-  if (perm !== 'granted') {
-    alert(t('pushPermDenied'));
-    return;
-  }
-
-  // Get or create push subscription
-  let reg;
-  try { reg = await navigator.serviceWorker.ready; } catch {
-    alert(t('pushSwNotReady')); return;
-  }
-
-  // Always unsubscribe first — stale subscriptions from previous VAPID keys
-  // cause "push service error" from FCM. Fresh subscribe is more reliable.
-  try {
-    const existing = await reg.pushManager.getSubscription();
-    if (existing) await existing.unsubscribe();
-  } catch {}
-
-  let pushSub;
-  try {
-    pushSub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY),
-    });
-  } catch (e) {
-    const isBrave = (navigator.brave && await navigator.brave.isBrave().catch(()=>false)) || false;
-    const reason  = isBrave ? t('pushBrave') : t('pushNoPerm');
-    alert(t('pushSubFailed',{reason}));
-    return;
-  }
-
-  // Register with Worker
-  const m = tripMatch;
-  const stops  = m.path.busStopList || [];
-  const seqOf  = {};
-  stops.forEach(s => { seqOf[s.stopId] = parseInt(s.seq) || 0; });
-
-  // Compute next scheduled departure timestamp (epoch ms) for time-based alert:
-  // the printed departure, from its first stop, of the next trip that calls at
-  // this board stop.
-  const schedT_   = _tripsAt(m.path, m.board.stopId, m.alight.stopId).map(trip => trip.time);
-  let nextDepTs   = null;
-  if (schedT_.length) {
-    const nowMs = Date.now();
-    const curH  = new Date().getHours();
-    for (const t of schedT_) {
-      const [h, mn] = t.split(':').map(Number);
-      const d = new Date();
-      // Times like "00:30" appearing late in the sorted list mean tomorrow morning
-      if (h < 4 && curH >= 4) d.setDate(d.getDate() + 1);
-      d.setHours(h, mn, 0, 0);
-      if (d.getTime() > nowMs) { nextDepTs = d.getTime(); break; }
-    }
-    if (!nextDepTs) {
-      const [h, mn] = schedT_[0].split(':').map(Number);
-      const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(h, mn, 0, 0);
-      nextDepTs = d.getTime();
-    }
-  }
-
-  try {
-    const res = await fetch(WORKER_URL + '/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription: pushSub.toJSON(),
-        trip: {
-          routeCode:     m.path.displayRouteCode,
-          direction:     m.path.direction,
-          boardStopId:   m.board.stopId,
-          boardSeq:      seqOf[m.board.stopId] ?? 0,
-          boardStopName: m.board.stopName,
-          headSign:      m.path.headSign,
-          pathCode:      m.path.path_code,
-          nextDepTs,
-        },
-      }),
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const { id } = await res.json();
-    notifySubId  = id;
-    notifyMatch  = m;
-    const btn = document.getElementById('notify-btn');
-    if (btn) { btn.textContent = t('notifyOn'); btn.classList.add('active'); }
-  } catch (e) {
-    alert(t('pushWorkerConnFail',{err:e.message}));
-  }
-}
-
-async function stopBusNotify() {
-  if (notifySubId) {
-    fetch(WORKER_URL + '/subscribe', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: notifySubId }),
-    }).catch(() => {});
-    notifySubId = null;
-  }
-  notifyMatch = null;
-}
-
-function urlB64ToUint8Array(b64) {
-  const pad = '='.repeat((4 - b64.length % 4) % 4);
-  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-}
-
 // Register service worker on page load — also listen for new SW activations
 // and surface an "Update available" pill so users can refresh on demand.
 let _pendingWorker = null;
@@ -3220,16 +3083,11 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   let html = '';
 
   // Back button + route header
-  const isNotifying = notifyMatch && notifyMatch.path.path_code === m.path.path_code;
   html += '<div style="display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #252d40;margin-bottom:10px">'
         +   '<button class="trip-back" onclick="closeTripDetail()">'+t('backToLines')+'</button>'
         +   '<span class="p-route-badge" style="background:#'+hex+';color:'+txt+'">'+m.path.displayRouteCode+'</span>'
         +   '<span style="font-size:.78rem;font-weight:600;flex:1">'+esc(m.path.headSign)+'</span>'
         +   '<button class="trip-back" title="'+t('shareTripTitle')+'" onclick="shareTrip()">'+t('shareTripBtn')+'</button>'
-        +   '<button class="notify-btn'+(isNotifying?' active':'')+'" id="notify-btn" '
-        +     'onclick="toggleBusNotify()">'
-        +     (isNotifying ? t('notifyOn') : t('notifyOff'))
-        +   '</button>'
         + '</div>';
 
   // ── Start guided trip ─────────────────────────────────────────────────────
@@ -3464,7 +3322,6 @@ function _showMultiLegTripDetail(m) {
 }
 
 function closeTripDetail() {
-  stopBusNotify();
   tripMatch = null;
   renderPlannerResults(currentMatches);
   if (selectedMatch) {
@@ -4603,7 +4460,7 @@ applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStop
   removeRecentDest, renderStopsList, requestNearbyOnce, resetOnboarding, resetPlanner,
   resetWalkRadius, resetWalkSpeed, saveLocationBookmark, selectTrackPath, setLang, setMode, setPlanMode, setPlanOffset,
   setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
-  toggleBmDropdown, toggleBusNotify, toggleFavStop, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
+  toggleBmDropdown, toggleFavStop, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
   useRecentDest, useStopAs, viewStopInDuraklar,
   // map place search
   clearMapSearch, closeSearchPlace, onMapSearchFocus, onMapSearchInput, onMapSearchKey,

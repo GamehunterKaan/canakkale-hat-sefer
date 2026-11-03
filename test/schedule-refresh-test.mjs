@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 import vm from 'node:vm';
 import { refreshSchedules, sameSchedule, validateBundle, lostDirections } from '../scripts/lib/schedule-refresh.mjs';
 import { parsePDF } from '../scripts/lib/schedule-parser.mjs';
-import { MUNICIPALITY_URL, COLORS_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
+import { MUNICIPALITY_URL, requestBytes } from '../scripts/lib/schedule-source.mjs';
 import { scheduleHealth, STR, pickActiveScheduleId, scheduleForDay, createT, schedDepartures, _schedFrame, _tmMin } from '../core.js';
 
 let passed = 0;
@@ -35,7 +35,6 @@ function harness() {
     fetchBytes:async url => {
       if (state.fail === url) throw new Error('Injected fetch failure');
       if (url === MUNICIPALITY_URL) return Buffer.from(state.html);
-      if (url === COLORS_URL) return Buffer.from('{"routeList":[{"displayRouteCode":"1","routeColor":"ffffff"}]}');
       return Buffer.from(state.pdf);
     }, parsePdf:async () => structuredClone(state.parsed) };
   const run = extra => refreshSchedules({ ...options, ...extra });
@@ -562,15 +561,16 @@ try {
     assert.equal(recovered.changed, false);
     assert.ok(recovered.status.sources.every(s => s.state === 'ok'));
   });
-  await test('route color outage does not block a valid timetable update', async () => {
+  await test('route colors carry over from the saved copy', async () => {
     const h = harness();
     await h.run();
-    h.state.fail = COLORS_URL;
+    const saved = JSON.parse(h.bytes());
+    saved.routes = [{ displayRouteCode:'1', routeColor:'ffffff' }];
+    writeFileSync(join(h.options.outputDir, 'schedule.json'), JSON.stringify(saved));
     h.state.html = page(newUrl);
     const result = await h.run({ now:now + 1 });
     assert.equal(result.ok, true);
     assert.equal(JSON.parse(h.bytes()).routes[0].displayRouteCode, '1');
-    assert.ok(result.report.warnings.length);
   });
   await test('corrupt saved JSON can be recovered by a verified fetch', async () => {
     const h = harness();

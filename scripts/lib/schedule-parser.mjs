@@ -474,6 +474,14 @@ export function parsePages(rawPages) {
         last.departure = false;
         first.departure = true;
       }
+      // Others copy the closing VARIŞ over the origin. Nothing precedes the
+      // first column: when it and the last name the same arrival around a
+      // KALKIŞ, the first, with times beneath it, is where the trip starts.
+      else if (columns.length >= 3 && !first.departure && !last.departure && /VARIS/.test(fold(first.label)) &&
+          columns.slice(1, -1).some(c => c.departure) && terminalKey(first.label) === terminalKey(last.label) && hasTimes(first)) {
+        first.departure = true;
+        first.label = stopName(first.label);
+      }
       if (!routeItem && !columns.some(c => c.departure && routes.get(heading.id)?.directions.some(d =>
         d.labels.some(label => matchesTerminal(label, c.label))))) {
         diagnostics.errors.push(`Page ${page.number}: untitled table cannot be matched to ${heading.id}`);

@@ -94,5 +94,11 @@
     "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/KEPEZ-HATTI-CUMA-GUNU-SEFERLERI.pdf",
     "sha256": "f405b1004abafcc0d9a7ebeff55b0fac715313d791c682164df6bbd58c8f9e96",
     "bytes": 1067665
+  },
+  {
+    "name": "friday-kepez-2026-11-03",
+    "url": "https://ulasim.canakkale.bel.tr/wp-content/uploads/2018/02/KEPEZ-HATTI-CUMA-GUNU-SEFER-SAATLERI-1.pdf",
+    "sha256": "10a1fda2b32cc80cce4426ca008c987eabc1f1d743be4b2955fcdb6beadb4b0c",
+    "bytes": 725432
   }
 ]

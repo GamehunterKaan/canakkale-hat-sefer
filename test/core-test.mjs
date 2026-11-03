@@ -658,5 +658,17 @@ console.log('\n── service day ──\n');
      core.pickActiveScheduleId(lateFirst, core.todayParts(new Date('2027-01-08T12:00:00+03:00'))) === 'e-2027-01-04');
 }
 
+// Kentkart refuses a request with HTTP 200 and a non-zero result code (34 once it
+// started requiring signed requests). That is "live data unknown", not "no bus out".
+{
+  const realFetch = globalThis.fetch;
+  const answer = body => { globalThis.fetch = async () => new Response(JSON.stringify(body)); };
+  answer({ result: { code: 34, message: 'Lütfen bilgilerinizi eksiksiz giriniz' } });
+  ck('a refused live request is unknown (null), not an empty bus list', await core._fetchLiveBuses('11K', '0') === null);
+  answer({ result: { code: '0' }, pathList: [{ busList: [] }] });
+  ck('an accepted request with no buses out is still an empty list', JSON.stringify(await core._fetchLiveBuses('11K', '0')) === '[]');
+  globalThis.fetch = realFetch;
+}
+
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);
 process.exit(fail ? 1 : 0);

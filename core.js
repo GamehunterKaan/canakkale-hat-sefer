@@ -1057,6 +1057,8 @@ export async function _fetchLiveBuses(code, dir) {
     clearTimeout(timer);
     if (!r.ok) return null;
     const d = await r.json();
+    // Kentkart refuses with HTTP 200 and a non-zero code (34: unsigned request).
+    if (String(d.result?.code) !== '0') return null;
     return d.pathList?.[0]?.busList || [];
   } catch { return null; }
 }

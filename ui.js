@@ -69,7 +69,9 @@ function markKentkartResult(ok) {
 async function probeKentkart() {
   try {
     const r = await fetch(`${API}web/nearest/find?${QS}&_=${Date.now()}`, { cache: 'no-store' });
-    markKentkartResult(r.ok);
+    // HTTP 200 alone isn't enough: Kentkart refuses with a non-zero result code.
+    const d = r.ok && await r.json();
+    markKentkartResult(String(d?.result?.code) === '0');
   } catch {
     markKentkartResult(false);
   }

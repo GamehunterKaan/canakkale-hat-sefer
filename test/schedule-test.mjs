@@ -60,6 +60,8 @@ counts.push({ 'Ç1':[26,26], 'Ç3':[26,26], 'Ç3 EKSPRES':[30,30], 'Ç4':[42,42]
   'ÇT1':[4,4], 'Ç11Ç':[7,8] });
 // The Friday Kepez edition of 26 October: three pages, the express table on page 1.
 counts.push({ 'Ç11K EKSPRES':[76,81], 'Ç11K':[17,20], 'Ç11Ç':[7,7] });
+// The Friday Kepez edition of 3 November: page 1 was counted per column from the text layer.
+counts.push({ 'Ç11K EKSPRES':[76,81], 'Ç11K':[17,20], 'Ç11Ç':[7,7] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table. The October
 // weekend cover lists Ç4 EKSPRES while its table is headed Ç-4 ESENLER.
 const coverOnly = { 4: ['Ç2'], 14: ['Ç4 EKSPRES'] }, tableOnly = { 14: ['Ç4'] };
@@ -299,6 +301,22 @@ await test('Kepez express round trip ending under KALKIŞ keeps two directions',
     '20:55 21:20 21:35 21:45 22:00 22:25 22:35 22:45 23:05 23:15 23:35 23:55'.split(' '));
   // The far DARDANOS column holds trip ends, e.g. 08:05 after the 08:00 Kepez TOKİ pass.
   assert.equal(getRoute(parsed[12], 'Ç11K EKSPRES').dir0.times.includes('08:05'), false);
+});
+// The 3 November Friday Kepez edition prints VARIŞ over both Dardanos columns
+// of the express day header: the near one is where the round trip starts.
+await test('Kepez express round trip starting under VARIŞ keeps two directions', () => {
+  const tables = parsed[16].diagnostics.pages.find(p => p.page === 1).tables;
+  assert.deepEqual(tables.map(t => t.columns.map(c => c.label)), [['DARDANOS YERLEŞKE', 'GAZİ OKULU'], ['KEPEZ 144 TOKİ', 'GAZİ OKULU']]);
+  assert.deepEqual(tables.map(t => t.columns.map(c => c.times.length)), [[59, 65], [17, 16]]);
+  const r = getRoute(parsed[16], 'Ç11K EKSPRES');
+  assert.equal(r.dir0.label, 'DARDANOS YERLEŞKE');
+  assert.equal(r.dir0.times.at(-1), '17:55');
+  assert.equal(startingAt(r.dir0, 'KEPEZ 144 TOKİ')[0], '18:15');
+  assert.deepEqual(startingAt(r.dir0, 'ÇINARLI'), ['07:20','08:50']);
+  // Nor when the far column names another terminal: the near VARIŞ is then no origin.
+  const altered = structuredClone(pages[16]);
+  for (const i of altered.find(p => p.number === 1).items) if (i.text === 'DARDANOS' && i.x > 400) i.text = 'İSKELE';
+  assert.ok(parsePages(altered).diagnostics.errors.includes('Page 1: Ç11K EKSPRES origin DARDANOS YERLEŞKE VARIŞ is not a confirmed departure'));
 });
 await test('a third KALKIŞ that does not return to the first terminal still fails', () => {
   const altered = structuredClone(pages[12]);

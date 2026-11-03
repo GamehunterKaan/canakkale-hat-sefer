@@ -20,6 +20,7 @@ These are complete, unmodified municipality PDFs, gzip-compressed for storage. `
 | special-2026-10-28 | 28 October timetable; same Ç11K express pages as weekday-2026-10-26; different ÇT1 and ÇT2; ÇT2 trip ending "14:00 BİTİŞ" with BİTİŞ past the column edge |
 | weekend-2026-10-31 | October weekend layout; heading words beside the route code (Ç-960 TOKİ, Ç-11K ESENLER); Çınarlı-marked Kepez TOKİ departures; cover lists Ç4 EKSPRES for a table headed Ç-4 ESENLER |
 | friday-kepez-2026-10-26 | Three-page Friday Kepez edition; express table on page 1; white 06:50/07:50/08:30 and 07:20 cells; Çınarlı trips in the Dardanos columns under the page legend |
+| friday-kepez-2026-11-03 | Friday Kepez edition whose express day header prints VARIŞ over both Dardanos columns, the origin included; evening section from Kepez 144 TOKİ starts at 18:15 |
 
 ## Independently checked expectations
 
@@ -67,6 +68,8 @@ The 26 and 28 October fixtures (26-EKIM, 28-EKIM-9) were captured from the faili
 Every other route parses exactly as it did before this fix.
 
 The 20 October fixture (20-EKIM-6) was captured from the failing 20 October 2026 hourly refresh, which rejected it with `Page 16: unknown unnumbered table: KEPEZ`. Page 16 was visually checked: the Ç11K express evening header is a shortened row reading only "KEPEZ / 144 TOKİ" at both outer columns, without the KALKIŞ/VARIŞ line earlier editions had. The left column has 19 departures from 18:25 through 23:45, and Gazi Okulu has 18 departures from 19:10 through 23:50. The morning section's last row (18:05 Dardanos, 18:50 Gazi Okulu) lies directly above that header and belongs to the morning section.
+
+The 3 November Friday Kepez edition (KEPEZ-HATTI-CUMA-GUNU-SEFER-SAATLERI-1) was captured from the failing 3 November 2026 run's artifact. Page 1 was counted per column from the text layer: 59 Dardanos cells (two of them Çınarlı trips) and 65 Gazi Okulu cells in the day section, then 17 Kepez 144 TOKİ and 16 Gazi Okulu departures in the evening section. The weekday edition of 4 November prints the same Dardanos origin without VARIŞ.
 
 The 31 October weekend (31-EKIM-10) and the Friday Kepez edition (KEPEZ-HATTI-CUMA-GUNU-SEFERLERI) were captured from the live municipality page on 26 October 2026. Every page of both, and every page of the 26 October weekday, was audited against renders at 3x. The audit found the hidden cells and note rows listed above, the ÇT2 "14:00 BİTİŞ" end of service on 28 October, and the evening sections published under the wrong terminal. The weekend's Ç11K and Ç11K EKSPRES "çınarlı" marks stay notes on Kepez TOKİ departures. The legend only says those trips skip the campus, which the weekend table does not serve.
 

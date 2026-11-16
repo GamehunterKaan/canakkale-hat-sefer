@@ -19,8 +19,19 @@ const departure = text => /(?:^|\s)(?:KALKIS|HAREKET)(?:\s+SAAT[IILERI]*)?\s*:?$
 const note = text => /(?:OLARAK|DEVAM|BITIS|BASLAYACAK|SEFER YOK|IPTAL|ITIBAR|SADECE)/.test(fold(text));
 // Route codes named in free text: Ç960, ÇT-3, (Ç11G), 11-K.
 const routeKey = code => fold(code).replace(/[^A-Z0-9]/g, '').replace(/^C/, '');
-const namesOtherRoute = (text, code) => [...fold(text).matchAll(/(?<![A-Z0-9])(C\s*-?\s*(?:T\s*-?\s*)?\d{1,3}[A-Z]?|\d{1,3}\s*-\s*[KGC])(?![A-Z0-9])/g)]
-  .some(m => routeKey(m[1]) !== routeKey(code));
+const routeCodes = /(?<![A-Z0-9])(C\s*-?\s*(?:T\s*-?\s*)?\d{1,3}[A-Z]?|\d{1,3}\s*-\s*[KGC])(?![A-Z0-9])/g;
+const namesOtherRoute = (text, code) => [...fold(text).matchAll(routeCodes)].some(m => routeKey(m[1]) !== routeKey(code));
+// A note that sends the trip along a route's itinerary ("11-K ESENLER
+// GÜZERGAHINDAN SSK") makes it that route's trip. Under the same code, the
+// express and the regular line are different routes.
+const followsOtherRoute = (text, heading) => [...fold(text).matchAll(new RegExp(routeCodes.source + '([^]*?)\\bGUZERGAH', 'g'))]
+  .some(m => routeKey(m[1]) !== routeKey(heading.code) || /EKSPRES|EXPRESS?|\bEKS\b/.test(m[2]) !== heading.id.endsWith(' EKSPRES'));
+// "08:50 çınarlı 11-K EKSPRES OLARAK" in the Ç11K EKSPRES table: the trip
+// runs as this very route. That is no note about another route; drop it.
+const asThisRoute = (text, heading) => {
+  const m = text.match(/\s+-?\s*((?:[ÇC]\s*-?\s*)?\d{1,3}\s*-?\s*[A-ZÇĞİÖŞÜa-zçğıöşü])\s+((?:EKSPRES|EXPRESS?|EKS)\s+)?OLARAK$/iu);
+  return m && routeKey(m[1]) === routeKey(heading.code) && !!m[2] === heading.id.endsWith(' EKSPRES') ? text.slice(0, m.index) : text;
+};
 // A stop as riders know it: a column label without its KALKIŞ/VARIŞ marker.
 const stopName = label => clean(String(label || '').replace(/(?:^|\s)(?:VARI[ŞS]|KALKI[ŞS]|HAREKET)(?=\s|$)/giu, ' '));
 // The timetable's own words after a departure time ("çınarlı", "-SSK"), kept for riders.
@@ -261,7 +272,7 @@ function mirroredOrigin(columns) {
   return terminalKey(first.label) === terminalKey(last.label.replace(/VARI[ŞS]/giu, '')) ? first : null;
 }
 
-function mergeTable(route, table, errors, departing) {
+function mergeTable(route, table, errors, departing, continued) {
   const cols = table.columns.filter(c => c.departure);
   if (cols.length > 2 || cols.length === 0) { errors.push(`Page ${table.page}: ${route.name} has ${cols.length} departure columns`); return; }
   let assignment;
@@ -272,10 +283,11 @@ function mergeTable(route, table, errors, departing) {
       assignment = known.map((i, j) => i >= 0 ? i : 1 - known[1 - j]);
       // A terminal no earlier table named may start a direction beside the
       // route's own table on the same page (an evening section from an
-      // intermediate terminal). On a later page it means another route whose
-      // title was lost: refuse to pool its times into a labelled direction.
+      // intermediate terminal), or in a section continuing it at the top of
+      // the next. On any other later page it means another route whose title
+      // was lost: refuse to pool its times into a labelled direction.
       const pooled = assignment.find((d, j) => known[j] < 0 && route.directions[d].labels.length);
-      if (pooled !== undefined && !route.tables.some(t => t.page === table.page)) {
+      if (pooled !== undefined && !continued && !route.tables.some(t => t.page === table.page)) {
         errors.push(`Page ${table.page}: ${route.name} departure terminal ${cols[assignment.indexOf(pooled)].label} matches no earlier ${route.name} table`);
         return;
       }
@@ -459,7 +471,15 @@ export function parsePages(rawPages) {
       // An untitled header repeats a table above it on the same page. On a new
       // page, a missing title is a lost heading, not a continuation: routes
       // that share a terminal (Ç1, Ç3, Ç3 EKSPRES) must not absorb each other.
-      if (!routeItem && !report.tables.some(t => t.route === heading.id)) {
+      // The exception is a section that opens the page and repeats, in order,
+      // every stop between the outer terminals of the table that closed the
+      // previous page (a Kepez express evening section from Kepez 144 TOKİ):
+      // routes that share a terminal still differ in their stops.
+      const previous = diagnostics.pages.find(p => p.page === page.number - 1)?.tables.at(-1);
+      const continued = !routeItem && !report.tables.length && previous?.route === heading.id &&
+        previous.headers.length === columns.length && columns.length >= 5 &&
+        columns.slice(1, -1).every((c, j) => terminalKey(c.label) === terminalKey(previous.headers[j + 1]));
+      if (!routeItem && !continued && !report.tables.some(t => t.route === heading.id)) {
         diagnostics.errors.push(`Page ${page.number}: untitled table has no ${heading.id} table above it on this page`);
         continue;
       }
@@ -608,20 +628,30 @@ export function parsePages(rawPages) {
         if (!col?.departure || parsed.annotation) continue;
         const row = items.filter(i => i.x >= col.left && i.x < col.right && Math.abs(i.y - item.y) < h * 0.6).map(i => i.text).join(' ');
         if (note(row)) continue;
-        const text = cellText(items, item, h, col, bottom);
+        const text = asThisRoute(cellText(items, item, h, col, bottom), heading);
         const skip = reason => diagnostics.ignored.push({ page: page.number, reason: `${reason}: ${text}` });
         // A time captioned with another route's code describes that route's
         // trip ("07:30 - JANDARMA IŞIKLARINDAN- Ç960"), not a departure here.
-        if (note(text) || namesOtherRoute(text.slice(parsed.length), heading.code)) { skip(`Note is not a ${heading.id} departure`); continue; }
+        // So does one sent along another route's itinerary ("07:20 çınarlı
+        // 11-K ESENLER GÜZERGAHINDAN SSK" in the express table).
+        if (note(text) || namesOtherRoute(text.slice(parsed.length), heading.code) || followsOtherRoute(text.slice(parsed.length), heading)) {
+          skip(`Note is not a ${heading.id} departure`); continue;
+        }
         // A merged cell with no stop times beside it, only other merged cells,
         // is a banner about a trip ("7:30 SSK'dan ÇINARLI", "07:45 SSK-ÇINARLI"),
         // wherever its centred time happens to fall. Any other merged cell may
         // be another trip's note row that lost its route code ("07:00 Kepez
         // meydandan 11-K Esenler", beside stop times) or a departure whose note
         // ran out of its cell: fail rather than guess.
+        // A merged cell whose row is labelled, in the margin left of the
+        // table, with another route's vehicle duty ("Ç10 1. DOSYA" beside
+        // "16:50 ESKİ HASTANE") is that bus's trip, not this route's.
+        const duty = () => clean(items.filter(i => i.x + i.w <= columns[0].left && Math.abs(i.y - item.y) < h && !hasTime(i.text))
+          .sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.text).join(' '));
         if (banner(item)) {
           if (describesTrip(text.slice(parsed.length)) && !body.some(i => i !== item && !banner(i) && Math.abs(i.y - item.y) < h * 0.6))
             skip(`Merged note row is not a ${heading.id} departure`);
+          else if (namesOtherRoute(duty(), heading.code)) skip(`Merged cell on a ${duty()} row is not a ${heading.id} departure`);
           else diagnostics.errors.push(`Page ${page.number}: ${heading.id} merged cell is neither a departure nor a trip note: ${text}`);
           continue;
         }
@@ -659,7 +689,7 @@ export function parsePages(rawPages) {
       if (!routes.has(heading.id)) routes.set(heading.id, { ...heading, tables: [], directions: [
         { labels: [], times: new Set(), cells: [] }, { labels: [], times: new Set(), cells: [] },
       ] });
-      mergeTable(routes.get(heading.id), table, diagnostics.errors, departing);
+      mergeTable(routes.get(heading.id), table, diagnostics.errors, departing, continued);
     }
   }
   for (const label of namedManifest) {

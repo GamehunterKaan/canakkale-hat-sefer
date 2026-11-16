@@ -62,6 +62,16 @@ counts.push({ 'Ç1':[26,26], 'Ç3':[26,26], 'Ç3 EKSPRES':[30,30], 'Ç4':[42,42]
 counts.push({ 'Ç11K EKSPRES':[76,81], 'Ç11K':[17,20], 'Ç11Ç':[7,7] });
 // The Friday Kepez edition of 3 November: page 1 was counted per column from the text layer.
 counts.push({ 'Ç11K EKSPRES':[76,81], 'Ç11K':[17,20], 'Ç11Ç':[7,7] });
+// 18-KASIM-13: page 14 was checked against a render. The Ç11K row labelled
+// "Ç10 1. DOSYA" holds the merged cell "16:50 ESKİ HASTANE", a Ç10 bus's trip.
+counts.push({ 'Ç1':[37,39], 'Ç3':[36,37], 'Ç3 EKSPRES':[40,42], 'Ç4':[88,90], 'Ç5':[4,0],
+  'Ç7':[43,43], 'Ç8':[35,34], 'Ç9':[35,35], 'Ç10':[23,17], 'Ç960':[35,35], 'ÇT3':[42,43],
+  'ÇT3 EKSPRES':[29,29], 'Ç11K':[20,23], 'Ç11K EKSPRES':[77,84], 'Ç11G':[26,26], 'Ç11Ç':[7,8],
+  'ÇT1':[12,11], 'ÇT2':[1,1] });
+// KEPEZ-HATTI-CUMA-SEFERLERI-2: pages 2 and 3 were counted per column from renders.
+// 71 Dardanos cells and the 08:50 Çınarlı trip on page 2, then 28 Kepez 144 TOKİ
+// departures on the untitled page 3; 108 Gazi Okulu departures over both pages.
+counts.push({ 'Ç11K':[17,20], 'Ç11K EKSPRES':[100,108], 'Ç11Ç':[7,7] });
 // The publisher's 19 September PDF lists Ç2 without a Ç2 table. The October
 // weekend cover lists Ç4 EKSPRES while its table is headed Ç-4 ESENLER.
 const coverOnly = { 4: ['Ç2'], 14: ['Ç4 EKSPRES'] }, tableOnly = { 14: ['Ç4'] };
@@ -115,6 +125,27 @@ await test('Friday Kepez express retains both departure origins despite the smal
   for (const t of ['07:30','07:40','14:40','19:35','00:00']) assert.ok(r.dir1.times.includes(t));
   assert.equal(r.dir0.times.includes('07:00'), false, 'Kepez intermediate-stop time is not a Dardanos departure');
   assert.equal(r.dir0.times.includes('00:00'), false, 'Gazi departure is not copied to Dardanos');
+});
+await test('a merged cell on a row labelled with another route\'s vehicle duty is that route\'s trip', () => {
+  assert.ok(parsed[17].diagnostics.ignored.some(i => i.page === 14 &&
+    i.reason === 'Merged cell on a Ç10 1. DOSYA row is not a Ç11K departure: 16:50 ESKİ HASTANE'));
+  // The row below it is a real Ç11K departure from SSK at the same time.
+  assert.ok(getRoute(parsed[17], 'Ç11K').dir1.times.includes('16:50'));
+});
+await test('Friday Kepez express: another route\'s itinerary, this route\'s own name and a section continued on the next page', () => {
+  const result = parsed[18], r = getRoute(result, 'Ç11K EKSPRES');
+  // "07:20 çınarlı 11-K ESENLER GÜZERGAHINDAN SSK": a regular Ç11K trip, listed in the Ç11K table.
+  assert.ok(result.diagnostics.ignored.some(i => i.page === 2 &&
+    i.reason === 'Note is not a Ç11K EKSPRES departure: 07:20 çınarlı 11-K ESENLER GÜZERGAHINDAN SSK'));
+  assert.equal(departures(r.dir0).includes('07:20'), false);
+  assert.ok(startingAt(getRoute(result, 'Ç11K').dir0, 'ÇINARLI').includes('07:20'));
+  // "08:50 çınarlı 11-K EKSPRES OLARAK": the trip runs as this route, from the village.
+  assert.deepEqual(startingAt(r.dir0, 'ÇINARLI'), ['08:50']);
+  // Page 3 opens with an untitled evening section repeating page 2's stops.
+  const evening = startingAt(r.dir0, 'KEPEZ 144 TOKİ');
+  assert.equal(evening.length, 28);
+  assert.deepEqual([evening[0], evening.at(-1)], ['18:12', '23:40']);
+  for (const t of ['18:52', '20:20', '20:30', '23:45']) assert.ok(r.dir1.times.includes(t), t);
 });
 await test('a note wrapped under its time is read however tightly it sits between the rows beside it', () => {
   // Each note sits a little over half a row from the times of the columns beside it.
@@ -637,6 +668,18 @@ const editProbes = [
     const { items } = p[0], last = items.reduce((a, b) => b.y < a.y ? b : a);
     items.push({ ...last, text:'AKŞAM SEFERLERİ ESKİ HASTANEYE UĞRAYACAKTIR.', y:last.y - 12, w:180 },
       { ...last, text:'BU SEFERLER KAMPÜSE UĞRAMAKTADIR.', y:last.y - 24, w:140 });
+  }],
+  ['merged cell whose duty label lost its route code', 17, /Page 14: Ç11K merged cell is neither a departure nor a trip note: 16:50 ESKİ HASTANE/, p => {
+    for (const i of p.find(q => q.number === 14).items) if (i.text === 'Ç10 1.') i.text = '1.';
+  }],
+  ['merged cell beside a duty label of its own route', 17, /Page 14: Ç11K merged cell is neither a departure nor a trip note: 16:50 ESKİ HASTANE/, p => {
+    for (const i of p.find(q => q.number === 14).items) if (i.text === 'Ç10 1.') i.text = '11-K 1.';
+  }],
+  ['itinerary note names this express route', 18, /Page 2: Ç11K EKSPRES departure note describes a trip from elsewhere: 07:20 çınarlı 11-K EKSPRES GÜZERGAHINDAN SSK/, p => {
+    for (const i of p.find(q => q.number === 2).items) i.text = i.text.replace('11-K ESENLER GÜZERGAHINDAN', '11-K EKSPRES GÜZERGAHINDAN');
+  }],
+  ['untitled section at the top of a page with other stops than the page before', 18, /Page 3: untitled table has no Ç11K EKSPRES table above it on this page/, p => {
+    for (const i of p.find(q => q.number === 3).items) if (i.text === 'İSKELE') i.text = 'ESKİ HASTANE';
   }],
   ['trip banner spelled without its apostrophe', 11, null, p => {
     for (const i of p.find(q => q.number === 16).items) if (i.text === "7:30 SSK'dan ÇINARLI") i.text = '7:30 SSK dan ÇINARLI';

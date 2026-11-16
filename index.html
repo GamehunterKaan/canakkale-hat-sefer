@@ -56,17 +56,6 @@
     }
     #updateToast button:hover { background: #3b7ec7; }
     html[data-theme="light"] #updateToast { background: #2563eb; }
-    #offline-badge {
-      display: none; align-items: center; gap: 4px;
-      padding: 3px 8px; border-radius: 10px;
-      background: #2d1f05; color: #fbbf24;
-      border: 1px solid #5b3f0a;
-      font-size: .68rem; font-weight: 700; letter-spacing: .02em;
-    }
-    #offline-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; }
-    body.is-offline #offline-badge { display: inline-flex; }
-    html[data-theme="light"] #offline-badge { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
-    html[data-theme="light"] #offline-badge::before { background: #92400e; }
     #scheduleHealth { flex-shrink: 0; padding: 8px 12px; max-height: 25dvh; overflow-y: auto;
       background: #332507; color: #fde68a; border-bottom: 1px solid #806014; font-size: .78rem; line-height: 1.5; }
     #scheduleHealth a { color: inherit; display: inline-block; margin: 3px 14px 0 0; text-decoration: underline; }
@@ -88,11 +77,6 @@
     .bm-dd-empty { padding: 10px 12px; color: #4a5568; font-size: .75rem; }
     /* Duraklar tab */
     #scr-stops { padding: 0; }
-    #live-bar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 6px 12px; }
-    #live-stop { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; font-weight: 700; }
-    #live-stop button { margin-left: 6px; padding: 2px 8px; border: 1px solid #2a4d77; border-radius: 6px; background: none; color: #7eb3f7; font-size: .72rem; font-weight: 700; cursor: pointer; }
-    #live-open { margin-left: auto; flex-shrink: 0; font-size: .75rem; font-weight: 700; color: #7eb3f7; text-decoration: none; }
-    #live-frame { flex: 1; width: 100%; border: 0; background: #fff; }
     #stop-search-input {
       width: 100%; box-sizing: border-box; padding: 11px 14px; flex-shrink: 0;
       background: #1a1d2e; color: #e6ebf5; border: none; border-bottom: 1px solid #252d40;
@@ -178,12 +162,6 @@
     .sd-route-status.live-near{ color: #4a90d9; font-weight: 700; }
     .sd-route-status.live-mid { color: #22c55e; }
     .sd-route-status.live-far { color: #f59e0b; }
-    .sd-route-live {
-      background: #1f2937; color: #7eb3f7; border: 1px solid #2d3548;
-      border-radius: 6px; padding: 4px 9px; font-size: .72rem; font-weight: 700;
-      cursor: pointer; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
-    }
-    .sd-route-live:hover { background: #252d40; color: #fff; border-color: #4a90d9; }
     /* Light mode */
     html[data-theme="light"] #stop-search-input { background: #fff; color: #1a1d2e; border-bottom-color: #e5e7eb; }
     html[data-theme="light"] #stop-search-input::placeholder { color: #9ca3af; }
@@ -204,8 +182,6 @@
     html[data-theme="light"] .sd-route-status.live-near { color: #1d4ed8; }
     html[data-theme="light"] .sd-route-status.live-far { color: #b45309; }
     html[data-theme="light"] .sd-routes-title { color: #9ca3af; }
-    html[data-theme="light"] .sd-route-live { background: #f3f4f6; color: #2563eb; border-color: #e5e7eb; }
-    html[data-theme="light"] .sd-route-live:hover { background: #e5e7eb; color: #1d4ed8; border-color: #2563eb; }
     #screenWrap { flex: 1; overflow: hidden; display: flex; }
     .screen { display: none; flex: 1; flex-direction: column; overflow: hidden; }
     .screen.active { display: flex; }
@@ -393,12 +369,6 @@
       font-size: .62rem; font-weight: 700; white-space: nowrap;
     }
     html[data-theme="light"] .p-longwalk-badge { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
-    .p-live-badge {
-      display: inline-block; padding: 2px 7px; border-radius: 4px;
-      background: #2a0f12; color: #f87171; border: 1px solid #5b1f25;
-      font-size: .62rem; font-weight: 700; white-space: nowrap;
-    }
-    html[data-theme="light"] .p-live-badge { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
     .p-lastbus-badge {
       display: inline-block; padding: 2px 7px; border-radius: 4px;
       background: #3a2606; color: #fbbf24; border: 1px solid #5b3f0a;
@@ -419,7 +389,6 @@
     html[data-theme="light"] .p-taxi-card { background: #fef9ec; border-color: #f0d896; }
     html[data-theme="light"] .p-taxi-title, html[data-theme="light"] .p-taxi-fare { color: #a16207; }
     html[data-theme="light"] .p-taxi-sub { color: #b08a2e; }
-    .bus-chip { display: inline-block; background: #1a2744; color: #7eb3f7; border-radius: 4px; padding: 2px 5px; font-size: .68rem; font-weight: 600; margin: 2px 2px 0 0; }
     .nearby-stop { margin: 0 0 5px; border-radius: 7px; border: 1.5px solid #252d40; overflow: hidden; cursor: pointer; transition: border-color .15s; }
     .nearby-stop:hover, .nearby-stop.open { border-color: #4a90d9; }
     .ns-header { padding: 8px 10px; display: flex; align-items: center; gap: 7px; background: #1a1d2e; }
@@ -668,9 +637,6 @@
     .total-box { background: #1a2744; border-radius: 7px; padding: 9px 12px; display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
     .total-box-label { font-size: .72rem; color: #6b7a99; }
     .total-box-value { font-size: 1.05rem; font-weight: 700; color: #7eb3f7; }
-    .live-row { display: flex; align-items: center; gap: 7px; padding: 5px 0; border-bottom: 1px solid #1e2235; font-size: .78rem; }
-    .live-row:last-child { border-bottom: none; }
-    .live-eta { font-weight: 700; font-size: .78rem; white-space: nowrap; }
     .dep-chips { display: flex; flex-wrap: wrap; gap: 5px; }
     .dep-chip { padding: 4px 9px; border-radius: 5px; font-size: .75rem; font-weight: 700; font-variant-numeric: tabular-nums; background: #1e2235; color: #c0d0ea; border: 1px solid #252d40; }
     .dep-chip.next { background: #1a3660; color: #fff; border-color: #4a90d9; box-shadow: 0 0 6px rgba(74,144,217,.3); }
@@ -680,37 +646,13 @@
     .tl-dot { position: absolute; left: -17px; width: 8px; height: 8px; border-radius: 50%; background: #252d40; border: 1px solid #374151; flex-shrink: 0; }
     .tl-dot.board  { background: #2563eb; border-color: #2563eb; width: 12px; height: 12px; left: -19px; }
     .tl-dot.alight { background: #16a34a; border-color: #16a34a; width: 12px; height: 12px; left: -19px; }
-    .tl-dot.bus    { background: #ef4444; border-color: #ef4444; width: 10px; height: 10px; left: -18px; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 50%{box-shadow:0 0 0 5px rgba(239,68,68,0)} }
     .tl-name { flex: 1; }
     .tl-id   { color: #374151; font-size: .64rem; }
     .tl-badge { font-size: .64rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
     .tl-badge.board  { background: #1a2744; color: #7eb3f7; }
     .tl-badge.alight { background: #14422a; color: #86efac; }
-    .tl-badge.bus    { background: #2d1206; color: #f87171; }
 
-    /* ── Track panel ── */
-    .track-back  { background: none; border: none; color: #7eb3f7; font-size: .8rem; cursor: pointer; padding: 0; }
-    .track-dirs  { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-    .track-dir-btn {
-      flex: 1; padding: 7px 8px; border: 1.5px solid #252d40; border-radius: 7px;
-      background: #141621; color: #6b7a99; font-size: .74rem; font-weight: 700;
-      cursor: pointer; text-align: center; transition: all .15s; min-width: 0;
-    }
-    .track-dir-btn.active { background: #1a2744; color: #a8d4ff; border-color: #4a90d9; }
-    .track-bus-list { margin-top: 4px; }
-    .track-bus-row  { display: flex; align-items: center; gap: 7px; padding: 6px 0; border-bottom: 1px solid #1e2235; font-size: .78rem; }
-    .track-bus-row:last-child { border-bottom: none; }
-    .track-refresh  { font-size: .65rem; color: #374151; margin-top: 8px; }
-    /* Track button on schedule cards */
-    .sched-track-btn {
-      display: flex; align-items: center; gap: 4px;
-      padding: 4px 9px; border-radius: 5px; border: 1px solid #1a3660;
-      background: #0f1d33; color: #7eb3f7; font-size: .68rem; font-weight: 700;
-      cursor: pointer; flex-shrink: 0; transition: background .15s, border-color .15s;
-      white-space: nowrap;
-    }
-    .sched-track-btn:hover { background: #1a2f50; border-color: #4a90d9; }
     /* ── Onboarding overlay ── */
     #onboarding {
       position: fixed; inset: 0; z-index: 2000;
@@ -845,7 +787,6 @@
     html[data-theme="light"] .total-box { background: #dbeafe; color: #1e40af; }
     html[data-theme="light"] .dep-chip { background: #f3f4f6; color: #1a1d2e; border-color: #e5e7eb; }
     html[data-theme="light"] .dep-chip.next { background: #2563eb; color: #fff; border-color: #1d4ed8; }
-    html[data-theme="light"] .bus-chip { background: #dbeafe; color: #1e40af; }
     html[data-theme="light"] .tl-line { background: #e5e7eb; }
     html[data-theme="light"] .tl-dot  { background: #d1d5db; border-color: #9ca3af; }
     html[data-theme="light"] .tl-badge.board  { background: #dbeafe; color: #1e40af; }
@@ -865,13 +806,7 @@
     .swap-btn:hover { background: #1e2235; }
     html[data-theme="light"] .swap-btn { background: #f9fafb; color: #2563eb; border-color: #93c5fd; }
     html[data-theme="light"] .swap-btn:hover { background: #eff6ff; border-color: #2563eb; }
-    .bus-chip.muted { background: #1e2235; color: #4a5568; }
-    html[data-theme="light"] .bus-chip.muted { background: #f3f4f6; color: #6b7280; }
     /* Tracker / sched-track */
-    html[data-theme="light"] .track-back, html[data-theme="light"] .track-dir-btn { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
-    html[data-theme="light"] .track-dir-btn.active { background: #dbeafe; color: #1e40af; border-color: #2563eb; }
-    html[data-theme="light"] .sched-track-btn { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
-    html[data-theme="light"] .sched-track-btn:hover { background: #bfdbfe; border-color: #2563eb; }
     /* Live & nearby stops */
     html[data-theme="light"] .ns-header { background: #f9fafb; }
     html[data-theme="light"] .ns-body   { background: #fff; border-color: #e5e7eb; }
@@ -977,7 +912,6 @@
 <header id="appHeader">
   <h1>Çanakkale Hat & Sefer</h1>
   <div style="display:flex;gap:6px;align-items:center">
-    <span id="offline-badge" title="İnternet bağlantısı yok — canlı veriler güncellenmiyor">Çevrimdışı</span>
     <button id="bm-toggle-btn" onclick="toggleBmDropdown()">⭐ <span id="bm-toggle-label" data-i18n="savedPlaces">Yerlerim</span> ▾</button>
     <button id="gear-btn" onclick="showScreen('settings')" title="Ayarlar">⚙️</button>
   </div>
@@ -995,7 +929,7 @@
   <div id="onboarding-card">
     <div class="ob-icon"><img src="icons/web-app-manifest-192x192.png" alt="Çanakkale Hat & Sefer" style="width:72px;height:72px;border-radius:18px"></div>
     <div class="ob-title">Çanakkale Hat & Sefer</div>
-    <div class="ob-sub" data-i18n="obSub">Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.</div>
+    <div class="ob-sub" data-i18n="obSub">Çanakkale otobüs seferlerini görün, rotanızı planlayın ve otobüsün durağınıza ne zaman geleceğini öğrenin.</div>
     <div class="ob-langs">
       <button class="lang-btn" data-lang-opt="tr" onclick="setLang('tr')"><span class="flag flag-tr"></span>Türkçe</button>
       <button class="lang-btn" data-lang-opt="en" onclick="setLang('en')"><span class="flag flag-gb"></span>English</button>
@@ -1109,15 +1043,6 @@
     </div>
   </div>
 
-  <!-- Kentkart's own site, framed: live positions now need its signed requests -->
-  <div id="scr-live" class="screen">
-    <div id="live-bar">
-      <span id="live-stop" hidden></span>
-      <a id="live-open" href="https://m.kentkart.com/?cityCode=007" target="_blank" rel="noopener" data-i18n="liveOpen">Kentkart’ta aç ↗</a>
-    </div>
-    <iframe id="live-frame" title="Kentkart"></iframe>
-  </div>
-
   <div id="scr-settings" class="screen">
     <div class="settings-wrap">
       <div class="settings-header">
@@ -1191,7 +1116,6 @@
   <button class="nb"        data-s="schedule" onclick="showScreen('schedule')" data-i18n-html="navSched"><span>📅</span>Seferler</button>
   <button class="nb active" data-s="planner"  onclick="showScreen('planner')" data-i18n-html="navPlanner"><span>🗺</span>Rota &amp; Harita</button>
   <button class="nb"        data-s="stops"    onclick="showScreen('stops')" data-i18n-html="navStops"><span>🚏</span>Duraklar</button>
-  <button class="nb"        data-s="live"     onclick="showScreen('live')" data-i18n-html="navLive"><span>📡</span>Canlı</button>
 </nav>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

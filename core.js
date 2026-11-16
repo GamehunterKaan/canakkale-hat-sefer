@@ -104,8 +104,6 @@ export function scheduleForDay(schedules, today) {
 // ══════════════════════════════════════════════════════════════
 // PLANNER
 // ══════════════════════════════════════════════════════════════
-export const API    = 'https://service.kentkart.com/rl1/';
-
 // ── Shared geography + text folding ─────────────────────────────────────────
 // The Çanakkale bounding box, in ONE place. Three consumers must agree on it or
 // the app breaks quietly: the browser map clamps panning to it, applyPoint
@@ -132,7 +130,7 @@ export const STR = {
   tr: {
     // ── App / onboarding ──
     appName: 'Çanakkale Hat & Sefer',
-    obSub: 'Çanakkale otobüslerini gerçek zamanlı takip edin, rota planlayın ve kalkmadan önce bildirim alın.',
+    obSub: 'Çanakkale otobüs seferlerini görün, rotanızı planlayın ve otobüsün durağınıza ne zaman geleceğini öğrenin.',
     obSched: '📅 Saatlere<br>Bak',
     obPlan: '🗺 Rota<br>Bul',
     // ── Planner controls ──
@@ -159,7 +157,6 @@ export const STR = {
     foundNMulti: '{n} seçenek bulundu (aktarmalı dahil).',
     walksTooLong: 'Yürüme mesafeleri ayarınızdan uzun.',
     longWalk: '⚠️ uzun yürüyüş', longWalkTitle: 'Yürüme yarıçapından uzun',
-    live: '🔴 canlı', liveTitle: 'Canlı otobüs konumuna göre',
     lastBus: '⚠️ Son sefer', lastBusTitle: 'Bugünün son seferi',
     lastSeferNote: 'Bugünün son seferi',
     oneTransfer: '🔁 1 aktarma',
@@ -168,7 +165,7 @@ export const STR = {
     metaDirect: '{n} durak arası',
     transferWalkParen: '({dist} aktarma yürüyüşü)',
     sameStopParen: '(aynı durakta)',
-    noActiveBus: 'Aktif araç yok', activeShort: 'aktif',
+    noActiveBus: 'Aktif araç yok', 
     taxiTitle: 'Taksi', taxiSub: '{km} km · ~{min} dk',
     tipYou: 'Konumunuz', tipDest: 'Hedefiniz', nearest: '(en yakın)',
     outOfBounds: 'Bu konum Çanakkale sınırlarının dışında. Lütfen haritadan bir nokta seçin.',
@@ -189,29 +186,24 @@ export const STR = {
     journeySummary: 'Yolculuk Özeti',
     startTrip: 'Yola Çık', startTripPlanAhead: 'Adım adım yol tarifi yalnızca “şimdi” için. Saati sıfırla.',
     navWalkTo: '{stop} durağına yürü', navWalkToDest: 'Hedefe yürü', navWalkSecondary: 'Yaklaşık {mins} dk yürüyüş',
-    navWaitAt: '{stop} durağında bekle', navBusHere: 'Otobüs durakta — bin!', navBusApproaching: 'Otobüs {n} durak ötede',
+    navWaitAt: '{stop} durağında bekle', 
     navNextDep: '{time} kalkışlı sefer · ~{mins} dk', navNoSchedule: 'Sefer bilgisi yok',
     navRideTo: '{stop} durağına kadar git', navStopsLeft: '{n} durak kaldı', navGetOffNow: 'Sıradaki durakta in!', navOnBus: 'Otobüstesin',
     navTransferWalk: 'Aktarma: {stop} durağına yürü', navTransferSame: 'Aktarma: aynı durakta ({stop}) bekle', navTransferSameSub: 'Yürümene gerek yok',
     navArrivedTitle: 'Vardın! 🎉', navArrivedSub: 'Yolculuk tamamlandı',
     navIBoarded: 'Bindim', navIGotOff: 'İndim', navImHere: 'Geldim', navNext: 'Devam', navBack: 'Geri', navEnd: 'Bitir',
     stepWalk: 'yürüyüş', boardingPoint: 'Biniş noktası', alightPoint: 'İniş noktası',
-    waitBusArrived: 'Otobüs durağa geldi', waitLive: 'Canlı konum',
     waitDepart: '{time} kalkışı', waitDepartTomorrow: 'Yarın {time} kalkışı',
     arrivesAt: 'Durağa ~{time}\'de gelir', arrivesAtTomorrow: 'Durağa ~{time}\'de gelir (yarın)',
-    schedUnknown: 'Program bilinmiyor', noLive: 'Canlı konum yok',
+    schedUnknown: 'Program bilinmiyor', 
     nowWord: 'Şimdi',
     rideStep: '{code} ile {sc} durak', ridePath: '{from} → {to}',
     totalEst: 'Toplam tahmini süre',
     navEtaTitle: 'Tahmini varış', navEtaArrive: '~{time} · {mins} dk', navEtaCalc: 'Hesaplanıyor…', navEtaNow: 'Neredeyse vardın',
-    incomingBuses: 'Biniş Noktasına Gelen Otobüsler',
-    busArrivedExcl: 'Durağa geldi!',
-    stopsAwayText: '{n} durak uzakta',
+    
     schedTimes: 'Programlı Seferler', schedApprox: '(yaklaşık)',
-    activeOnRoute: 'Güzergahta Aktif Otobüsler', stopsLeft: '{n} durak kaldı',
     routeStops: 'Güzergah Durakları',
     nextRun: 'Sıradaki sefer: {time}',
-    busAwayDetail: '{plate} · {n} durak uzakta',
     mlWalk: '{mins} dk · {dist} yürüyüş',
     mlBoard: 'Biniş: {stop}',
     mlLeg1Main: '{wait} dk bekleme + {ride} dk yolculuk',
@@ -238,13 +230,11 @@ export const STR = {
     geoUnsupported: 'Konum desteği yok.', gettingGPS: 'GPS alınıyor…', gpsFailed: 'Konum alınamadı.',
     pickLocFirst: 'Önce haritada bir konum seçin.', locNamePrompt: 'Konum adı:',
     stopDataFailed: 'Durak verisi yüklenemedi: {err}',
-    popupNow: 'Şu an:', popupNext: 'Sıradaki:',
-    routeDataLoading: 'Hat verileri yükleniyor…', routeDataFailed: 'Hat verileri yüklenemedi.',
-    routeNotFound: '{code} hattı bulunamadı.', dirN: 'Yön {n}', busesLoading: 'Otobüsler yükleniyor…',
-    updatedJustNow: 'Güncellendi: az önce · 15s aralıklarla otomatik', noActiveBuses: 'Aktif otobüs bulunamadı.',
-    locUnknown: 'Konum bilinmiyor', busWord: 'Otobüs',
+    
+    
     nearbyStopsTitle: 'Yakındaki Duraklar', goToStop: '📍 Buraya git', fromStop: 'Buradan', openInDuraklar: '🚏 Duraklar\'da aç', loadingShort: 'Yükleniyor…',
-    noLinesFound: 'Hat bulunamadı.', atStopShort: 'Durağa geldi', noRunsToday: 'Bugün sefer kalmadı', nextShort: 'Sıradaki: {time}',
+    noLinesFound: 'Hat bulunamadı.', noRunsToday: 'Bugün sefer kalmadı', 
+    busAtStopIn: '{n} dk · {time}', busAtStopNow: 'Şimdi · {time}',
     nearbyCount: '{name} yakınında {n} durak.',
     clearBookmarksConfirm: 'Tüm kaydedilen yerler silinecek. Devam edilsin mi?', cleared: 'Temizlendi.',
     unitMpm: 'm/dk',
@@ -255,7 +245,6 @@ export const STR = {
     shareText: '{name} — Çanakkale Hat & Sefer', linkCopied: 'Bağlantı kopyalandı.', copyLinkPrompt: 'Bağlantıyı kopyalayın:',
     stopNotFound: 'Durak bulunamadı.', noRoutesThisStop: 'Bu duraktan geçen hat bulunamadı.',
     shareStopTitle: 'Durağı paylaş', showOnMapCta: '📍 Haritada göster', routesHere: 'Buradan geçen hatlar',
-    statusArrived: '🟢 Durağa geldi ({n})', statusApproaching: '🚌 {n} durak uzaklıkta · {a} aktif', statusActiveFwd: '{n} aktif araç (yön: ileri)',
     guideGps: '🛰&nbsp; GPS Konumumu Kullan', guideOr: 'veya haritaya dokunun',
     clearRecentsConfirm: 'Son hedefler geçmişi silinecek. Devam edilsin mi?',
     onboardingReset: 'Tanıtım sıfırlandı. Bir sonraki açılışta tekrar görünecek.',
@@ -263,7 +252,7 @@ export const STR = {
     offlineDone: 'Tamamlandı: {ok} / {total} karo önbelleğe alındı.',
     bmEmpty: 'Henüz kayıtlı yer yok.<br>Haritada bir nokta seçip <b style="color:#c0d0ea">+ Ekle</b>\'ye tıklayın.',
     bmStart: 'Başlangıç', bmDest: 'Hedef', bmDelete: 'Sil', tileErrors: 'hata', retryBtn: 'Tekrar dene',
-    distAwayM: '{d} m uzakta', distAwayKm: '{d} km uzakta', routesCount: '{n} hat', noData: 'Veri yok', locWord: 'Konum',
+    distAwayM: '{d} m uzakta', distAwayKm: '{d} km uzakta', routesCount: '{n} hat', locWord: 'Konum',
     cardOrigin: 'Konum — En yakın durak', cardDest: 'Hedef — En yakın durak', saveBtn: '☆ Kaydet', saveBtnTitle: 'Kaydet', savedBtn: '★ Kaydedildi',
     searchLoading: 'Durak verisi yükleniyor…',
     // ── Map place search ──
@@ -287,7 +276,7 @@ export const STR = {
     setAbout: 'Hakkında', setDevSite: '🌐 Geliştirici sitesi', setGitHub: '💻 GitHub', setContact: '✉️ İletişim — kaan@kaangultekin.net',
     // ── Schedule ──
     schedLoading: 'Seferler yükleniyor…',
-    dirOut: 'Gidiş →', dirIn: 'Dönüş →', liveBtn: '🚌 Canlı', canli: 'Canlı',
+    dirOut: 'Gidiş →', dirIn: 'Dönüş →', 
     tripFrom: 'Bu sefer {stop} durağından kalkar.', tripTo: 'Bu sefer {stop} durağında biter.', tripNote: 'Tarifedeki not: {note}',
     schedNoData: 'Veri alınamadı. Sayfayı yenileyin.',
     schedDone: 'Tamamlandı.', schedUpdating: 'Veriler güncelleniyor…',
@@ -303,12 +292,11 @@ export const STR = {
     schedCurrentSources: 'Belediyenin güncel tarifeleri',
     schedUnavailable: 'Bu tarife şu anda gösterilemiyor. Güncel saatler için PDF’i açın.',
     navSched: '<span>📅</span>Seferler', navPlanner: '<span>🗺</span>Rota &amp; Harita', navStops: '<span>🚏</span>Duraklar',
-    navLive: '<span>📡</span>Canlı', liveOpen: 'Kentkart’ta aç ↗',
-    liveStopCta: '📡 Kentkart’ta canlı gör', liveCopy: 'Kopyala', liveCopied: 'Kopyalandı ✓', liveCopyPrompt: 'Durak adını kopyalayın:',
+    
   },
   en: {
     appName: 'Çanakkale Hat & Sefer',
-    obSub: 'Track Çanakkale buses in real time, plan routes, and get notified before your bus arrives.',
+    obSub: 'See Çanakkale bus timetables, plan your route, and find out when the bus reaches your stop.',
     obSched: '📅 View<br>Schedules',
     obPlan: '🗺 Plan a<br>Route',
     btnOrigin: '📍 From', btnDest: '🏁 To', btnPlan: 'Plan',
@@ -333,7 +321,6 @@ export const STR = {
     foundNMulti: '{n} options found (incl. transfers).',
     walksTooLong: 'Walking distances are longer than your setting.',
     longWalk: '⚠️ long walk', longWalkTitle: 'Longer than your walking radius',
-    live: '🔴 live', liveTitle: 'Based on live bus position',
     lastBus: '⚠️ Last bus', lastBusTitle: "Today's last departure",
     lastSeferNote: "Today's last departure",
     oneTransfer: '🔁 1 transfer',
@@ -342,7 +329,7 @@ export const STR = {
     metaDirect: '{n} stops',
     transferWalkParen: '({dist} transfer walk)',
     sameStopParen: '(same stop)',
-    noActiveBus: 'No active bus', activeShort: 'active',
+    noActiveBus: 'No active bus', 
     taxiTitle: 'Taxi', taxiSub: '{km} km · ~{min} min',
     tipYou: 'Your location', tipDest: 'Your destination', nearest: '(nearest)',
     outOfBounds: 'This location is outside Çanakkale. Please pick a point on the map.',
@@ -363,29 +350,24 @@ export const STR = {
     journeySummary: 'Journey Summary',
     startTrip: 'Start Trip', startTripPlanAhead: 'Step-by-step guidance is for “now” only. Reset the time.',
     navWalkTo: 'Walk to {stop}', navWalkToDest: 'Walk to your destination', navWalkSecondary: 'About {mins} min walk',
-    navWaitAt: 'Wait at {stop}', navBusHere: 'Bus is at the stop — board!', navBusApproaching: 'Bus is {n} stops away',
+    navWaitAt: 'Wait at {stop}', 
     navNextDep: '{time} departure · ~{mins} min', navNoSchedule: 'No schedule info',
     navRideTo: 'Ride to {stop}', navStopsLeft: '{n} stops left', navGetOffNow: 'Get off at the next stop!', navOnBus: 'On the bus',
     navTransferWalk: 'Transfer: walk to {stop}', navTransferSame: 'Transfer: wait at the same stop ({stop})', navTransferSameSub: 'No walking needed',
     navArrivedTitle: 'Arrived! 🎉', navArrivedSub: 'Trip complete',
     navIBoarded: 'I boarded', navIGotOff: 'I got off', navImHere: 'I\'m here', navNext: 'Next', navBack: 'Back', navEnd: 'End',
     stepWalk: 'walk', boardingPoint: 'Boarding point', alightPoint: 'Drop-off point',
-    waitBusArrived: 'Bus has arrived', waitLive: 'Live position',
     waitDepart: '{time} departure', waitDepartTomorrow: 'Tomorrow {time} departure',
     arrivesAt: 'Arrives at stop ~{time}', arrivesAtTomorrow: 'Arrives at stop ~{time} (tomorrow)',
-    schedUnknown: 'Schedule unknown', noLive: 'No live position',
+    schedUnknown: 'Schedule unknown', 
     nowWord: 'Now',
     rideStep: '{sc} stops on {code}', ridePath: '{from} → {to}',
     totalEst: 'Total estimated time',
     navEtaTitle: 'Est. arrival', navEtaArrive: '~{time} · {mins} min', navEtaCalc: 'Calculating…', navEtaNow: 'Almost there',
-    incomingBuses: 'Buses Approaching the Boarding Stop',
-    busArrivedExcl: 'At the stop!',
-    stopsAwayText: '{n} stops away',
+    
     schedTimes: 'Scheduled Departures', schedApprox: '(approx.)',
-    activeOnRoute: 'Active Buses on the Route', stopsLeft: '{n} stops left',
     routeStops: 'Route Stops',
     nextRun: 'Next run: {time}',
-    busAwayDetail: '{plate} · {n} stops away',
     mlWalk: '{mins} min · {dist} walk',
     mlBoard: 'Board: {stop}',
     mlLeg1Main: '{wait} min wait + {ride} min ride',
@@ -412,13 +394,11 @@ export const STR = {
     geoUnsupported: 'Location not supported.', gettingGPS: 'Getting GPS…', gpsFailed: 'Could not get location.',
     pickLocFirst: 'Pick a location on the map first.', locNamePrompt: 'Location name:',
     stopDataFailed: 'Could not load stop data: {err}',
-    popupNow: 'Now:', popupNext: 'Next:',
-    routeDataLoading: 'Loading line data…', routeDataFailed: 'Could not load line data.',
-    routeNotFound: 'Line {code} not found.', dirN: 'Dir {n}', busesLoading: 'Loading buses…',
-    updatedJustNow: 'Updated: just now · auto every 15s', noActiveBuses: 'No active buses found.',
-    locUnknown: 'Location unknown', busWord: 'Bus',
+    
+    
     nearbyStopsTitle: 'Nearby Stops', goToStop: '📍 Go here', fromStop: 'From here', openInDuraklar: '🚏 Open in Stops', loadingShort: 'Loading…',
-    noLinesFound: 'No lines found.', atStopShort: 'At the stop', noRunsToday: 'No runs left today', nextShort: 'Next: {time}',
+    noLinesFound: 'No lines found.', noRunsToday: 'No runs left today', 
+    busAtStopIn: '{n} min · {time}', busAtStopNow: 'Now · {time}',
     nearbyCount: '{n} stops near {name}.',
     clearBookmarksConfirm: 'All saved places will be deleted. Continue?', cleared: 'Cleared.',
     unitMpm: 'm/min',
@@ -429,7 +409,6 @@ export const STR = {
     shareText: '{name} — Çanakkale Hat & Sefer', linkCopied: 'Link copied.', copyLinkPrompt: 'Copy the link:',
     stopNotFound: 'Stop not found.', noRoutesThisStop: 'No lines serve this stop.',
     shareStopTitle: 'Share stop', showOnMapCta: '📍 Show on map', routesHere: 'Lines serving this stop',
-    statusArrived: '🟢 At the stop ({n})', statusApproaching: '🚌 {n} stops away · {a} active', statusActiveFwd: '{n} active buses (direction: forward)',
     guideGps: '🛰&nbsp; Use My GPS Location', guideOr: 'or tap the map',
     clearRecentsConfirm: 'Recent destinations history will be cleared. Continue?',
     onboardingReset: 'Intro reset. It will show again next time you open the app.',
@@ -437,7 +416,7 @@ export const STR = {
     offlineDone: 'Done: {ok} / {total} tiles cached.',
     bmEmpty: 'No saved places yet.<br>Pick a point on the map and tap <b style="color:#c0d0ea">+ Add</b>.',
     bmStart: 'Start', bmDest: 'Destination', bmDelete: 'Delete', tileErrors: 'errors', retryBtn: 'Try again',
-    distAwayM: '{d} m away', distAwayKm: '{d} km away', routesCount: '{n} lines', noData: 'No data', locWord: 'Location',
+    distAwayM: '{d} m away', distAwayKm: '{d} km away', routesCount: '{n} lines', locWord: 'Location',
     cardOrigin: 'From — Nearest stop', cardDest: 'To — Nearest stop', saveBtn: '☆ Save', saveBtnTitle: 'Save', savedBtn: '★ Saved',
     searchLoading: 'Loading stop data…',
     // ── Map place search ──
@@ -459,7 +438,7 @@ export const STR = {
     setData: 'Data', setClearBookmarks: 'Clear saved places', setClearRecents: 'Clear recent destinations', setReshowOnboarding: 'Show the intro again',
     setAbout: 'About', setDevSite: '🌐 Developer site', setGitHub: '💻 GitHub', setContact: '✉️ Contact — kaan@kaangultekin.net',
     schedLoading: 'Loading schedules…',
-    dirOut: 'Outbound →', dirIn: 'Inbound →', liveBtn: '🚌 Live', canli: 'Live',
+    dirOut: 'Outbound →', dirIn: 'Inbound →', 
     tripFrom: 'This trip starts at {stop}.', tripTo: 'This trip ends at {stop}.', tripNote: 'Timetable note: {note}',
     schedNoData: 'Could not load data. Refresh the page.',
     schedDone: 'Done.', schedUpdating: 'Updating data…',
@@ -475,8 +454,7 @@ export const STR = {
     schedCurrentSources: 'Current municipal timetables',
     schedUnavailable: 'This timetable is currently unavailable. Open the PDF for current times.',
     navSched: '<span>📅</span>Schedules', navPlanner: '<span>🗺</span>Route &amp; Map', navStops: '<span>🚏</span>Stops',
-    navLive: '<span>📡</span>Live', liveOpen: 'Open in Kentkart ↗',
-    liveStopCta: '📡 See it live on Kentkart', liveCopy: 'Copy', liveCopied: 'Copied ✓', liveCopyPrompt: 'Copy the stop name:',
+    
   },
 };
 
@@ -679,7 +657,7 @@ export function schedTripsForPath(schedEntry, path, pathCache = _pathCache) {
     }
     if (start < 0) continue;
     const end = endOf(trip, start);
-    if (end > start) out.push({ time: trip.time, mins: _tmMin(at) - _travelToStopMins(stops[start]), start, end });
+    if (end > start) out.push({ time: trip.time, mins: _tmMin(at) - _travelToStopMins(stops[start], _tmMin(at)), start, end });
   }
   return out.sort((a, b) => a.mins - b.mins);
 }
@@ -717,10 +695,6 @@ export const WALK_DETOUR_FACTOR = 1.35;     // real walk ≈ straight-line × th
 
 export const MAX_NEAR_STOPS = 70;           // cap stops sent to one walk matrix
 
-export const REACH_GRACE_MIN = 3;           // a live bus this many mins "too soon" still counts (people speed up)
-export const LIVE_RANK_MAX_FETCH = 12;      // cap on distinct route+dir live fetches per plan
-export const LAST_BUS_LATE_SLACK_MIN = 30;  // a last bus this long past its scheduled time may still be running late — live decides
-
 export const GUIDED_ARRIVE_M = 35;          // guided: within this of a stop = "arrived" (walk/alight)
 
 export const GUIDED_BOARDED_M = 70;         // guided: moved this far past the board stop = "you boarded"
@@ -746,21 +720,112 @@ export const _untilClock = (hhmm, nowRaw) => { const d = (_clockMin(hhmm) - nowR
 // The next n departures, soonest first, regardless of the midnight wrap.
 export function _nextTimes(times, n, nowRaw = new Date().getHours()*60 + new Date().getMinutes()) { return times.slice().sort((a, b) => _untilClock(a, nowRaw) - _untilClock(b, nowRaw)).slice(0, n); }
 
-// Minutes from a trip's terminal departure until the bus reaches a stop, taken
-// from kentkart's GTFS arrival_offset (seconds). Falls back to a flat per-stop
-// estimate when the offset is missing/zero (some routes ship no offset data).
-export function _travelToStopMins(stop) {
+// ── Recorded segment times ──────────────────────────────────────────────────
+// data/segment-times.json is a model fitted on buses recorded between stops
+// (the removed backend/eta_model.py, before Kentkart closed its API; see git
+// history). It is frozen now: nothing records new data. For each route
+// direction, base[k] is the learned minutes from stop k to stop k+1, scaled by
+// the hour and day type. A route uses it only where it was validated against
+// the timetable offsets (use: true); elsewhere, and for any segment with too
+// few samples, the offsets decide, then MINS_PER_STOP.
+//   segment k minutes = base[k] * dayFactors[day type][hour]
+//                       * partFactors[weekday|weekend][part[k]][hour]
+// Day type is that of the service day (00:00-03:59 counts as the day before).
+let _seg = null;                 // { dayFactors, day: fixed day type or null }
+const _segOf = new WeakMap();    // busStopList → model route
+const _segAt = new WeakMap();    // stop → { stops, idx }
+const _segCache = new WeakMap(); // model route → Map(key → cumulative minutes)
+
+// Attach the model to the paths it was fitted on: same route, direction and
+// stop sequence. `day` fixes the day type ('Mon-Thu', 'Fri', 'Sat', 'Sun'),
+// for tests; by default it is today's service day.
+export function setSegmentModel(model, paths = _pathCache, { day = null } = {}) {
+  _seg = model?.routes && model.dayFactors ? { dayFactors: model.dayFactors, day } : null;
+  if (!_seg) return 0;
+  let n = 0;
+  for (const pe of paths) {
+    const p = pe.path || pe, st = p.busStopList || [];
+    const r = model.routes[p.displayRouteCode + '|' + p.direction];
+    if (!r?.use || r.stops.length !== st.length || r.stops.some((id, i) => id !== String(st[i].stopId))) continue;
+    _segOf.set(st, r);
+    st.forEach((stop, idx) => _segAt.set(stop, { stops: st, idx }));
+    n++;
+  }
+  return n;
+}
+
+function _segDay() {
+  if (_seg.day) return _seg.day;
+  const w = new Date(Date.now() - 240 * 60000).getDay();
+  return w === 5 ? 'Fri' : w === 6 ? 'Sat' : w === 0 ? 'Sun' : 'Mon-Thu';
+}
+
+// Minutes from stop `from` to every later stop for a bus leaving it at `atMins`
+// (service-day frame). Each segment is scaled by the hour the bus reaches it.
+// Cached per 10-minute start slot.
+function _segCumulative(stops, r, from, atMins) {
+  const day = _segDay(), slot = Math.round(atMins / 10);
+  let cache = _segCache.get(r);
+  if (!cache) _segCache.set(r, cache = new Map());
+  const key = day + '|' + from + '|' + slot;
+  let cum = cache.get(key);
+  if (cum) return cum;
+  const dayF = _seg.dayFactors[day], partF = r.partFactors[day === 'Sat' || day === 'Sun' ? 'weekend' : 'weekday'];
+  cum = new Float64Array(stops.length);
+  let total = 0;
+  for (let k = from; k < stops.length - 1; k++) {
+    let base = r.base[k];
+    if (base == null) {
+      const gap = (+stops[k + 1].arrival_offset - +stops[k].arrival_offset) / 60;
+      base = gap > 0 ? gap : MINS_PER_STOP;
+    }
+    const hour = Math.floor(((slot * 10 + total) % 1440 + 1440) % 1440 / 60);
+    total += base * (dayF?.[hour] ?? 1) * (partF?.[r.part[k]]?.[hour] ?? 1);
+    cum[k + 1] = total;
+  }
+  if (cache.size > 2000) cache.clear();
+  cache.set(key, cum);
+  return cum;
+}
+
+// Minutes from a trip's terminal departure until the bus reaches a stop.
+// `atMins` (service-day frame) is about when the bus gets there, for the
+// recorded model's hour factors; without it, now. Otherwise the timetable's
+// GTFS arrival_offset (seconds), or a flat per-stop estimate when the offset is
+// missing/zero (some routes ship no offset data).
+export function _travelToStopMins(stop, atMins = _schedNow()) {
+  const at = _seg && stop && _segAt.get(stop), r = at && _segOf.get(at.stops);
+  if (r) {
+    // The bus is on the road before it gets there: start the hour factors one
+    // run earlier.
+    const first = _segCumulative(at.stops, r, 0, atMins)[at.idx];
+    return _segCumulative(at.stops, r, 0, atMins - first)[at.idx];
+  }
+  return _offsetTravelMins(stop);
+}
+
+// The same for a bus known to leave its terminal at `depMins`.
+export function _travelFromTerminal(stop, depMins) {
+  const at = _seg && stop && _segAt.get(stop), r = at && _segOf.get(at.stops);
+  return r ? _segCumulative(at.stops, r, 0, depMins)[at.idx] : _offsetTravelMins(stop);
+}
+
+function _offsetTravelMins(stop) {
   const arr = +(stop && stop.arrival_offset);
   if (arr > 0) return arr / 60;
   const seq = parseInt(stop && stop.seq) || 0;
   return Math.max(0, seq - 1) * MINS_PER_STOP;
 }
 
-// Scheduled ride time (minutes) between two stop indices on a path: arrival at
-// the alight minus departure from the board, from GTFS offsets (seconds). Falls
-// back to flat per-stop when offsets are absent or non-monotonic. Index 0 is the
-// terminal, whose offsets are legitimately 0.
-export function _rideMins(stops, boardIdx, alightIdx) {
+// Ride time (minutes) between two stop indices on a path, for a bus leaving the
+// board stop at about `atMins` (service-day frame; default now): the recorded
+// model where it applies, else arrival at the alight minus departure from the
+// board from GTFS offsets (seconds). Falls back to flat per-stop when offsets
+// are absent or non-monotonic. Index 0 is the terminal, whose offsets are
+// legitimately 0.
+export function _rideMins(stops, boardIdx, alightIdx, atMins = _schedNow()) {
+  const r = _seg && _segOf.get(stops);
+  if (r) return alightIdx > boardIdx ? _segCumulative(stops, r, boardIdx, atMins)[alightIdx] : 0;
   const bd = stops[boardIdx], al = stops[alightIdx];
   const arr = +(al && al.arrival_offset);
   let dep = +(bd && bd.departure_offset);
@@ -814,13 +879,11 @@ export function _isLastSefer(times, travelToBoardMins, fromMins) {
   return false; // all gone / wrapped to tomorrow — that trip is already dropped
 }
 
-// Seferler: today's LAST trips of a schedule entry that may still be on the road
-// once every departure has left. Per kentkart path of the entry, the last
-// departure + the full run time (final stop's arrival offset) is when that bus
-// should finish; up to LAST_BUS_LATE_SLACK_MIN after that it may still be running
-// late, which only live data can settle (lastBusRunning). `nowMins` is in the
-// service-day frame. Returns [{ time, dir, path, onSchedule }], one per
-// direction block + time.
+// Seferler: today's LAST trips of a schedule entry that are still on the road
+// once every departure has left. Per path of the entry, the last departure +
+// the full run time is when that bus should finish. `nowMins` is in the
+// service-day frame. Returns [{ time, dir, path }], one per direction block +
+// time.
 export function lastTripsOnRoad(entry, paths, nowMins) {
   const found = new Map();
   for (const p of paths) {
@@ -828,36 +891,12 @@ export function lastTripsOnRoad(entry, paths, nowMins) {
     if (!st.length || !trips.length) continue;
     // The last trip may start or end away from the path's terminals.
     const last = trips.reduce((a, b) => (b.mins > a.mins ? b : a));
-    const leaves = last.mins + _travelToStopMins(st[last.start]), end = last.mins + _travelToStopMins(st[last.end]);
-    if (leaves > nowMins || nowMins >= end + LAST_BUS_LATE_SLACK_MIN) continue;
+    const leaves = last.mins + _travelFromTerminal(st[last.start], last.mins), end = last.mins + _travelFromTerminal(st[last.end], last.mins);
+    if (leaves > nowMins || nowMins >= end) continue;
     const dir = pickSchedDir(entry, p), key = dir + '|' + last.time;
     if (!found.has(key) || end > found.get(key).end) found.set(key, { time: last.time, dir, path: p, end });
   }
-  return [...found.values()].map(({ time, dir, path, end }) => ({ time, dir, path, onSchedule: nowMins < end }));
-}
-
-// Is such a last trip still running? Live decides when it answered (`buses` =
-// that route+direction's live list, [] = none out); null = live unavailable, so
-// the schedule decides.
-export const lastBusRunning = (onRoad, buses) => (buses ? buses.length > 0 : onRoad.onSchedule);
-
-// Wait (minutes, from when you reach the stop) for the soonest LIVE bus that is
-// approaching the board stop AND that you can still catch — a bus arriving up to
-// REACH_GRACE_MIN before you get there still counts (people hurry). Returns
-// Infinity when no live bus is catchable, so callers take min(schedule, live):
-// live can only lower a wait, never raise it.
-export function _liveBoardWaitMins(stops, boardIdx, buses, nowMins, arriveAtStopMins) {
-  if (!buses || !buses.length || boardIdx < 0) return Infinity;
-  const idxOf = new Map(stops.map((s, i) => [s.stopId, i]));
-  let best = Infinity;
-  for (const b of buses) {
-    const bi = idxOf.get(b.stopId);
-    if (bi == null || bi >= boardIdx) continue;            // not approaching this stop
-    const arrival = nowMins + _rideMins(stops, bi, boardIdx);
-    if (arrival >= arriveAtStopMins - REACH_GRACE_MIN)     // catchable (with grace)
-      best = Math.min(best, arrival);
-  }
-  return best === Infinity ? Infinity : Math.max(0, best - arriveAtStopMins);
+  return [...found.values()].map(({ time, dir, path }) => ({ time, dir, path }));
 }
 
 // ── Pure helpers (mirrored in tests) ──
@@ -901,7 +940,7 @@ export function guidedStepMet(step, pos) {
   if (step.type === 'WAIT') {
     const bIdx = step.stops.findIndex(s => s.stopId === step.boardId);
     const next = bIdx >= 0 ? step.stops[bIdx + 1] : null;
-    return (step.buses || []).some(b => b.stopId === step.boardId) || movedPast(pos, step.boardStop, next, GUIDED_BOARDED_M);
+    return movedPast(pos, step.boardStop, next, GUIDED_BOARDED_M);
   }
   if (step.type === 'RIDE') return withinM(pos, step.alightStop, GUIDED_ARRIVE_M);
   return false;
@@ -974,10 +1013,6 @@ export const createT = getLang => (key, vars) => {
   return s;
 };
 
-export const REGION = '007';
-
-export const QS     = 'region=' + REGION + '&lang=tr&authType=4&resultType=111';
-
 export const WALK_ROUTE_TIMEOUT_MS = 5000;
 
 export const VALHALLA_FAIL_THRESHOLD = 2;       // consecutive failures before tripping
@@ -1007,44 +1042,6 @@ export async function _valhallaPost(path, body, timeoutMs = WALK_ROUTE_TIMEOUT_M
       _vbreak.downUntil = Date.now() + VALHALLA_COOLDOWN_MS;
     return null;
   }
-}
-
-// accounting for planOffset. Used for ETA-based sorting in findRoutes.
-// Compute wait time before boarding a route's bus at `boardSeq`, evaluated
-// from an arbitrary `fromMins` (minutes-into-today). Generalised so multi-leg
-// trip planning can compute leg-2 wait based on the predicted arrival at the
-// transfer stop, not "now."
-export function estimateWaitFromMins(routeCode, boardSeq, path, fromMins) {
-  const dayData = getActiveRoutes();
-  const entry   = findSchedEntry(dayData, routeCode);
-  if (!entry) return 999;
-  const tm = t => { const [h, mn] = t.split(':').map(Number); return (h < 4 ? h*60+1440 : h*60) + mn; };
-  const times = (schedTimesForPath(entry, path) || []).sort((a, b) => tm(a) - tm(b));
-  if (!times.length) return 20;
-  const travel = Math.max(0, boardSeq - 1) * MINS_PER_STOP;
-  for (const t of times) {
-    const arr = tm(t) + travel;
-    if (arr >= fromMins) return Math.max(0, Math.round(arr - fromMins));
-  }
-  // All today's buses gone — wrap to first bus tomorrow
-  return Math.max(0, Math.round(tm(times[0]) + travel + 1440 - fromMins));
-}
-
-// Best-effort live bus positions for one route+direction. Returns the busList
-// ([] = no bus out), or null on any failure/timeout — never throws, so the
-// planner degrades to schedule.
-export async function _fetchLiveBuses(code, dir) {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4000);
-    const r = await fetch(API + 'web/pathInfo?' + QS + '&displayRouteCode=' + encodeURIComponent(code) + '&direction=' + dir, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!r.ok) return null;
-    const d = await r.json();
-    // Kentkart refuses with HTTP 200 and a non-zero code (34: unsigned request).
-    if (String(d.result?.code) !== '0') return null;
-    return d.pathList?.[0]?.busList || [];
-  } catch { return null; }
 }
 
 // Real walking distance (meters) from one point to a set of stops, via Valhalla
@@ -1108,9 +1105,8 @@ export async function _walkDistances(point, stops, reverse, { cache = NULL_CACHE
 //   nowMins     service-day frame minutes  (caller owns "now" — it depends on planOffset)
 //   arriveByMins service-day frame minutes: plan BACKWARD so every trip lands by
 //               this deadline (latest catchable bus per route). null = forward.
-//   live        consult live buses         (false when planning ahead)
 //   walkCache   { get, set } adapter       (localStorage in the page, NULL_CACHE in Node)
-//   fetchLive / walkMatrix                 injectable for tests
+//   walkMatrix                             injectable for tests
 //   isCancelled () => boolean              preserves the caller's generation semantics
 export async function planTrips(origin, dest, {
   pathCache = _pathCache,
@@ -1118,9 +1114,7 @@ export async function planTrips(origin, dest, {
   settings = SETTINGS_DEFAULTS,
   nowMins = _schedNow(),
   arriveByMins = null,
-  live = true,
   walkCache = NULL_CACHE,
-  fetchLive = _fetchLiveBuses,
   walkMatrix = _walkMatrix,
   isCancelled = () => false,
 } = {}) {
@@ -1128,26 +1122,18 @@ export async function planTrips(origin, dest, {
   const D = { lat: dest.lat,   lng: dest.lng };
   const W = settings.walkRadius, MAXW = W * WALK_RELAX_MULT;
   const walkMins = m => m / settings.walkSpeedMpm;
-  // Live-suppression contract: current bus positions only help when planning
-  // for NOW. Core owns the arrive-by half (it can see arriveByMins); callers
-  // planning ahead via a future nowMins own the other half and must pass
-  // live:false (ui.js's findRoutes does, via !planningAhead()). Core cannot
-  // enforce that half itself — comparing nowMins to "now" misfires across the
-  // 04:00 service-day rollover.
-  if (arriveByMins != null) live = false;
 
-  // Usable paths with pre-sorted schedule times (skip student/ghost routes that
-  // have neither a schedule nor live buses).
+  // Usable paths with pre-sorted schedule times (skip student routes and paths
+  // with no timetable today).
   const usable = [];
   for (const pe of pathCache) {
     const p = pe.path, st = p.busStopList || [];
     if (!st.length || /^OGR|^ÖĞ/i.test(p.displayRouteCode)) continue;
     const entry = findSchedEntry(dayData, p.displayRouteCode);
-    const hasLive = (p.busList || []).some(b => b.lat && b.lng);
-    if (!entry && !hasLive) continue;
+    if (!entry) continue;
     usable.push({
-      p, route: pe.route, st, code: p.displayRouteCode, buses: p.busList || [],
-      trips: entry ? schedTripsForPath(entry, p, pathCache) : [],
+      p, route: pe.route, st, code: p.displayRouteCode,
+      trips: schedTripsForPath(entry, p, pathCache),
     });
   }
 
@@ -1194,9 +1180,9 @@ export async function planTrips(origin, dest, {
     }
     boards.sort((a, b) => a.w - b.w);
     const inTime = (times, pair) => {
-      const travel = _travelToStopMins(u.st[pair.bi]), boardArr = nowMins + walkMins(pair.bw);
+      const boardArr = nowMins + walkMins(pair.bw), travel = _travelToStopMins(u.st[pair.bi], arriveByMins ?? boardArr);
       if (arriveByMins == null) return _waitFromTimes(times, travel, boardArr) < MAX_WAIT_MIN;
-      const latestAtBoard = arriveByMins - _rideMins(u.st, pair.bi, pair.ai) - walkMins(pair.aw);
+      const latestAtBoard = arriveByMins - _rideMins(u.st, pair.bi, pair.ai, arriveByMins) - walkMins(pair.aw);
       return _latestBoardAt(times, travel, latestAtBoard, boardArr) != null;
     };
     let served = null;
@@ -1225,8 +1211,8 @@ export async function planTrips(origin, dest, {
     // arrive-by lets you leave that much later. The same bus always boards
     // and alights at the nearest stops.
     const busFor = pair => {
-      const travel = _travelToStopMins(u.st[pair.bi]), boardArr = nowMins + walkMins(pair.bw);
-      const ride = _rideMins(u.st, pair.bi, pair.ai), serving = u.trips.filter(t => t.start <= pair.bi && pair.ai <= t.end);
+      const boardArr = nowMins + walkMins(pair.bw), travel = _travelToStopMins(u.st[pair.bi], arriveByMins ?? boardArr);
+      const ride = _rideMins(u.st, pair.bi, pair.ai, arriveByMins ?? boardArr), serving = u.trips.filter(t => t.start <= pair.bi && pair.ai <= t.end);
       if (arriveByMins == null) {
         const trip = serving.find(t => t.mins + travel >= boardArr);
         return trip && { trip, score: -(trip.mins + travel + ride + walkMins(pair.aw)) };
@@ -1244,13 +1230,13 @@ export async function planTrips(origin, dest, {
     }
     const times = _tripMinsAt(u.trips, chosen.bi, chosen.ai);
     const boardArr = nowMins + walkMins(chosen.bw);
-    let wait, eta, timing = null, liveOnly = false;
+    let wait, eta, timing = null;
     if (arriveByMins != null) {
       // Backward: the LATEST bus that still lands by the deadline and that you
       // can physically reach from now. No wait to bound — you leave just in time.
-      const ride = _rideMins(u.st, chosen.bi, chosen.ai);
+      const ride = _rideMins(u.st, chosen.bi, chosen.ai, arriveByMins);
       const latestAtBoard = arriveByMins - ride - walkMins(chosen.aw);
-      const busAtBoard = _latestBoardAt(times, _travelToStopMins(u.st[chosen.bi]), latestAtBoard, boardArr);
+      const busAtBoard = _latestBoardAt(times, _travelToStopMins(u.st[chosen.bi], latestAtBoard), latestAtBoard, boardArr);
       if (busAtBoard == null) continue;
       wait = 0;
       const leaveAt = busAtBoard - walkMins(chosen.bw);
@@ -1258,28 +1244,17 @@ export async function planTrips(origin, dest, {
       eta = Math.round(arriveAt - leaveAt);
       timing = { _leaveAt: leaveAt, _arriveAt: arriveAt, _boardAt: busAtBoard };
     } else {
-      const travelToBoard = _travelToStopMins(u.st[chosen.bi]);
+      const travelToBoard = _travelToStopMins(u.st[chosen.bi], boardArr);
       wait = _waitFromTimes(times, travelToBoard, boardArr);
-      if (wait >= MAX_WAIT_MIN) {
-        // When today's last bus has already passed the board stop (not just a
-        // long gap before the next one), a late one may still be approaching.
-        // Keep a recently-passed trip for the live pass to confirm (dropped
-        // there if it can't); older ones are gone, which also keeps the extra
-        // live fetches few.
-        const lastAt = times[times.length - 1] + travelToBoard;
-        if (!live || lastAt >= boardArr || lastAt < boardArr - LAST_BUS_LATE_SLACK_MIN) continue;
-        liveOnly = true;
-      }
-      eta =Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai) + walkMins(chosen.aw));
+      if (wait >= MAX_WAIT_MIN) continue;
+      eta = Math.round(walkMins(chosen.bw) + wait + _rideMins(u.st, chosen.bi, chosen.ai, boardArr + wait) + walkMins(chosen.aw));
     }
     candidates.push({
-      isMultiLeg: false, path: u.p, route: u.route, buses: u.buses,
+      isMultiLeg: false, path: u.p, route: u.route,
       board: u.st[chosen.bi], alight: u.st[chosen.ai],
       walkB: Math.round(chosen.bw), walkA: Math.round(chosen.aw),
       sc: chosen.ai - chosen.bi, _wait: wait, _eta: eta, _maxWalk: Math.max(chosen.bw, chosen.aw),
-      _lastBus: liveOnly || _isLastSefer(times, _travelToStopMins(u.st[chosen.bi]), timing ? timing._boardAt : boardArr),
-      _bi: chosen.bi, _bw: chosen.bw, // transient: board index + walk metres, for the live pass
-      ...(liveOnly && { _liveOnly: true }), // transient: kept only if the live pass finds the bus
+      _lastBus: _isLastSefer(times, _travelToStopMins(u.st[chosen.bi], timing ? timing._boardAt : boardArr), timing ? timing._boardAt : boardArr),
       ...timing,
     });
   }
@@ -1303,18 +1278,18 @@ export async function planTrips(origin, dest, {
     return (trips.length && byWalk.find(inTime)) || byWalk[0];
   };
   for (const B of destPaths) B.alight = nearest(B.alights, x => B.u.trips.some(t => {
-    const at = t.mins + _travelToStopMins(x.s);
+    const at = t.mins + _travelFromTerminal(x.s, t.mins);
     return t.start < x.i && x.i <= t.end && at >= nowMins && (arriveByMins == null || at <= arriveByMins - walkMins(x.w));
   }), B.u.trips);
 
   for (const A of originPaths) {
     const board = nearest(A.boards, x => {
-      const times = _tripMinsAt(A.u.trips, x.i), travel = _travelToStopMins(x.s), at = nowMins + walkMins(x.w);
+      const times = _tripMinsAt(A.u.trips, x.i), at = nowMins + walkMins(x.w), travel = _travelToStopMins(x.s, at);
       return times.length > 0 && (arriveByMins == null ? _waitFromTimes(times, travel, at) < MAX_WAIT_MIN
         : _latestBoardAt(times, travel, arriveByMins, at) != null);
     }, A.u.trips);
-    const travelToBoard = _travelToStopMins(board.s);
     const earliestAtBoard = nowMins + walkMins(board.w);
+    const travelToBoard = _travelToStopMins(board.s, earliestAtBoard);
     // Leg 1's bus must call at the board stop and stay on to the transfer stop X.
     const atX = new Map(), timesA = xi => atX.get(xi) ?? atX.set(xi, _tripMinsAt(A.u.trips, board.i, xi)).get(xi);
     const boardTimes = _tripMinsAt(A.u.trips, board.i);
@@ -1338,8 +1313,10 @@ export async function planTrips(origin, dest, {
       const yInfo = [];
       for (let yj = 0; yj < alight.i; yj++) {
         const Y = B.u.st[yj];
-        const ride2 = _rideMins(B.u.st, yj, alight.i);
-        const travelToY = _travelToStopMins(Y);
+        // About when you reach the transfer: the model's hour factors need a time.
+        const yAt = arriveByMins ?? earliestAtBoard + leg1Wait;
+        const ride2 = _rideMins(B.u.st, yj, alight.i, yAt);
+        const travelToY = _travelToStopMins(Y, yAt);
         const times = _tripMinsAt(B.u.trips, yj, alight.i);
         if (B.u.trips.length && !times.length) { yInfo.push(null); continue; } // no leg-2 bus calls at Y and the alight stop
         let busAtYMax = null;
@@ -1355,9 +1332,9 @@ export async function planTrips(origin, dest, {
         // Leg 1 must make progress toward the destination — never ride past it
         // to a far terminal and double back (e.g. home → İskele → faculty).
         if (haversine(+X.lat, +X.lng, D.lat, D.lng) > boardToDest) continue;
-        const ride1 = _rideMins(A.u.st, board.i, xi);
         if (A.u.trips.length && !timesA(xi).length) continue;
         const wait1 = arriveByMins == null ? _waitFromTimes(timesA(xi), travelToBoard, earliestAtBoard) : 0;
+        const ride1 = _rideMins(A.u.st, board.i, xi, arriveByMins ?? earliestAtBoard + wait1);
         if (wait1 >= MAX_WAIT_MIN) continue;
         for (let yj = 0; yj < alight.i; yj++) {
           const info = yInfo[yj];
@@ -1418,8 +1395,8 @@ export async function planTrips(origin, dest, {
       const yFrom = best.boardAt != null
         ? best.boardAt + best.ride1 + walkMins(best.t)
         : nowMins + walkMins(board.w) + best.wait1 + best.ride1 + walkMins(best.t);
-      const lastBus = _isLastSefer(timesA(best.xi), _travelToStopMins(board.s), boardFrom)
-                   || _isLastSefer(yInfo[best.yj].times, _travelToStopMins(best.Y), yFrom);
+      const lastBus = _isLastSefer(timesA(best.xi), _travelToStopMins(board.s, boardFrom), boardFrom)
+                   || _isLastSefer(yInfo[best.yj].times, _travelToStopMins(best.Y, yFrom), yFrom);
       candidates.push({
         isMultiLeg: true, _eta: best.eta, _maxWalk: Math.max(board.w, alight.w), _lastBus: lastBus,
         ...(best.boardAt != null
@@ -1428,13 +1405,12 @@ export async function planTrips(origin, dest, {
         leg1: {
           path: A.u.p, route: A.u.route, board: board.s, alight: best.X,
           walkB: Math.round(board.w), sc: best.xi - board.i, wait: best.wait1,
-          ride: Math.round(best.ride1), buses: A.u.buses,
-          _bi: board.i, _bw: board.w, // transient: board index + walk metres, for the live pass
+          ride: Math.round(best.ride1),
         },
         leg2: {
           path: B.u.p, route: B.u.route, board: best.Y, alight: alight.s,
           walkA: Math.round(alight.w), sc: alight.i - best.yj, wait: Math.round(best.leg2Wait),
-          ride: Math.round(best.ride2), buses: B.u.buses,
+          ride: Math.round(best.ride2),
           transferWalkM: Math.round(best.t), transferWalkMins: Math.max(0, Math.round(walkMins(best.t))),
         },
       });
@@ -1446,47 +1422,6 @@ export async function planTrips(origin, dest, {
   // The caller renders the empty state (it used to be painted from right here).
   if (!candidates.length) return { list: [], relaxed: false };
 
-  // ── Live refinement (b) ──────────────────────────────────────────────────────
-  // Fold real-time bus positions into the BOARDING wait: it becomes
-  // min(scheduleWait, soonest catchable live bus). Live can only LOWER a wait, so
-  // if it's missing / slow / fails — or we're planning ahead — the outcome is the
-  // schedule-only result, unchanged. Leg-2 stays schedule (it boards in the
-  // future, where current positions don't help). Bounded to the distinct routes
-  // of the top candidates so we fire at most LIVE_RANK_MAX_FETCH kentkart calls,
-  // plus one per live-only trip (a late last bus only live can confirm).
-  if (live) {
-    const want = new Map(); // "code|dir" → { code, dir }
-    for (const c of [...candidates].sort((a, b) => a._eta - b._eta)) {
-      const p = c.isMultiLeg ? c.leg1.path : c.path;
-      const key = p.displayRouteCode + '|' + p.direction;
-      if (!want.has(key) && (want.size < LIVE_RANK_MAX_FETCH || c._liveOnly))
-        want.set(key, { code: p.displayRouteCode, dir: p.direction });
-    }
-    const keys = [...want.keys()];
-    const lists = await Promise.all(keys.map(k => fetchLive(want.get(k).code, want.get(k).dir)));
-    if (isCancelled()) return null;
-    const liveMap = new Map(keys.map((k, i) => [k, lists[i]]));
-    for (const c of candidates) {
-      const leg = c.isMultiLeg ? c.leg1 : c;
-      const p = leg.path;
-      const buses = liveMap.get(p.displayRouteCode + '|' + p.direction);
-      if (!buses || !buses.length) continue;
-      leg.buses = buses; // surface live buses on the card (chips / detail) so it isn't "Aktif araç yok"
-      const arriveAtStop = nowMins + walkMins(leg._bw);
-      const liveWait = _liveBoardWaitMins(p.busStopList || [], leg._bi, buses, nowMins, arriveAtStop);
-      const schedWait = c.isMultiLeg ? c.leg1.wait : c._wait;
-      if (liveWait < schedWait) {
-        // _liveBoardWaitMins is a float (offset seconds ÷ 60); round it like the
-        // schedule wait so _eta/_wait stay whole minutes (not "~12.283 min").
-        const lw = Math.max(0, Math.round(liveWait));
-        c._eta = Math.max(0, c._eta - (schedWait - lw));
-        if (c.isMultiLeg) { c.leg1.wait = lw; c.leg1._live = true; }
-        else { c._wait = lw; c._live = true; delete c._liveOnly; }
-      }
-    }
-  }
-  // Live-only trips whose late bus live didn't confirm (or couldn't be asked).
-  for (let i = candidates.length; i--;) if (candidates[i]._liveOnly) candidates.splice(i, 1);
 
   // Redundant-transfer filter: if a single bus already makes the whole trip
   // *comfortably* (a direct whose walks fit walkRadius), drop any transfer that
@@ -1581,17 +1516,17 @@ export function buildTripFromSpec(spec, {
     const trips = entry ? schedTripsForPath(entry, pe.path, pathCache) : [];
     const times = _tripMinsAt(trips, bi, ai);
     if (trips.length && !times.length) return null;
-    L.push({ p: pe.path, route: pe.route, st, bi, ai, buses: pe.path.busList || [], times });
+    L.push({ p: pe.path, route: pe.route, st, bi, ai, times });
   }
 
   const A = L[0];
   const bw = walkB != null ? walkB : walkM(spec.origin, A.st[A.bi]);
-  const travelToBoard = _travelToStopMins(A.st[A.bi]);
   const earliestAtBoard = nowMins + walkMins(bw);
+  const travelToBoard = _travelToStopMins(A.st[A.bi], arriveByMins ?? earliestAtBoard);
 
   if (L.length === 1) {
     const aw = walkA != null ? walkA : walkM(spec.dest, A.st[A.ai]);
-    const ride = _rideMins(A.st, A.bi, A.ai);
+    const ride = _rideMins(A.st, A.bi, A.ai, arriveByMins ?? earliestAtBoard);
     let wait, eta, timing = null;
     if (arriveByMins != null) {
       const busAtBoard = _latestBoardAt(A.times, travelToBoard, arriveByMins - ride - walkMins(aw), earliestAtBoard);
@@ -1606,13 +1541,12 @@ export function buildTripFromSpec(spec, {
       eta = Math.round(walkMins(bw) + wait + ride + walkMins(aw));
     }
     return {
-      isMultiLeg: false, path: A.p, route: A.route, buses: A.buses,
+      isMultiLeg: false, path: A.p, route: A.route,
       board: A.st[A.bi], alight: A.st[A.ai],
       walkB: Math.round(bw), walkA: Math.round(aw),
       sc: A.ai - A.bi, _wait: wait, _eta: eta,
       _maxWalk: Math.max(bw, aw), _longWalk: Math.max(bw, aw) > settings.walkRadius,
       _lastBus: _isLastSefer(A.times, travelToBoard, timing ? timing._boardAt : earliestAtBoard),
-      _bi: A.bi, _bw: bw,
       ...timing,
     };
   }
@@ -1622,9 +1556,9 @@ export function buildTripFromSpec(spec, {
   const X = A.st[A.ai], Y = B.st[B.bi];
   const t = (String(X.stopId) === String(Y.stopId)) ? 0 : haversine(+X.lat, +X.lng, +Y.lat, +Y.lng);
   const aw = walkA != null ? walkA : walkM(spec.dest, B.st[B.ai]);
-  const ride1 = _rideMins(A.st, A.bi, A.ai);
-  const ride2 = _rideMins(B.st, B.bi, B.ai);
-  const travelToY = _travelToStopMins(Y);
+  const ride1 = _rideMins(A.st, A.bi, A.ai, arriveByMins ?? earliestAtBoard);
+  const ride2 = _rideMins(B.st, B.bi, B.ai, arriveByMins ?? earliestAtBoard + ride1);
+  const travelToY = _travelToStopMins(Y, arriveByMins ?? earliestAtBoard + ride1);
   let leg1Wait = 0, leg2Wait, eta, timing = null, boardFrom = earliestAtBoard, yFrom;
   if (arriveByMins != null) {
     const busAtYMax = _latestBoardAt(B.times, travelToY, arriveByMins - ride2 - walkMins(aw), -Infinity);
@@ -1656,13 +1590,12 @@ export function buildTripFromSpec(spec, {
     leg1: {
       path: A.p, route: A.route, board: A.st[A.bi], alight: X,
       walkB: Math.round(bw), sc: A.ai - A.bi, wait: leg1Wait,
-      ride: Math.round(ride1), buses: A.buses,
-      _bi: A.bi, _bw: bw,
+      ride: Math.round(ride1),
     },
     leg2: {
       path: B.p, route: B.route, board: Y, alight: B.st[B.ai],
       walkA: Math.round(aw), sc: B.ai - B.bi, wait: Math.round(leg2Wait),
-      ride: Math.round(ride2), buses: B.buses,
+      ride: Math.round(ride2),
       transferWalkM: Math.round(t), transferWalkMins: Math.max(0, Math.round(walkMins(t))),
     },
   };
@@ -1692,14 +1625,14 @@ export function buildGuidedSteps(m, origin, dest, { walkSpeedMpm = SETTINGS_DEFA
     const bi = stops.findIndex(s => s.stopId === bId), ai = stops.findIndex(s => s.stopId === aId);
     return (bi >= 0 && ai >= 0) ? Math.round(_rideMins(stops, bi, ai)) : 0;
   };
-  const legs = m.isMultiLeg ? [m.leg1, m.leg2] : [{ path: m.path, route: m.route, board: m.board, alight: m.alight, walkB: m.walkB, walkA: m.walkA, buses: m.buses, ride: rideOf(m.path.busStopList || [], m.board.stopId, m.alight.stopId) || Math.round((m.sc || 0) * MINS_PER_STOP) }];
+  const legs = m.isMultiLeg ? [m.leg1, m.leg2] : [{ path: m.path, route: m.route, board: m.board, alight: m.alight, walkB: m.walkB, walkA: m.walkA, ride: rideOf(m.path.busStopList || [], m.board.stopId, m.alight.stopId) || Math.round((m.sc || 0) * MINS_PER_STOP) }];
   const steps = [];
   steps.push({ type: 'WALK', from: origin, to: P(legs[0].board), toStop: legs[0].board, walkMins: wMins(legs[0].walkB) });
   for (let li = 0; li < legs.length; li++) {
     const L0 = legs[li];
     const stops = L0.path.busStopList || [];
-    steps.push({ type: 'WAIT', path: L0.path, route: L0.route, stops, boardId: L0.board.stopId, alightId: L0.alight.stopId, boardStop: L0.board, buses: L0.buses || [] });
-    steps.push({ type: 'RIDE', path: L0.path, route: L0.route, stops, boardId: L0.board.stopId, alightId: L0.alight.stopId, boardStop: L0.board, alightStop: L0.alight, rideMins: (L0.ride ?? rideOf(stops, L0.board.stopId, L0.alight.stopId)), buses: L0.buses || [] });
+    steps.push({ type: 'WAIT', path: L0.path, route: L0.route, stops, boardId: L0.board.stopId, alightId: L0.alight.stopId, boardStop: L0.board });
+    steps.push({ type: 'RIDE', path: L0.path, route: L0.route, stops, boardId: L0.board.stopId, alightId: L0.alight.stopId, boardStop: L0.board, alightStop: L0.alight, rideMins: (L0.ride ?? rideOf(stops, L0.board.stopId, L0.alight.stopId)) });
     const nextLeg = legs[li + 1];
     if (nextLeg) steps.push({ type: 'TRANSFER', from: P(L0.alight), to: P(nextLeg.board), fromStop: L0.alight, toStop: nextLeg.board, sameStop: (nextLeg.transferWalkM || 0) === 0, walkMins: nextLeg.transferWalkMins || 0 });
   }

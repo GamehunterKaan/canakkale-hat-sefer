@@ -1,6 +1,6 @@
 # Çanakkale Hat & Sefer
 
-A mobile-first progressive web app for Çanakkale's public bus network — live tracking, trip planning and schedules, all in a single HTML file with no app store required.
+A mobile-first progressive web app for Çanakkale's public bus network — trip planning, schedules and bus arrival estimates, all in a single HTML file with no app store required.
 
 ![Default Tab](screenshots/map.png)
 
@@ -11,23 +11,22 @@ A mobile-first progressive web app for Çanakkale's public bus network — live 
 Çanakkale's municipal bus system has no official app. Passengers are left with:
 
 - A PDF timetable buried on the municipality website, updated seasonally
-- No way to know where a bus actually is right now
+- No way to know when a bus will actually reach your stop
 - No trip planner — figuring out which bus to take from A to B requires knowing the network by memory
-- No alerts when a bus is approaching
 
-This app solves all of that.
+This app solves that.
 
 ---
 
 ## Features
 
-### 📅 Seferler — Live Schedule
+### 📅 Seferler — Schedule
 
 A dynamic tab row shows every schedule the municipality publishes. Regular weekday and weekend timetables sit alongside any special-day PDFs the city posts — Kurban Bayramı, Arefe, dated one-offs. The tab that matches today's date is preselected.
 
 Each tab lists all routes with departure times split by direction. On today's tab the next upcoming departure is highlighted in blue and past times are greyed out; other tabs show their times plain so they're usable for previewing future or past days.
 
-Each route card has a **🚌 Canlı** button that jumps straight to the live tracker for that line.
+Once a route's last departure has left, its card says whether that last bus is still on the road by the schedule, and marks its departure.
 
 Above the cards, a **📄 Open PDF** button links to the original municipality timetable that tab was parsed from, so the source is always one tap away.
 
@@ -35,7 +34,7 @@ Above the cards, a **📄 Open PDF** button links to the original municipality t
 
 ---
 
-### 🗺 Rota & Harita — Trip Planner & Live Map
+### 🗺 Rota & Harita — Trip Planner & Map
 
 Tap the map (or use GPS) to set your starting point and destination. The planner finds every direct route **and one-transfer trip** that connects them, sorted by **total ETA** — walking time + wait for the next bus + ride time + walking to destination.
 
@@ -43,8 +42,8 @@ Tap the map (or use GPS) to set your starting point and destination. The planner
 - **Real walking distances** — every walking segment uses Valhalla pedestrian routing, so which stops count as reachable and how long each walk takes reflect actual on-foot distances that cross roads and follow footpaths. The dashed lines on the map carry a duration + distance label, with a straight-line fallback when offline
 - **Taxi alternative** — every result list ends with a 🚕 taxi card showing the driving distance, time, and an approximate fare from the Çanakkale tariff. Tap it to draw the cab's route on the map
 - **Plan ahead** — use the time offset buttons (+30 dk, +1 sa, +2 sa) to plan for later
-- **Live bus data** — shows which buses are approaching your boarding stop right now. Tap a bus to see its current stop and where it's heading next
-- **Scheduled fallback** — when no live data is available, the ETA falls back to today's active timetable. On Bayram, Arefe, or any dated special day, the planner automatically consults the matching schedule instead of the regular weekday one
+- **Arrival estimates from recorded travel times** — when a bus reaches your stop and how long the ride takes come from `data/segment-times.json`, a model of stop-to-stop times recorded from real buses, scaled by hour of day and day type. It covers the 33 route directions where it beat the timetable; the rest use the timetable's stop offsets, then 1.5 min per stop
+- **Today's timetable** — waits come from today's active timetable. On Bayram, Arefe, or any dated special day, the planner automatically consults the matching schedule instead of the regular weekday one
 - **Search for a place** — can't point at your destination because you don't know where it is? Search it by name and hand it to the planner in one tap (see **Yer Ara** below)
 - **Tap a stop to pick it** — while in Konum or Hedef pick mode, tapping any stop circle on the map snaps your pin to that stop exactly
 - **Stop browser** — tap any stop on the map to see which routes serve it and when the next bus comes
@@ -77,15 +76,15 @@ A search bar sits over the map for the destinations you can't already point at. 
 Tap any route to see a full breakdown:
 
 - Walk to boarding stop
-- ⏱ Wait time — live bus position or next scheduled departure with estimated arrival at your stop
+- ⏱ Wait time — the next scheduled departure with its estimated arrival at your stop
 - Ride (number of stops)
 - For a transfer trip: the transfer stop, the walk between lines, and the wait for the second bus
 - Walk to destination
 - Total estimated journey time
-- Stop timeline with live bus positions marked
+- Stop timeline
 - **🧭 Start Trip** — launches guided turn-by-turn navigation for this trip (see below)
 
-![Trip detail showing journey steps and live bus position](screenshots/trip-detail.png)
+![Trip detail showing journey steps](screenshots/trip-detail.png)
 
 ---
 
@@ -93,25 +92,11 @@ Tap any route to see a full breakdown:
 
 From any trip detail, tap **🧭 Start Trip** to be guided through the journey one step at a time. The map clears to show **only the current segment** — no clutter from the full overview — while a bottom banner tells you what to do right now: walk to your stop → wait for the bus → ride → (transfer →) walk to your destination → arrived. Advance manually, or let GPS auto-advance as you reach each stop.
 
-- **Live, adaptive ETA on every step** — a running "estimated arrival" that updates with the situation rather than a fixed guess. Walking uses your live distance, waiting uses the approaching bus's real position (a late bus pushes the arrival out), and riding uses the pace stops are *actually* taking (so a slow leg updates the estimate upward). Falls back to the schedule when no live data is available.
+- **Adaptive ETA on every step** — a running "estimated arrival" that updates with the situation rather than a fixed guess. Walking uses your GPS distance, waiting counts down to the next scheduled bus at your stop, and riding starts from the recorded travel times and then follows the pace stops are *actually* taking from your GPS (so a slow leg updates the estimate upward).
 - **Ride view** — the board → drop-off stop list with your current stop highlighted, and every stop on that leg drawn on the map.
-- **Wait view** — the next scheduled departures plus the live buses approaching your stop, with per-bus ETAs.
+- **Wait view** — the next scheduled departures.
 - **Real walking routes** — guided walk legs follow the same Valhalla road route the planner draws, not a straight line.
 - **Stays on track** — screen wake-lock and a vibration nudge so you don't miss your stop; the map follows you as you move, with a recenter button if you pan away.
-
----
-
-### 🔴 Live Bus Tracker
-
-Opens from either the Seferler tab (🚌 Canlı button) or the trip planner. Draws the full route on the map and shows all active buses with:
-
-- Route color background with the bus 🚌 emoji
-- A heading arrow above the bus pointing toward its next stop (computed from the bus's position and the path geometry — kentkart doesn't broadcast heading)
-- The plate number on a colored pill below
-
-Direction buttons let you switch between outbound and inbound. Refreshes every 15 seconds automatically.
-
-![Live tracker showing bus route on map with moving bus markers](screenshots/tracker.png)
 
 ---
 
@@ -132,7 +117,7 @@ A dedicated bottom-tab for finding and managing stops without using the map.
 - **Son açılanlar** — the last 5 stops you opened.
 - **Yakındaki duraklar** — 8 nearest stops by haversine when GPS is granted, with distance shown on every row. Graceful fallback when location is denied.
 - **Route chips** — every stop row shows the kentkart route colors that serve it, so you can pick the right stop at a glance.
-- **Detail view** — tap a stop to see its routes with live status per direction (*Durağa geldi*, *N durak uzaklıkta*, *Aktif araç yok*, scheduled fallback). Sorted by closest approaching bus first.
+- **Detail view** — tap a stop to see when each route's next bus reaches that stop, per direction (minutes and clock time, from the timetable and the recorded travel times). Sorted by soonest first.
 - **📍 Haritada göster** — drops a labelled pin for that exact stop on the planner map.
 - **🔗 Paylaş** — generates a `?stop=<id>` deep-link via the native share sheet or clipboard so others can open the same stop directly.
 
@@ -147,7 +132,6 @@ Once you tap **Settings → "Haritayı offline indir"**, the app works without i
 - App shell (HTML, JS, icons, Leaflet) and `schedule.json` / `stops.json` come from the service worker cache
 - Every OSM tile inside the Çanakkale bounding box at zoom 13–16 (~5500 tiles, ~65 MB one-time download) is precached, so the map renders fully offline
 - Trip planning against the cached schedule, stop browsing, and route exploration all work without network
-- Live kentkart bus positions naturally still need network — when offline, a small "Çevrimdışı" badge shows in the header and stale bus markers are cleared rather than left on screen pretending to be live
 
 
 ---
@@ -173,21 +157,21 @@ fetch-schedule.mjs                                      build-places.mjs
   ↓ download PDFs                                         ↓ Overture bbox extract
   ↓ parse with pdf.js                                     ↓ confidence + dedupe
   ↓                                                       ↓
-data/schedule.json          data/stops.json          data/places.json
-        │                   (frozen copy)                   │
-        └──────────┬──────────────┴─────────────────────────┘
+data/schedule.json     data/stops.json            data/places.json
+        │              data/segment-times.json         │
+        │              (frozen copies)                 │
+        └──────────┬─────────┴─────────────────────────┘
                    ↓
              GitHub Pages
              index.html + sw.js + manifest
                    │
-        ┌──────────┴───────────────────┐
-        ↓                              ↓
-  Service Worker                   Kentkart API
-  ────────────────                 (live bus positions,
-  • Precache app shell             fetched on demand
-  • Stale-while-revalidate JSON     — no caching)
-  • Cache-first OSM tiles
-  • Network-first HTML w/ fallback
+                   ↓
+             Service Worker
+             ────────────────
+             • Precache app shell
+             • Stale-while-revalidate JSON
+             • Cache-first OSM tiles
+             • Network-first HTML w/ fallback
 ```
 
 Everything runs entirely in the browser. No backend, no database, no user accounts. The hourly Actions cron checks the municipality PDFs and rewrites cached static data when their content changes, including when a PDF is replaced at the same URL.
@@ -243,7 +227,7 @@ list[0];  // → { path, route, board, alight, walkB, walkA, _wait, _eta, … }
 ```
 
 - `init()` — self-fetches from the deployed site by default. `init({ baseUrl })` points at your own host; `init({ schedule, stops })` injects pre-parsed data and does zero I/O (this is what `ui.js` and the tests use).
-- `planTrips(origin, dest, opts)` — returns `{ list, relaxed }`, or `null` if `isCancelled()` tripped. Pass `live: false` to plan off the timetable alone, and inject `fetchLive` / `walkMatrix` / `walkCache` to keep it deterministic offline.
+- `planTrips(origin, dest, opts)` — returns `{ list, relaxed }`, or `null` if `isCancelled()` tripped. Inject `walkMatrix` / `walkCache` to keep it deterministic offline. `setSegmentModel(json)` attaches `data/segment-times.json` so ETAs use the recorded travel times; without it they use the timetable offsets.
 - Also exported: `findSchedEntry` / `pickSchedDir` / `schedTimesForPath` (which timetable block a route direction uses), `buildGuidedSteps` + `guidedStepMet` (turn-by-turn state), `_taxiEstimate`, `haversine`, the service-day time helpers, and the `STR` TR/EN dictionary via `createT`.
 - `MAP_BOUNDS` and `foldTr` live here too, because three things have to agree on them: the browser map clamps to the box and rejects picks outside it, `scripts/build-places.mjs` clips its POI extract to it, and the refresh workflow asks the script for it. `foldTr` is shared for the same reason — the POI build folds place names to key its dedupe, and the app folds your query to match them, so two copies drifting apart would silently resurrect duplicate rows.
 
@@ -259,7 +243,7 @@ Headlessness isn't a convention here, it's enforced: `test/core-test.mjs` import
 - **Stop & route data** — a frozen copy of kentkart's route/stop/path data in `data/stops.json`. Kentkart now refuses unsigned requests, so it is no longer refreshed
 - **Maps** — [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles, all vector layers sharing one explicit `L.canvas` renderer (avoids the multi-canvas event-stacking pitfall that breaks hit-testing)
 - **Offline** — Service worker precaches the app shell + Leaflet CDN, stale-while-revalidates the JSON data, and cache-firsts OSM tiles with a FIFO cap. An on-demand tile downloader fetches every tile in the Çanakkale bbox at the allowed zoom range so the map works fully offline once primed
-- **Live data** — [Kentkart](https://kentkart.com) public API fetched directly by the browser (same data used by physical stop displays). A 15s connectivity probe drives the offline indicator
+- **Arrival estimates** — `data/segment-times.json` holds stop-to-stop travel times fitted on buses recorded from Kentkart's API until it began refusing unsigned requests in November 2026, with hour-of-day and day-type factors, validated per route direction against the timetable offsets. Like `stops.json` it is a frozen copy; the app no longer contacts Kentkart at all
 - **Place search — two sources, on purpose.** `data/places.json` is a static [Overture Maps](https://overturemaps.org/) POI extract for the Çanakkale bbox (~6,400 places, 162 KB gzipped), rebuilt monthly by Actions and searched locally, so it is instant and works with no network at all. It exists because OpenStreetMap alone does not have most Turkish businesses — *Container Hall Çanakkale*, a real venue 129 m from ŞEHİTLER CAMİ, has **zero** matches in raw OSM across the entire bbox, while Overture carries it at 0.99 confidence (Overture merges Meta, Microsoft, Foursquare and AllThePlaces listings over OSM). On top of that, [Photon](https://photon.komoot.io/) geocodes streets and addresses live, bbox-restricted and biased to the map centre — Photon rather than Nominatim because its usage policy explicitly allows the as-you-type querying a search box does; its answers are cached in localStorage. Google Places is deliberately not used: its terms tie results to a Google basemap, and a static site cannot hide an API key
 - **Keeping the POI index honest.** Crowd-sourced business data has two distinct failure modes, and the build handles them separately. *Ghost listings* — shops that closed and were never retired — are dropped by freshness: any row no upstream provider has confirmed in over a year is cut, which is 3% of the extract. The staleness is not evenly spread, which is what makes the rule cheap: Meta and AllThePlaces refresh constantly (median 24-28 days, 0% over a year) while Foursquare (median 484 days, 65% over a year) and Microsoft (926 days, 81%) carry the whole tail. Note that every row also has an *Overture* source stamped with the release date — count that one and everything looks fresh. *Wrong coordinates on current listings* can't be filtered at all: Meta had Container Hall at 0.99 confidence, refreshed three weeks earlier, geocoded onto the wrong street 1.1 km away because "Mehmetçik Blv." fuzzy-matched "Mehmet Kaptan Sokak". Those are corrected by hand in `data/places-overrides.json` (`drop` / `fix` / `add`), which is re-applied on top of every rebuild; a rule that stops matching is reported by the build so it can be retired once upstream catches up. `drop` rules are also shipped to the app as a deny list applied to *live geocoder* results, because deleting a ghost from this index is only half the job — the same closed branch is usually a node in OSM too, where no freshness rule of ours can reach it, and Photon would serve it straight back
 - **Walking & driving directions** — [Valhalla](https://valhalla.openstreetmap.org/) pedestrian routing decides which stops are reachable and how long each walk takes, batched through its distance-matrix API so the whole plan needs only a few requests. The taxi estimate uses Valhalla's shortest-path car route, since a meter bills distance driven. Straight-line + walk-speed fallback when the service is unreachable. The public OSRM demo is deliberately avoided — its `/foot/` endpoint actually returns car routing, which inflated short pedestrian moves and hid reachable stops

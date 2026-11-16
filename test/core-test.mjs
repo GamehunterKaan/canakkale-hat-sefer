@@ -127,12 +127,10 @@ ck('getActiveRoutes() returns routes', Object.keys(core.getActiveRoutes()).lengt
 const ORIGIN = { lat: 40.1553, lng: 26.4211 };   // Otogar
 const DEST   = { lat: 40.1467, lng: 26.4056 };   // Halk Bahçesi
 
-// live:false keeps this deterministic and off the kentkart network; walkMatrix is
-// stubbed to null so Valhalla isn't required either — planTrips then falls back to
+// walkMatrix is stubbed to null so Valhalla isn't required — planTrips then falls back to
 // haversine × WALK_DETOUR_FACTOR, exactly as it does when Valhalla is unreachable.
 const res = await core.planTrips(ORIGIN, DEST, {
   settings: { walkRadius: 800, walkSpeedMpm: 75 },
-  live: false,
   walkMatrix: async () => null,
 });
 
@@ -150,35 +148,9 @@ if (res?.list?.length) {
     '  ETA ' + Math.round(x._eta) + ' dk').join('\n     '));
 }
 
-// The LIVE refinement pass — the one planTrips path with no coverage before now.
-// It is skipped entirely when live:false, which is exactly how a missing
-// LIVE_RANK_MAX_FETCH shipped: every headless test passed while the real app threw
-// "ReferenceError: LIVE_RANK_MAX_FETCH is not defined" on the first search. Stub
-// fetchLive so this runs deterministically, with no kentkart network.
-// Pinned to 10:00: near a route's end of service, a just-passed last bus is
-// fetched on top of the cap (live-only, see "last bus still on the road"), which
-// would make the cap check below depend on the clock CI happens to run at.
-const seen = [];
-const liveRes = await core.planTrips(ORIGIN, DEST, {
-  settings: { walkRadius: 800, walkSpeedMpm: 75 },
-  nowMins: 10 * 60,
-  live: true,                                   // ← exercises the block that broke
-  walkMatrix: async () => null,
-  fetchLive: async (code, dir) => {
-    seen.push(code + '/' + dir);
-    return [];                                  // no buses out there → schedule fallback
-  },
-});
-ck('planTrips live pass runs without throwing', !!liveRes && Array.isArray(liveRes.list),
-   liveRes ? liveRes.list.length + ' trips' : String(liveRes));
-ck('planTrips live pass actually queried live buses', seen.length > 0, seen.length + ' route/dir fetches');
-ck('live fetches are capped by LIVE_RANK_MAX_FETCH', seen.length <= core.LIVE_RANK_MAX_FETCH,
-   `${seen.length} <= ${core.LIVE_RANK_MAX_FETCH}`);
-ck('live pass with no buses still yields schedule-based trips', !!liveRes && liveRes.list.length > 0);
-
 // Cancellation must stay distinguishable from "no trips found".
 const cancelled = await core.planTrips(ORIGIN, DEST, {
-  settings: { walkRadius: 800, walkSpeedMpm: 75 }, live: false,
+  settings: { walkRadius: 800, walkSpeedMpm: 75 },
   walkMatrix: async () => null, isCancelled: () => true,
 });
 ck('planTrips returns null when cancelled (never conflated with empty)', cancelled === null);
@@ -199,7 +171,7 @@ ck('_earliestBoardAt finds the first catchable bus',
 ck('_earliestBoardAt is null when the day is over',
    core._earliestBoardAt([600], 0, 601) === null);
 
-const noNet = { settings: { walkRadius: 800, walkSpeedMpm: 75 }, live: false, walkMatrix: async () => null };
+const noNet = { settings: { walkRadius: 800, walkSpeedMpm: 75 }, walkMatrix: async () => null };
 const NOW = 10 * 60, ARRIVE_BY = 20 * 60;   // fixed 10:00 → "be there by 20:00", deterministic
 
 const back = await core.planTrips(ORIGIN, DEST, { ...noNet, nowMins: NOW, arriveByMins: ARRIVE_BY });
@@ -361,54 +333,37 @@ console.log('\n── last bus still on the road ──\n');
   const mk = (id, i) => ({ stopId: id, stopName: 'S' + id, seq: String(i + 1),
     lat: String(40.10 + i * 0.0045), lng: '26.40',
     arrival_offset: String(i * 600), departure_offset: String(i * 600) });
-  const T1 = { displayRouteCode: 'T1', direction: '0', busStopList: ['a', 'b', 'c', 'd'].map(mk), busList: [] };
+  const T1 = { displayRouteCode: 'T1', direction: '0', busStopList: ['a', 'b', 'c', 'd'].map(mk) };
   const entry = { name: 'T1 TEST', dir0: { label: '', times: ['21:00'] } };
   const dayData = { 'T1 TEST': entry };
   const at = s => ({ lat: +s.lat, lng: +s.lng });
   const O = at(T1.busStopList[1]), D = at(T1.busStopList[3]);   // board b (bus due 21:10), alight d
-  const plan = (nowMins, fetchLive, live = true) => core.planTrips(O, D, {
-    pathCache: [{ path: T1, route: {} }], dayData, nowMins, live, fetchLive,
+  const plan = nowMins => core.planTrips(O, D, {
+    pathCache: [{ path: T1, route: {} }], dayData, nowMins,
     settings: { walkRadius: 800, walkSpeedMpm: 75 }, walkMatrix: async () => null,
   });
-  const busAt = id => async () => [{ stopId: id, lat: 40.1, lng: 26.4, plateNumber: '17 X 1' }];
 
-  // Planner: the schedule says the 21:10 bus has passed b, but live shows it still approaching.
-  const late = await plan(21 * 60 + 20, busAt('a'));
-  const lm = late?.list?.[0];
-  ck('a late last bus that live shows approaching is still offered', !!lm && lm.path.displayRouteCode === 'T1',
-     JSON.stringify(late?.list?.map(m => m.path?.displayRouteCode)));
-  ck('…with its live wait and the last-bus flag', !!lm && lm._live && lm._lastBus && lm._wait <= 15,
-     lm ? `wait ${lm._wait} live ${lm._live} last ${lm._lastBus}` : '');
-  ck('no live bus out → the passed trip is dropped', (await plan(21 * 60 + 20, async () => []))?.list.length === 0);
-  ck('live fetch failed → the passed trip is dropped', (await plan(21 * 60 + 20, async () => null))?.list.length === 0);
-  ck('live off → the passed trip is dropped', (await plan(21 * 60 + 20, busAt('a'), false))?.list.length === 0);
-  const asked = [];
-  const long = await plan(23 * 60, async (c, d) => { asked.push(c); return busAt('a')(); });
-  ck('a last bus long gone is neither fetched nor offered', long?.list.length === 0 && asked.length === 0,
-     `${long?.list.length} trips, ${asked.length} fetches`);
-  // A >4h gap before the NEXT bus today is not a passed last bus: no live-only rescue.
+  // Planner: the schedule says the 21:10 bus has passed b. Without live data
+  // nothing can say it is late, so it is not offered.
+  ck('a last bus the schedule says has passed is not offered', (await plan(21 * 60 + 20))?.list.length === 0);
+  ck('a last bus long gone is not offered', (await plan(23 * 60))?.list.length === 0);
   entry.dir0.times = ['07:00', '21:00'];
-  const gapAsked = [];
-  const gap = await plan(12 * 60, async (c, d) => { gapAsked.push(c); return busAt('a')(); });
+  const gap = await plan(12 * 60);
   entry.dir0.times = ['21:00'];
-  ck('a long midday gap is not treated as a passed last bus', gap?.list.length === 0 && gapAsked.length === 0,
-     `${gap?.list.length} trips, ${gapAsked.length} fetches`);
+  ck('a long midday gap is not offered either', gap?.list.length === 0, `${gap?.list.length} trips`);
+  const due = (await plan(21 * 60 + 5))?.list?.[0];
+  ck('the last bus before it passes is offered and flagged last', !!due && due._lastBus && due._wait === 5,
+     due ? `wait ${due._wait} last ${due._lastBus}` : 'none');
 
-  // Seferler: which last trips may still be on the road.
+  // Seferler: which last trips are still on the road, by the schedule.
   const onRoad = now => core.lastTripsOnRoad(entry, [T1], now);
   const r1 = onRoad(21 * 60 + 20);
-  ck('last trip mid-run is on the road on schedule', r1.length === 1 && r1[0].time === '21:00' && r1[0].onSchedule === true,
-     JSON.stringify(r1.map(o => [o.time, o.dir, o.onSchedule])));
-  const r2 = onRoad(21 * 60 + 45);
-  ck('past its run end but inside the late slack → live must decide', r2.length === 1 && r2[0].onSchedule === false);
-  ck('past the late slack → not on the road', onRoad(22 * 60 + 5).length === 0);
+  ck('last trip mid-run is on the road', r1.length === 1 && r1[0].time === '21:00',
+     JSON.stringify(r1.map(o => [o.time, o.dir])));
+  ck('past its run end → not on the road', onRoad(21 * 60 + 45).length === 0);
   ck('last trip not departed yet → not reported', onRoad(20 * 60 + 50).length === 0);
   ck('an after-midnight last trip stays in the service-day frame',
-     core.lastTripsOnRoad({ name: 'T1 TEST', dir0: { label: '', times: ['00:30'] } }, [T1], core._schedFrame(45))[0]?.onSchedule === true);
-  ck('live bus out → running', core.lastBusRunning(r2[0], [{ stopId: 'c' }]) === true);
-  ck('live says no bus → not running, even on schedule', core.lastBusRunning(r1[0], []) === false);
-  ck('live unavailable → the schedule decides',
-     core.lastBusRunning(r1[0], null) === true && core.lastBusRunning(r2[0], null) === false);
+     core.lastTripsOnRoad({ name: 'T1 TEST', dir0: { label: '', times: ['00:30'] } }, [T1], core._schedFrame(45)).length === 1);
 }
 
 // ── Trips that start or end away from the terminals ──────────────────────────
@@ -430,7 +385,7 @@ console.log('\n── trips placed on their path ──\n');
   ck('initials and one-letter stop words match nothing',
      core._stopNameScore('A B C', 'ADLİYE BARBAROS CUMA') === 0 && core._stopNameScore('ADLİYE', 'A BLOK') === 0);
   const names = ['MERKEZ', 'OKUL', 'KEPEZ TOKİ', 'KEPEZ MEYDAN', 'GAZİ OKULU'];
-  const T2 = { displayRouteCode: 'T2', direction: '0', busList: [], busStopList: names.map((stopName, i) => ({
+  const T2 = { displayRouteCode: 'T2', direction: '0', busStopList: names.map((stopName, i) => ({
     stopId: 't' + i, stopName, seq: String(i + 1), lat: String(40.20 + i * 0.0045), lng: '26.40',
     arrival_offset: String(i * 600), departure_offset: String(i * 600) })) };
   const entry = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['08:00', '11:00'], trips: [
@@ -451,7 +406,7 @@ console.log('\n── trips placed on their path ──\n');
   ck('the timetable lists every departure', JSON.stringify(core.schedDepartures(entry.dir0)) === '["08:00","09:00","10:00","11:00","12:00"]');
   const at = s => ({ lat: +s.lat, lng: +s.lng });
   const plan = (board, alight, nowMins) => core.planTrips(at(T2.busStopList[board]), at(T2.busStopList[alight]), {
-    pathCache: [{ path: T2, route: {} }], dayData: { 'T2 TEST': entry }, nowMins, live: false,
+    pathCache: [{ path: T2, route: {} }], dayData: { 'T2 TEST': entry }, nowMins,
     settings: { walkRadius: 300, walkSpeedMpm: 75 }, walkMatrix: async () => null });
   const atMerkez = await plan(0, 4, 8 * 60 + 30);
   ck('no bus is offered at the terminal for a trip that starts down the line', atMerkez?.list.length === 0,
@@ -465,17 +420,17 @@ console.log('\n── trips placed on their path ──\n');
      JSON.stringify(pastEnd?.list.map(m => [m.alight.stopName, m._wait])));
   // 11:00 turns back at KEPEZ TOKİ (11:20): it is off the road well before the full run would end.
   ck('the last trip ends where it turns back',
-     core.lastTripsOnRoad(entry, [T2], 11 * 60 + 15)[0]?.onSchedule === true &&
-     core.lastTripsOnRoad(entry, [T2], 11 * 60 + 25)[0]?.onSchedule === false);
+     core.lastTripsOnRoad(entry, [T2], 11 * 60 + 15).length === 1 &&
+     core.lastTripsOnRoad(entry, [T2], 11 * 60 + 25).length === 0);
   // A last trip from KEPEZ TOKİ is on the road from when it leaves there (12:00).
   const fromTokiLast = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['08:00'], trips: [{ time: '12:00', from: 'KEPEZ TOKİ', stops: [] }] } };
   ck('a last trip that starts down the line is on the road once it leaves its own first stop',
      core.lastTripsOnRoad(fromTokiLast, [T2], 11 * 60 + 50).length === 0 &&
-     core.lastTripsOnRoad(fromTokiLast, [T2], 12 * 60 + 10)[0]?.onSchedule === true);
+     core.lastTripsOnRoad(fromTokiLast, [T2], 12 * 60 + 10).length === 1);
   // 12:00 from MERKEZ passes KEPEZ TOKİ at 12:20, after the 12:05 that starts there: 12:00 is the last on the road.
   const lastByRoad = { name: 'T2 TEST', dir0: { label: 'MERKEZ', times: ['12:00'], trips: [{ time: '12:05', from: 'KEPEZ TOKİ', stops: [] }] } };
   ck('the last trip is the one furthest behind on the road, not the latest printed time',
-     JSON.stringify(core.lastTripsOnRoad(lastByRoad, [T2], 12 * 60 + 30).map(t => [t.time, t.onSchedule])) === '[["12:00",true]]',
+     JSON.stringify(core.lastTripsOnRoad(lastByRoad, [T2], 12 * 60 + 30).map(t => t.time)) === '["12:00"]',
      JSON.stringify(core.lastTripsOnRoad(lastByRoad, [T2], 12 * 60 + 30)));
   const campus = ['GAZİ OKULU', 'DARDANOS CAMİİ', 'JANDARMA', 'ÇOMÜDARDANOS'].map(stopName => ({ stopName }));
   ck('a trip end the path\'s own end also matches is that end, not an earlier stop',
@@ -500,7 +455,7 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
 {
   // T2: MERKEZ → OKUL → KEPEZ TOKİ → KEPEZ MEYDAN → GAZİ OKULU, 10 min apart.
   // T7: KEPEZ MEYDAN B (40 m from T2's KEPEZ MEYDAN) → ÇARŞI → LİSE → STADYUM, heading east.
-  const mk = (code, names, pos) => ({ displayRouteCode: code, direction: '0', busList: [], busStopList: names.map((stopName, i) => ({
+  const mk = (code, names, pos) => ({ displayRouteCode: code, direction: '0', busStopList: names.map((stopName, i) => ({
     stopId: code + i, stopName, seq: String(i + 1), lat: String(pos(i)[0]), lng: String(pos(i)[1]),
     arrival_offset: String(i * 600), departure_offset: String(i * 600) })) });
   const T2 = mk('T2', ['MERKEZ', 'OKUL', 'KEPEZ TOKİ', 'KEPEZ MEYDAN', 'GAZİ OKULU'], i => [40.20 + i * 0.0045, 26.40]);
@@ -508,7 +463,7 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
   const at = s => ({ lat: +s.lat, lng: +s.lng });
   const settings = { walkRadius: 300, walkSpeedMpm: 75 }, pathCache = [{ path: T2, route: {} }, { path: T7, route: {} }];
   const plan = (o, d, dayData, nowMins, arriveByMins = null) => core.planTrips(at(o), at(d),
-    { pathCache, dayData, nowMins, arriveByMins, live: false, settings, walkMatrix: async () => null });
+    { pathCache, dayData, nowMins, arriveByMins, settings, walkMatrix: async () => null });
   const spec = (o, d, legs, dayData, nowMins) => core.buildTripFromSpec({ origin: at(o), dest: at(d), legs }, { pathCache, dayData, nowMins, settings });
   const leg = (p, b, a) => ({ code: p.displayRouteCode, dir: '0', board: p.busStopList[b].stopId, alight: p.busStopList[a].stopId });
   const show = r => JSON.stringify(r?.list?.map(m => m.isMultiLeg ? ['X', m.leg1.wait, m.leg2.wait, m._eta, m._lastBus]
@@ -535,14 +490,14 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
     const leaveLater = { 'T2 D': { name: 'T2 D', dir0: { label: 'MERKEZ', times: ['08:00'], trips: [{ time: '08:00', to: 'KEPEZ TOKİ' },
       { time: '08:10', from: 'KEPEZ 144 TOKİ', stops: [] }, { time: '08:30', from: 'KEPEZ 144 TOKİ', stops: [] }] } } };
     const later = await core.planTrips(at(OKUL), at(MEYDAN), { pathCache, dayData: leaveLater, nowMins: 7 * 60 + 30,
-      arriveByMins: 8 * 60 + 45, live: false, settings, walkMatrix: async () => null });
+      arriveByMins: 8 * 60 + 45, settings, walkMatrix: async () => null });
     ck('arrive-by: a bus the nearest stops never see wins when you can leave 10+ min later', pairs(later) === '[["KEPEZ TOKİ","KEPEZ MEYDAN",0]]', pairs(later));
     // The same bus loops back near the destination: alighting early and walking is 33 min sooner,
     // but the same bus always alights at the stop nearest the destination.
     const LOOP = mk('L1', ['A', 'B', 'C', 'X', 'Y', 'Z', 'D'], i => [[40.200, 26.40], [40.205, 26.40], [40.210, 26.40], [40.215, 26.42],
       [40.215, 26.44], [40.210, 26.44], [40.2136, 26.40]][i]);
     const loop = await core.planTrips(at(LOOP.busStopList[0]), at(LOOP.busStopList[6]), { pathCache: [{ path: LOOP, route: {} }],
-      dayData: { 'L1 LOOP': { name: 'L1 LOOP', dir0: { label: 'A', times: ['08:00'] } } }, nowMins: 7 * 60 + 55, live: false, settings, walkMatrix: async () => null });
+      dayData: { 'L1 LOOP': { name: 'L1 LOOP', dir0: { label: 'A', times: ['08:00'] } } }, nowMins: 7 * 60 + 55, settings, walkMatrix: async () => null });
     ck('direct: the same bus keeps the nearest stops, however the route loops', pairs(loop) === '[["A","D",5]]', pairs(loop));
   }
   {
@@ -595,7 +550,7 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
   ck('placement: a trip to a stop the path names twice runs to the second',
      core.schedTripsForPath({ name: 'T9', dir0: { label: 'NUSRAT', times: ['08:00'], trips: [{ time: '08:00', to: 'MÜHENDİSLİK FAKÜLTESİ' }] } }, T9)[0]?.end === 2);
   // Across the road means a stop of exactly that name within TRANSFER_CROSS_ROAD_M.
-  const mkp = (code, rows) => ({ displayRouteCode: code, direction: '0', busList: [], busStopList: rows.map(([stopName, lat, lng], i) => ({
+  const mkp = (code, rows) => ({ displayRouteCode: code, direction: '0', busStopList: rows.map(([stopName, lat, lng], i) => ({
     stopId: code + i, stopName, seq: String(i + 1), lat: String(lat), lng: String(lng), arrival_offset: String(i * 300) })) });
   const C4 = mkp('C4', [['BAHRİYE', 40.150, 26.400], ['HALKBAHÇESİ', 40.152, 26.400], ['İSKELE', 40.154, 26.400], ['ELBİ KYK', 40.156, 26.400]]);
   const evening = { name: 'C4', dir0: { label: 'BAHRİYE', times: ['18:00'], trips: [{ time: '19:00', from: 'ESKİ HASTANE', stops: [['İSKELE', '19:05']] }] } };
@@ -615,7 +570,7 @@ console.log('\n── every leg counts only the trips that serve it ──\n');
   // The planner places such trips with its own path cache: the 19:00 leaves HALKBAHÇESİ.
   const out = mkp('C4', [['ELBİ KYK', 40.156, 26.4004], ['ESKİHASTANE', 40.152, 26.4004], ['BADEMLİ', 40.148, 26.4004]]);
   const viaOther = await core.planTrips(at(C4.busStopList[1]), at(C4.busStopList[3]), { pathCache: [{ path: C4, route: {} }, { path: out, route: {} }],
-    dayData: { C4: evening }, nowMins: 18 * 60 + 55, live: false, settings, walkMatrix: async () => null });
+    dayData: { C4: evening }, nowMins: 18 * 60 + 55, settings, walkMatrix: async () => null });
   ck('the planner boards a trip at the stop across the road from its first stop',
      viaOther.list.some(m => m.path === C4 && m.board.stopName === 'HALKBAHÇESİ'), show(viaOther));
 }
@@ -649,16 +604,59 @@ console.log('\n── service day ──\n');
      core.pickActiveScheduleId(lateFirst, core.todayParts(new Date('2027-01-08T12:00:00+03:00'))) === 'e-2027-01-04');
 }
 
-// Kentkart refuses a request with HTTP 200 and a non-zero result code (34 once it
-// started requiring signed requests). That is "live data unknown", not "no bus out".
+// ── Recorded segment times (data/segment-times.json) ─────────────────────────
+// A route's model replaces the timetable offsets: segment k takes base[k] ×
+// the day type's hour factor × its part's hour factor, at the hour the bus gets
+// there. A segment without enough samples keeps the offsets, then 1.5 min/stop.
+console.log('\n── recorded segment times ──\n');
 {
-  const realFetch = globalThis.fetch;
-  const answer = body => { globalThis.fetch = async () => new Response(JSON.stringify(body)); };
-  answer({ result: { code: 34, message: 'Lütfen bilgilerinizi eksiksiz giriniz' } });
-  ck('a refused live request is unknown (null), not an empty bus list', await core._fetchLiveBuses('11K', '0') === null);
-  answer({ result: { code: '0' }, pathList: [{ busList: [] }] });
-  ck('an accepted request with no buses out is still an empty list', JSON.stringify(await core._fetchLiveBuses('11K', '0')) === '[]');
-  globalThis.fetch = realFetch;
+  const stop = (id, i) => ({ stopId: id, stopName: 'S' + id, seq: String(i + 1), lat: '40.1', lng: '26.4',
+    arrival_offset: String(i * 600), departure_offset: String(i * 600) });
+  const P = (code, ids) => ({ path: { displayRouteCode: code, direction: '0', busStopList: ids.map(stop) }, route: {} });
+  const flat = v => Array(24).fill(v);
+  const day = flat(1); day[8] = 2;
+  const route = (ids, use = true) => ({ stops: ids, base: [2, 3, null], elapsed: [null, null, null], part: [0, 0, 0],
+    partFactors: { weekday: [flat(1), flat(1), flat(1)], weekend: [flat(1.5), flat(1), flat(1)] }, use });
+  const M = P('M1', ['a', 'b', 'c', 'd']), U = P('U1', ['a', 'b', 'c', 'd']), X = P('X1', ['a', 'b', 'c', 'd']);
+  const model = { dayFactors: { 'Mon-Thu': day, Fri: flat(1), Sat: flat(1), Sun: flat(1) },
+    routes: { 'M1|0': route(['a', 'b', 'c', 'd']), 'U1|0': route(['a', 'b', 'c', 'd'], false), 'X1|0': route(['a', 'b', 'x', 'd']) } };
+  const attached = core.setSegmentModel(model, [M, U, X], { day: 'Mon-Thu' });
+  ck('only validated routes with the same stops take the model', attached === 1, String(attached));
+  const st = M.path.busStopList;
+  ck('ride = learned segments, an unlearned one from the offsets (2 + 3 + 10)', core._rideMins(st, 0, 3, 10 * 60) === 15,
+     String(core._rideMins(st, 0, 3, 10 * 60)));
+  ck('each segment takes the factor of the hour the bus reaches it (8:00: 4 + 6 + 20)',
+     core._rideMins(st, 0, 3, 8 * 60) === 30, String(core._rideMins(st, 0, 3, 8 * 60)));
+  ck('a ride that starts down the line sums from there', core._rideMins(st, 1, 3, 10 * 60) === 13);
+  ck('terminal to a stop from the model', core._travelToStopMins(st[2], 10 * 60) === 5);
+  ck('a route the model did not beat keeps its offsets', core._rideMins(U.path.busStopList, 0, 3, 8 * 60) === 30 &&
+     core._travelToStopMins(U.path.busStopList[2], 8 * 60) === 20);
+  ck('a model fitted on other stops is not used', core._rideMins(X.path.busStopList, 0, 3, 10 * 60) === 30);
+  core.setSegmentModel(model, [M], { day: 'Sat' });
+  ck('weekends take the weekend part factors (2×1.5 + 3×1.5 + 10×1.5)', core._rideMins(st, 0, 3, 10 * 60) === 22.5,
+     String(core._rideMins(st, 0, 3, 10 * 60)));
+
+  // The shipped model on the shipped paths.
+  const real = JSON.parse(fs.readFileSync(new URL('../data/segment-times.json', import.meta.url)));
+  const paths = core.getPathCache();
+  const n = core.setSegmentModel(real, paths, { day: 'Mon-Thu' });
+  const valid = Object.values(real.routes).filter(r => r.use).length;
+  ck('every validated route in the shipped model attaches to its path', n === valid, `${n} of ${valid}`);
+  const g = paths.find(pe => pe.path.displayRouteCode === '11G' && pe.path.direction === '0').path, gs = g.busStopList;
+  const r = real.routes['11G|0'];
+  let want = 0;
+  for (let k = 0; k < gs.length - 1; k++) {
+    const h = Math.floor((12 * 60 + want) / 60) % 24;
+    const base = r.base[k] ?? ((gs[k + 1].arrival_offset - gs[k].arrival_offset) / 60 || 1.5);
+    want += base * real.dayFactors['Mon-Thu'][h] * r.partFactors.weekday[r.part[k]][h];
+  }
+  ck('11G end to end follows the shipped formula', Math.abs(core._rideMins(gs, 0, gs.length - 1, 12 * 60) - want) < 1e-9,
+     core._rideMins(gs, 0, gs.length - 1, 12 * 60).toFixed(2) + ' vs ' + want.toFixed(2));
+  const withModel = await core.planTrips(ORIGIN, DEST, { settings: { walkRadius: 800, walkSpeedMpm: 75 },
+    nowMins: 10 * 60, walkMatrix: async () => null });
+  ck('planning with the model still finds trips', withModel?.list?.length > 0, String(withModel?.list?.length));
+  core.setSegmentModel(null);
+  ck('without a model the offsets decide again', core._rideMins(st, 0, 3, 8 * 60) === 30);
 }
 
 console.log(`\n${fail ? '\x1b[31m' + fail + ' failed\x1b[0m, ' : ''}\x1b[32m${pass} passed\x1b[0m\n`);

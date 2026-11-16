@@ -10,7 +10,7 @@
 //
 // Coverage:
 //   • Pure helpers (deterministic, no network): _travelToStopMins, _rideMins,
-//     _waitFromTimes, _isLastSefer, _liveBoardWaitMins — incl. offset fallbacks,
+//     _waitFromTimes, _isLastSefer — incl. offset fallbacks,
 //     monotonicity guard, reachability grace, last-bus detection.
 //   • Schedule helpers (schedCodeNorm / findSchedEntry / pickSchedDir /
 //     schedTimesForPath) incl. the departure-terminal direction mapping.
@@ -39,10 +39,10 @@ import {
   schedCodeNorm, findSchedEntry, pickSchedDir, schedTimesForPath,
   planTrips as corePlanTrips, buildGuidedSteps,
   haversine, _travelToStopMins, _rideMins, _waitFromTimes, _isLastSefer,
-  _liveBoardWaitMins, withinM, movedPast,
+  withinM, movedPast,
   MINS_PER_STOP, MAX_WAIT_MIN, TRANSFER_WALK_MAX_M, TRANSFER_PENALTY_MIN,
   WALK_RELAX_MULT, MAX_NEAR_STOPS, TRANSFER_ETA_TOLERANCE_MIN,
-  TRANSFER_CROSS_ROAD_M, REACH_GRACE_MIN, WALK_DETOUR_FACTOR,
+  TRANSFER_CROSS_ROAD_M, WALK_DETOUR_FACTOR,
   GUIDED_ARRIVE_M, GUIDED_BOARDED_M,
   scheduleForDay, todayParts,
 } from '../core.js';
@@ -69,13 +69,12 @@ const getActiveRoutes = () => getActiveSchedule()?.routes || {};
 // ── PLANNER — thin adapter over core.planTrips ───────────────────────────────
 // planTrips, its walk matrix, reachable-stop collection, and direct+transfer
 // ranking are all core's now. The two call sites below plan by wall-clock
-// minute at the shipped default settings, offline-deterministic (live pass off,
-// so no kentkart fetch); walk distances still go to Valhalla with a haversine
+// minute at the shipped default settings; walk distances still go to Valhalla with a haversine
 // fallback, which is what keeps this the network-dependent test step.
 const planTrips = (origin, dest, nowMins) =>
   corePlanTrips(origin, dest, {
     pathCache, dayData: getActiveRoutes(), settings: SETTINGS,
-    nowMins, live: false,
+    nowMins,
   });
 
 // ── GUIDED "START TRIP" — core.buildGuidedSteps at the default walk speed ─────
@@ -189,31 +188,6 @@ function testIsLastSefer() {
   eq('single departure, still ahead → true',   _isLastSefer([600], 0, 500), true);
   eq('travel offset, single → true',           _isLastSefer([600], 30, 620), true); // reaches stop 630≥620
   eq('empty schedule → false',                 _isLastSefer([], 0, 600), false);
-}
-
-// ── _liveBoardWaitMins: soonest catchable live bus (reachability + min) ──
-function testLiveBoardWait() {
-  section('_liveBoardWaitMins (live ranking, reachability grace)');
-  const stops = [
-    { stopId: 's0', seq: '1', arrival_offset: '0',    departure_offset: '0'    },
-    { stopId: 's1', seq: '2', arrival_offset: '120',  departure_offset: '130'  },
-    { stopId: 's2', seq: '3', arrival_offset: '300',  departure_offset: '310'  },
-    { stopId: 's3', seq: '4', arrival_offset: '600',  departure_offset: '610'  }, // board
-    { stopId: 's4', seq: '5', arrival_offset: '900',  departure_offset: '910'  },
-    { stopId: 's5', seq: '6', arrival_offset: '1200', departure_offset: '1210' },
-  ];
-  const B = 3;
-  // s1 reaches board in (600-130)/60 = 7.83; s2 in (600-310)/60 = 4.83.
-  approx('reachable bus → wait ≈ arrival-arriveAtStop', _liveBoardWaitMins(stops, B, [{ stopId: 's1' }], 0, 5), 7.833 - 5);
-  check('reachable bus beats a 12-min schedule', Math.min(12, _liveBoardWaitMins(stops, B, [{ stopId: 's1' }], 0, 5)) < 12);
-  check('unreachable bus (arrives before walk-grace) → Infinity', _liveBoardWaitMins(stops, B, [{ stopId: 's2' }], 0, 10) === Infinity);
-  check('schedule kept when live Infinity', Math.min(8, _liveBoardWaitMins(stops, B, [{ stopId: 's2' }], 0, 10)) === 8);
-  check('within-grace late arrival still catchable (wait 0)', _liveBoardWaitMins(stops, B, [{ stopId: 's1' }], 0, 9.833) === 0);
-  check('bus already past board → ignored', _liveBoardWaitMins(stops, B, [{ stopId: 's4' }], 0, 5) === Infinity);
-  check('bus AT board stop (seq==board) → not approaching', _liveBoardWaitMins(stops, B, [{ stopId: 's3' }], 0, 5) === Infinity);
-  approx('multiple buses → soonest reachable wins', _liveBoardWaitMins(stops, B, [{ stopId: 's1' }, { stopId: 's2' }], 0, 0), 4.833);
-  check('no buses → Infinity', _liveBoardWaitMins(stops, B, [], 0, 5) === Infinity);
-  check('boardIdx -1 (board not on path) → Infinity', _liveBoardWaitMins(stops, -1, [{ stopId: 's1' }], 0, 5) === Infinity);
 }
 
 // ── Schedule code/route helpers ──
@@ -488,7 +462,6 @@ async function main() {
   testRideMins();
   testWaitFromTimes();
   testIsLastSefer();
-  testLiveBoardWait();
   testScheduleHelpers();
   testWalkFallback();
   testGuidedHelpers();

@@ -12,16 +12,16 @@
 
 // Headless logic — usable without the page. See ./core.js.
 import {
-  API, GUIDED_ARRIVE_M, GUIDED_BOARDED_M, MAP_BOUNDS, MAX_NEAR_STOPS, MAX_WAIT_MIN, MINS_PER_STOP,
-  REACH_GRACE_MIN, SETTINGS_DEFAULTS, STR, TAXI_TARIFF, TRANSFER_CROSS_ROAD_M,
+  GUIDED_ARRIVE_M, GUIDED_BOARDED_M, MAP_BOUNDS, MAX_NEAR_STOPS, MAX_WAIT_MIN, MINS_PER_STOP,
+  SETTINGS_DEFAULTS, STR, TAXI_TARIFF, TRANSFER_CROSS_ROAD_M,
   TRANSFER_ETA_TOLERANCE_MIN, TRANSFER_PENALTY_MIN, TRANSFER_WALK_MAX_M, VALHALLA_HOST,
-  WALK_DETOUR_FACTOR, WALK_RELAX_MULT, _clockMin, _isLastSefer, _liveBoardWaitMins,
-  _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins,
+  WALK_DETOUR_FACTOR, WALK_RELAX_MULT, _clockMin, _isLastSefer,
+  _nextTimes, _rideMins, _schedFrame, _schedNow, _taxiEstimate, _tmMin, _travelToStopMins, _travelFromTerminal,
   _untilClock, _waitFromTimes, findSchedEntry, guidedStepMet, haversine, movedPast,
   pickSchedDir, routeSliceCoords, schedCodeNorm, schedTripsForPath, schedDepartures, scheduleForDay,
-  todayParts, withinM, foldTr as _foldTr, scheduleHealth, lastTripsOnRoad, lastBusRunning, expressBase,
-  QS, REGION, VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS, _fetchLiveBuses,
-  _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, estimateWaitFromMins,
+  todayParts, withinM, foldTr as _foldTr, scheduleHealth, lastTripsOnRoad, expressBase,
+  VALHALLA_COOLDOWN_MS, VALHALLA_FAIL_THRESHOLD, WALK_ROUTE_TIMEOUT_MS,
+  _valhallaPost, _walkDistances, _walkMatrix, buildGuidedSteps, buildTripFromSpec, setSegmentModel,
   getActiveRoutes, getActiveSchedule, planTrips,
   getSchedule, setSchedule, getPathCache, setPathCache,
 } from './core.js';
@@ -44,55 +44,8 @@ const MAP_NATIVE_MAX_ZOOM = 16;
 // ── Screen switching ──────────────────────────────────────────────────────────
 let plannerReady = false;
 // Planner is the default screen — init immediately
-window.addEventListener('DOMContentLoaded', () => { applyTheme(SETTINGS.theme || 'dark'); applyStaticI18n(); showOnboarding(); plannerReady = true; initPlanner(); initOfflineIndicator(); });
+window.addEventListener('DOMContentLoaded', () => { applyTheme(SETTINGS.theme || 'dark'); applyStaticI18n(); showOnboarding(); plannerReady = true; initPlanner(); });
 
-// ── Offline indicator ───────────────────────────────────────────────────────
-// navigator.onLine and the 'offline' event are unreliable across platforms
-// (often stay "online" after a real WiFi disconnect). So we actively probe
-// kentkart every 15s with a no-store request — that's the real source of
-// truth for "can we get live bus data right now?". Real kentkart fetches
-// from refreshBuses/selectTrackPath also feed into the same signal.
-let kentkartFailStreak = 0;
-let offlineProbeTimer  = null;
-function setOfflineUI(off) {
-  document.body.classList.toggle('is-offline', !!off);
-}
-function markKentkartResult(ok) {
-  if (ok) {
-    kentkartFailStreak = 0;
-    setOfflineUI(false);
-  } else {
-    kentkartFailStreak++;
-    if (kentkartFailStreak >= 2) setOfflineUI(true);
-  }
-}
-async function probeKentkart() {
-  try {
-    const r = await fetch(`${API}web/nearest/find?${QS}&_=${Date.now()}`, { cache: 'no-store' });
-    // HTTP 200 alone isn't enough: Kentkart refuses with a non-zero result code.
-    const d = r.ok && await r.json();
-    markKentkartResult(String(d?.result?.code) === '0');
-  } catch {
-    markKentkartResult(false);
-  }
-}
-function initOfflineIndicator() {
-  setOfflineUI(!navigator.onLine);
-  window.addEventListener('online',  () => { probeKentkart(); });
-  window.addEventListener('offline', () => setOfflineUI(true));
-  // Active probe loop — works even when no route is selected
-  probeKentkart();
-  offlineProbeTimer = setInterval(probeKentkart, 15000);
-  // Pause the probe when the tab is hidden to save battery; reprobe on return
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (offlineProbeTimer) { clearInterval(offlineProbeTimer); offlineProbeTimer = null; }
-    } else if (!offlineProbeTimer) {
-      probeKentkart();
-      offlineProbeTimer = setInterval(probeKentkart, 15000);
-    }
-  });
-}
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => {
   if ((SETTINGS.theme || 'dark') === 'system') applyTheme('system');
 });
@@ -115,9 +68,6 @@ function showScreen(name) {
     renderBookmarksBar();
   }
   if (name === 'settings') initSettingsScreen();
-  // Load Kentkart only when the tab is first opened, not on every app start.
-  const liveFrame = document.getElementById('live-frame');
-  if (name === 'live' && !liveFrame.src) liveFrame.src = KENTKART_HOME;
   if (name === 'schedule') highlightNextTimes();
   if (name === 'stops') {
     renderStopsList();
@@ -493,9 +443,6 @@ function renderRouteCards(routeMap, panelId, isToday) {
         '</div>' +
         '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:6px">' +
           '<span class="rc-meta">' + metaText + '</span>' +
-          '<button class="sched-track-btn" onclick="event.stopPropagation();trackRoute(\''+esc(displayCode)+'\')">' +
-            '<span style="font-size:.8rem;line-height:1">🚌</span>'+t('canli') +
-          '</button>' +
           '<span class="rc-chevron">▼</span>' +
         '</div>' +
       '</div>' +
@@ -529,20 +476,11 @@ function highlightNextTimes() {
 }
 
 // Today's card headers: runs left, or — once every departure has left — whether
-// the last bus is still on the road (live when kentkart answers, else schedule),
-// marking its departure chip. Runs on tab open and every minute (highlightNextTimes).
-const _lastBusLive = new Map(); // "code|dir" → { at, buses } — one live answer per minute
-function _lastBusLiveFor(p) {
-  const k = p.displayRouteCode + '|' + p.direction, hit = _lastBusLive.get(k);
-  if (hit && Date.now() - hit.at < 55000) return hit.buses;
-  const buses = _fetchLiveBuses(p.displayRouteCode, p.direction);
-  _lastBusLive.set(k, { at: Date.now(), buses });
-  return buses;
-}
-let _todayCardsGen = 0;
+// the last bus is still on the road by the schedule, marking its departure chip.
+// Runs on tab open and every minute (highlightNextTimes).
 function updateTodayCards(panel) {
   if (!document.getElementById('scr-schedule')?.classList.contains('active')) return;
-  const gen = ++_todayCardsGen, now = _schedNow();
+  const now = _schedNow();
   for (const card of panel.querySelectorAll('.route-card')) {
     const entry = schedTodayRoutes[card.dataset.code], meta = card.querySelector('.rc-meta');
     if (!entry || !meta) continue;
@@ -553,15 +491,10 @@ function updateTodayCards(panel) {
       .filter(p => findSchedEntry(schedTodayRoutes, p.displayRouteCode) === entry);
     const onRoad = lastTripsOnRoad(entry, paths, now);
     if (!onRoad.length) continue;
-    Promise.all(onRoad.map(o => _lastBusLiveFor(o.path))).then(lists => {
-      if (gen !== _todayCardsGen) return;
-      const running = onRoad.filter((o, i) => lastBusRunning(o, lists[i]));
-      if (!running.length) return;
-      meta.textContent = t('schedLastBusOnRoad');
-      for (const o of running)
-        card.querySelector((o.dir ? '.dir-section[data-dir="' + o.dir + '"] ' : '') + '.time-chip[data-time="' + o.time + '"]')
-          ?.classList.add('active-bus');
-    });
+    meta.textContent = t('schedLastBusOnRoad');
+    for (const o of onRoad)
+      card.querySelector((o.dir ? '.dir-section[data-dir="' + o.dir + '"] ' : '') + '.time-chip[data-time="' + o.time + '"]')
+        ?.classList.add('active-bus');
   }
 }
 
@@ -677,7 +610,7 @@ let arriveByMins = null;
 const arriveActive = () => planMode === 'arrive' && arriveByMins != null;
 
 // "Planning ahead" = anything other than leaving right now (a departure offset
-// OR an arrive-by deadline). It keeps live-only planner data disabled. A trip
+// OR an arrive-by deadline). Step-by-step mode starts now, so it is off. A trip
 // restored from a shared link is still allowed into step-by-step mode because
 // following that pinned itinerary is the purpose of the link.
 const planningAhead = () => planOffset > 0 || arriveActive();
@@ -702,7 +635,6 @@ let originStop = null, destStop   = null;
 let originClick = null, destClick = null;
 let originMarker = null, destMarker = null;
 let originPin = null, destPin = null;
-let busMarkers      = [];
 let drawnLayers     = [];
 let networkStopLayer = null;
 let refreshTimer = null;
@@ -711,7 +643,7 @@ let currentMatches = [];
 let tripMatch = null;
 let currentTaxi = null;   // { km, min, tl } driving estimate for the active O/D, shown at the bottom of results
 // Guided "Start Trip" state — self-contained; draws only into its own layer group.
-let guided = { active: false, m: null, steps: [], idx: 0, group: null, timer: null, wakeLock: null, userPanned: false, fetching: false };
+let guided = { active: false, m: null, steps: [], idx: 0, group: null, timer: null, wakeLock: null, userPanned: false };
 let _guidedPanHook = false;
 // Block origin/dest picking while a guided trip is active. (The End/Back/Next
 // buttons stopPropagation so their clicks never reach the map in the first place
@@ -1420,7 +1352,6 @@ function renderStopDetail() {
              +     '<div class="sd-route-name">' + esc(head) + '</div>'
              +     '<div class="sd-route-status">'+t('loadingShort')+'</div>'
              +   '</div>'
-             +   '<button class="sd-route-live" onclick="trackRoute(\'' + esc(r.routeCode) + '\')">'+t('liveBtn')+'</button>'
              + '</div>';
       }).join('')
     : '<div class="ss-empty">'+t('noRoutesThisStop')+'</div>';
@@ -1451,95 +1382,52 @@ function renderStopDetail() {
   +   '</button>'
   + '</div>'
   + '<button class="sd-cta" onclick="showStopOnPlanner(\'' + stop.stopId + '\')">'+t('showOnMapCta')+'</button>'
-  + '<button class="sd-cta" onclick="openStopLive(\'' + stop.stopId + '\')">'+t('liveStopCta')+'</button>'
   + '<div class="sd-routes-title">'+t('routesHere')+'</div>'
   + routesHtml;
 
-  // Fetch live buses for this stop and update each row's status
+  // Each row's next scheduled bus at this stop.
   if (uniq.length) loadStopDetailBuses(stop.stopId, uniq);
 }
 
-async function loadStopDetailBuses(stopId, uniqRoutes) {
-  try {
-    const responses = await Promise.all(uniqRoutes.map(e =>
-      fetch(API + 'web/pathInfo?' + QS + '&displayRouteCode=' + encodeURIComponent(e.routeCode) + '&direction=' + e.direction)
-        .then(r => r.json()).catch(() => null)
-    ));
-    if (stopDetailId !== stopId) return;
-    // Compute status + sort key per row, update DOM, then reorder.
-    const meta = [];
-    for (let i = 0; i < uniqRoutes.length; i++) {
-      const fp = responses[i]?.pathList?.[0];
-      const row = document.getElementById('sd-route-' + i);
-      const statusEl = row?.querySelector('.sd-route-status');
-      if (!statusEl) { meta.push({ row, sortKey: 99999 }); continue; }
-      let status, klass = '', sortKey = 99999;
-      if (!fp) {
-        status = t('noData');
-      } else {
-        const seqOf = {};
-        for (const s of (fp.busStopList || [])) seqOf[s.stopId] = parseInt(s.seq) || 0;
-        const targetSeq = seqOf[stopId] ?? uniqRoutes[i].seq;
-        const buses = fp.busList || [];
-        const approaching = buses
-          .filter(b => (seqOf[b.stopId] ?? -1) >= 0 && seqOf[b.stopId] < targetSeq)
-          .map(b => ({ ...b, stopsAway: targetSeq - seqOf[b.stopId] }))
-          .sort((a, b) => a.stopsAway - b.stopsAway);
-        const atStop = buses.filter(b => b.stopId === stopId);
-        if (atStop.length) {
-          status = t('statusArrived',{n:atStop.length});
-          klass  = 'live-at';
-          sortKey = 0;
-        } else if (approaching.length) {
-          const n = approaching[0].stopsAway;
-          status = t('statusApproaching',{n,a:approaching.length});
-          klass  = n <= 2 ? 'live-near' : n <= 5 ? 'live-mid' : 'live-far';
-          sortKey = n;
-        } else if (buses.length) {
-          status = t('statusActiveFwd',{n:buses.length});
-          klass  = 'live-far';
-          sortKey = 9000; // active, but past this stop — below all approaching
-        } else {
-          const nx = getNextDeparture(uniqRoutes[i].routeCode);
-          status = nx === undefined ? t('noActiveBus')
-                 : nx === null ? t('noRunsToday')
-                 : t('nextShort',{time:nx});
-          sortKey = 99999; // inactive — keep at bottom in original order
-        }
-      }
-      statusEl.textContent = status;
-      statusEl.className   = 'sd-route-status ' + klass;
-      meta.push({ row, sortKey, originalIndex: i });
-    }
-    // Reorder: active routes by proximity ascending; inactive keep original index.
-    meta.sort((a, b) => a.sortKey - b.sortKey || a.originalIndex - b.originalIndex);
-    const parent = meta[0]?.row?.parentNode;
-    if (parent) for (const { row } of meta) if (row) parent.appendChild(row);
-  } catch {}
+// The next scheduled bus of one route direction AT a stop: its terminal
+// departure plus the time to get there (recorded segment times, else the
+// timetable offsets). undefined = no schedule loaded, null = none left today.
+function nextBusAtStop(code, dir, stopId) {
+  if (!getSchedule()) return undefined;
+  const pe = getPathCache().find(pe => pe.path.displayRouteCode === code && String(pe.path.direction) === String(dir));
+  const entry = pe && findSchedEntry(getActiveRoutes(), code);
+  if (!entry) return null;
+  const st = pe.path.busStopList || [], i = st.findIndex(s => s.stopId === stopId);
+  if (i < 0) return null;
+  const now = _schedNow();
+  let best = null;
+  for (const trip of schedTripsForPath(entry, pe.path, getPathCache())) {
+    if (trip.start > i || trip.end <= i) continue;   // must call here and ride on
+    const at = trip.mins + _travelFromTerminal(st[i], trip.mins);
+    if (at >= now && (best == null || at < best)) best = at;
+  }
+  if (best == null) return null;
+  const c = Math.round(best) % 1440;
+  return { mins: Math.round(best - now), time: String(Math.floor(c / 60)).padStart(2, '0') + ':' + String(c % 60).padStart(2, '0') };
 }
+const nextBusText = nx => nx === undefined ? t('noActiveBus') : nx === null ? t('noRunsToday')
+  : nx.mins <= 0 ? t('busAtStopNow', { time: nx.time }) : t('busAtStopIn', { n: nx.mins, time: nx.time });
 
-// Kentkart's stop link (?id=) opens that stop's page. On phones Kentkart's own
-// code then hands off to its app and, failing that, the app store, which refuses
-// to be framed. So phones get Kentkart's home and the stop's name to search for.
-const KENTKART_HOME = 'https://m.kentkart.com/?cityCode=' + REGION;
-const IS_PHONE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || navigator.vendor);
-let liveStopName = '';
-function openStopLive(stopId) {
-  const stop = allStops.get(stopId);
-  if (!stop) return;
-  liveStopName = stop.stopName;
-  const label = document.getElementById('live-stop');
-  label.hidden = false;
-  label.innerHTML = '📍 ' + esc(stop.stopName)
-    + (IS_PHONE ? '<button onclick="copyLiveStop(this)">' + t('liveCopy') + '</button>' : '');
-  const frame = document.getElementById('live-frame');
-  if (!IS_PHONE) frame.src = KENTKART_HOME + '&id=' + encodeURIComponent(stopId) + '&type=1';
-  showScreen('live');
-}
-function copyLiveStop(btn) {
-  const ask = () => prompt(t('liveCopyPrompt'), liveStopName);
-  if (!navigator.clipboard?.writeText) return ask();
-  navigator.clipboard.writeText(liveStopName).then(() => { btn.textContent = t('liveCopied'); }, ask);
+// Stop detail: each route direction's next bus here, soonest first.
+function loadStopDetailBuses(stopId, uniqRoutes) {
+  const meta = [];
+  uniqRoutes.forEach((r, i) => {
+    const row = document.getElementById('sd-route-' + i);
+    const statusEl = row?.querySelector('.sd-route-status');
+    if (!statusEl) return;
+    const nx = nextBusAtStop(r.routeCode, r.direction, stopId);
+    statusEl.textContent = nextBusText(nx);
+    statusEl.className = 'sd-route-status' + (nx?.mins <= 5 ? ' live-near' : '');
+    meta.push({ row, sortKey: nx ? nx.mins : 99999, originalIndex: i });
+  });
+  meta.sort((a, b) => a.sortKey - b.sortKey || a.originalIndex - b.originalIndex);
+  const parent = meta[0]?.row?.parentNode;
+  if (parent) for (const { row } of meta) parent.appendChild(row);
 }
 
 function showStopOnPlanner(stopId) {
@@ -1606,27 +1494,6 @@ const mkPinIcon = (color) => L.divIcon({
   className: '', iconSize: [28,38], iconAnchor: [14,38], popupAnchor: [0,-38],
   html: '<svg viewBox="0 0 28 38" width="28" height="38"><path d="M14 0C6.27 0 0 6.27 0 14c0 10.5 14 24 14 24S28 24.5 28 14C28 6.27 21.73 0 14 0z" fill="'+color+'"/><circle cx="14" cy="14" r="6" fill="#fff" opacity=".9"/></svg>'
 });
-const mkBusIcon = (hex, brg, label) => {
-  // 30px bus circle anchored at marker position; 14px heading arrow above,
-  // rotated around the circle center so it orbits as bearing changes;
-  // optional plate/label below, absolutely positioned (overflows the box
-  // visually but doesn't affect the marker anchor).
-  const arrow = brg == null ? '' :
-    '<div style="position:absolute;inset:0;transform-origin:15px 29px;transform:rotate('+brg.toFixed(0)+'deg);pointer-events:none">'+
-      '<div style="position:absolute;top:0;left:50%;margin-left:-7px;width:0;height:0;border:7px solid transparent;border-bottom-color:#'+hex+';filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))"></div>'+
-    '</div>';
-  const lbl = label ?
-    '<div style="position:absolute;top:42px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:1px 6px;border-radius:7px;background:#'+hex+';color:'+textOnHex(hex)+';border:1.5px solid rgba(255,255,255,.3);box-shadow:0 1px 4px rgba(0,0,0,.6);font:700 10px/1.2 system-ui;pointer-events:none">'+esc(label)+'</div>' : '';
-  return L.divIcon({
-    className: '',
-    iconSize: [30,44], iconAnchor: [15,29], popupAnchor: [0,-30],
-    html:
-      '<div style="position:relative;width:30px;height:44px">'+arrow+
-        '<div style="position:absolute;top:14px;left:0;width:30px;height:30px;border-radius:50%;background:#'+hex+';border:2px solid rgba(255,255,255,.3);box-shadow:0 1px 5px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:14px">🚌</div>'+
-        lbl+
-      '</div>'
-  });
-};
 
 
 // ── Driving route (Valhalla auto) — for the taxi estimate ────────────────────
@@ -1822,29 +1689,6 @@ function _walkLabelMarker(latlng, durationSec, distanceM) {
   });
 }
 
-function bearing(lat1, lng1, lat2, lng2) {
-  const r = Math.PI / 180;
-  const φ1 = lat1 * r, φ2 = lat2 * r, Δλ = (lng2 - lng1) * r;
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-
-function nextStopFor(bus, stops) {
-  if (!stops || !stops.length) return null;
-  let cur = stops.find(s => s.stopId === bus.stopId);
-  if (!cur) {
-    // Bus stopId not in path (rare) — fall back to nearest stop by haversine
-    let nd = Infinity;
-    for (const s of stops) {
-      const d = haversine(parseFloat(bus.lat), parseFloat(bus.lng), parseFloat(s.lat), parseFloat(s.lng));
-      if (d < nd) { nd = d; cur = s; }
-    }
-    if (!cur) return null;
-  }
-  const seq = parseInt(cur.seq) || 0;
-  return stops.find(s => (parseInt(s.seq) || 0) === seq + 1) || null;
-}
 
 function nearestStop(lat,lng){let b=null,bd=Infinity;for(const s of allStops.values()){const d=haversine(lat,lng,s.lat,s.lng);if(d<bd){bd=d;b=s;}}return{stop:b,meters:Math.round(bd)};}
 function fmtDist(m){return m<1000?m+'m':(m/1000).toFixed(1)+'km';}
@@ -1926,11 +1770,14 @@ async function initPlanner() {
       kentkartRouteMap.set(code, route);
       if (stripped !== code) kentkartRouteMap.set(stripped, route);
     }
-    try { localStorage.setItem('kentkart_routes', JSON.stringify([...kentkartRouteMap])); } catch {}
   } catch (e) {
     setHint(t('stopDataFailed',{err:e.message}), true);
     return;
   }
+  // Recorded segment times sharpen ETAs on the routes they were validated on.
+  // Optional: without them the timetable offsets decide.
+  fetch('./data/segment-times.json').then(r => r.ok ? r.json() : null)
+    .then(model => { if (model) setSegmentModel(model); }).catch(() => {});
 
   // ── Add markers and enable UI ────────────────────────────────────────────────
   // Canvas renderer: stops share the map's sharedRenderer so there's only ONE
@@ -1989,11 +1836,6 @@ async function initPlanner() {
 
 
 
-function estimateWaitMins(routeCode, boardSeq, path) {
-  const effectiveNow = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame
-  return estimateWaitFromMins(routeCode, boardSeq, path, effectiveNow);
-}
-
 function resetPlanner() {
   // Before the stops-mode branch below returns: X means "clear what's on the
   // map", and the purple search pin is on the map in every mode.
@@ -2018,9 +1860,8 @@ function resetPlanner() {
   originClick = destClick = originStop = destStop = null;
   selectedMatch = null; currentMatches = []; tripMatch = null; currentTaxi = null;
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-  closeTrackPanel();
   // Clear map
-  clearDrawn(); clearBuses(); showNetworkStops();
+  clearDrawn(); showNetworkStops();
   // Reset UI
   document.getElementById('results').innerHTML = '';
   document.getElementById('results').style.display = '';
@@ -2204,11 +2045,10 @@ function setMode(m){
   document.getElementById('stopPanel').style.display=isStop?'':'none';
   document.getElementById('originCard').style.display='none';
   document.getElementById('destCard').style.display='none';
-  // X (reset) enabled whenever there's something to clear or exit: a plan in progress, stops browser, or live tracker
+  // X (reset) enabled whenever there's something to clear or exit: a plan in progress or the stops browser
   const rb = document.getElementById('btnReset');
   const hasPlan = !!(originStop || destStop);
-  const tracking = !!trackTimer;
-  rb.disabled = !(hasPlan || isStop || tracking);
+  rb.disabled = !(hasPlan || isStop);
   rb.style.color = rb.disabled ? '#4a5568' : '#ef4444';
   renderRecentDests();
   // GPS FAB: only show when picking origin
@@ -2357,15 +2197,15 @@ const _nextPaint = () => new Promise(r => requestAnimationFrame(() => requestAni
 async function findRoutes(){
   const gen = ++_findGen;
   _clearTripDeepLinkFromUrl(); // a fresh plan supersedes any restored share link
-  clearDrawn();clearBuses();showNetworkStops();
+  clearDrawn();showNetworkStops();
   _showPlannerSpinner(t('calcRoutes'));
   setHint(t('calcRoutes'));
   await _nextPaint();
   if (gen !== _findGen) return;
 
   // Bus trips + a taxi estimate (driving route) in parallel.
-  // planTrips is headless now (core.js): "now", the walk cache, live-bus fetching
-  // and cancellation are all passed in, and it no longer paints anything.
+  // planTrips is headless now (core.js): "now", the walk cache and cancellation
+  // are all passed in, and it no longer paints anything.
   const [trips, drive] = await Promise.all([
     planTrips({ lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }, {
       pathCache: getPathCache(),
@@ -2373,7 +2213,6 @@ async function findRoutes(){
       settings: SETTINGS,
       nowMins: _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset),
       arriveByMins: arriveActive() ? arriveByMins : null,
-      live: !planningAhead(),                 // planning ahead → schedule only, no live buses
       walkCache: { get: _walkDistGet, set: _walkDistSet },
       isCancelled: () => gen !== _findGen,    // same generation semantics as before
     }),
@@ -2388,7 +2227,7 @@ async function findRoutes(){
   if (!trips) { _appendTaxiCard(); return; }
   if (!trips.list.length) {
     currentMatches = []; tripMatch = null; selectedMatch = null;
-    clearDrawn(); clearBuses();
+    clearDrawn();
     // Arrive-by empty states: a deadline already behind us gets its own message
     // (same-day-only is a design limit, not "no route exists").
     const noTripMsg = !arriveActive() ? null
@@ -2408,7 +2247,7 @@ async function findRoutes(){
   setHint(trips.relaxed ? base + ' ' + t('walksTooLong') : base, trips.relaxed);
   renderPlannerResults(trips.list); selectPlannerMatch(trips.list[0]);
   expandPanel(trips.list.length);
-  if (refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(refreshBuses, 15000);
+  if (refreshTimer) clearInterval(refreshTimer); refreshTimer = setInterval(refreshTripDetail, 30000);
 }
 
 
@@ -2439,7 +2278,6 @@ function renderPlannerResults(matches){
       const h2=(m.leg2.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
       const totalRide = m.leg1.ride + m.leg1.wait + m.leg2.ride + m.leg2.wait;
       const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="'+t('longWalkTitle')+'">'+t('longWalk')+'</span>' : '';
-      const liveChip = m.leg1._live ? '<span class="p-live-badge" title="'+t('liveTitle')+'">'+t('live')+'</span>' : '';
       const lastBusChip = m._lastBus ? '<span class="p-lastbus-badge" title="'+t('lastBusTitle')+'">'+t('lastBus')+'</span>' : '';
       c.innerHTML =
         '<div class="p-route-top">'
@@ -2448,7 +2286,6 @@ function renderPlannerResults(matches){
         + '<span class="p-route-badge" style="background:#'+h1+';color:'+textOnHex(h1)+'">'+esc(m.leg1.path.displayRouteCode)+'</span>'
         + '<span class="p-leg-arrow">→</span>'
         + '<span class="p-route-badge" style="background:#'+h2+';color:'+textOnHex(h2)+'">'+esc(m.leg2.path.displayRouteCode)+'</span>'
-        + liveChip
         + '<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span>'
         + '</div>'
         + '<div class="p-route-meta">'+t('metaMulti',{a:m.leg1.sc,b:m.leg2.sc,ride:totalRide})+'</div>'
@@ -2460,16 +2297,13 @@ function renderPlannerResults(matches){
         + '<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.leg2.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.leg2.walkA)+')</span></div>';
     } else {
       const hex=(m.route.routeColor||'aaaaaa').replace('#','').padStart(6,'0');
-      const bh=m.buses.length?m.buses.map(b=>'<span class="bus-chip">🚌 '+(b.plateNumber||t('activeShort'))+'</span>').join(''):'<span class="bus-chip muted">'+t('noActiveBus')+'</span>';
       const longWalkChip = m._longWalk ? '<span class="p-longwalk-badge" title="'+t('longWalkTitle')+'">'+t('longWalk')+'</span>' : '';
-      const liveChip = m._live ? '<span class="p-live-badge" title="'+t('liveTitle')+'">'+t('live')+'</span>' : '';
       const lastBusChip = m._lastBus ? '<span class="p-lastbus-badge" title="'+t('lastBusTitle')+'">'+t('lastBus')+'</span>' : '';
-      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+lastBusChip+liveChip+'<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span></div>'
+      c.innerHTML='<div class="p-route-top"><span class="p-route-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+m.path.displayRouteCode+'</span><span class="p-route-name">'+esc(m.route.name||m.path.headSign)+'</span>'+longWalkChip+lastBusChip+'<span class="p-route-eta">~'+m._eta+' '+t('min')+'</span></div>'
         +'<div class="p-route-meta">'+t('metaDirect',{n:m.sc})+'</div>'
         +leaveLine
         +'<div style="font-size:.7rem;color:#4a90d9;margin-top:2px">🟦 <b>'+esc(m.board.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkB)+')</span></div>'
-        +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>'
-        +'<div style="margin-top:4px">'+bh+'</div>';
+        +'<div style="font-size:.7rem;color:#22c55e">🟩 <b>'+esc(m.alight.stopName)+'</b> <span style="color:#4a5568">('+fmtDist(m.walkA)+')</span></div>';
     }
     c.onclick=()=>showTripDetail(m);cont.appendChild(c);
   }
@@ -2503,7 +2337,7 @@ function showTaxiRoute() {
   selectedMatch = null; tripMatch = null;
   document.querySelectorAll('.p-route-card').forEach(c => c.classList.remove('active'));
   document.querySelector('.p-taxi-card')?.classList.add('active');
-  clearDrawn(); clearBuses(); hideNetworkStops();
+  clearDrawn(); hideNetworkStops();
   // origin/dest pins (originMarker/destMarker) persist on the map already.
   const line = L.polyline(currentTaxi.coords, { color: '#eab308', weight: 5, opacity: .9 }).addTo(window._map);
   drawnLayers.push(line);
@@ -2532,7 +2366,7 @@ function selectPlannerMatch(m, fitMap = true){
     [...document.getElementById('results').querySelectorAll('.p-route-card')]
       .find(c=>c.querySelector('.p-route-badge')?.textContent===m.path.displayRouteCode&&c.innerHTML.includes(m.path.headSign))?.classList.add('active');
   }
-  clearDrawn();clearBuses();hideNetworkStops();
+  clearDrawn();hideNetworkStops();
 
   // Shared walk generation counter — both branches use _drawWalk and need the
   // same race-safety semantics so an in-flight OSRM fetch for a previous trip
@@ -2613,7 +2447,6 @@ function selectPlannerMatch(m, fitMap = true){
       .on('click', () => openStopOnMap(s.stopId))
       .addTo(window._map));
   }
-  drawBuses(m.buses, ROUTE_COLOR, m.path.displayRouteCode, m.path.busStopList);
 }
 
 // Render a multi-leg trip on the map: leg-1 polyline, transfer walk, leg-2
@@ -2672,10 +2505,6 @@ function _selectMultiLeg(m, fitMap, drawWalk) {
   drawLegStops(m.leg1.path, m.leg1.board, m.leg1.alight, HEX_L1, false);
   drawLegStops(m.leg2.path, m.leg2.board, m.leg2.alight, HEX_L2, m.leg2.transferWalkM === 0);
 
-  // Bus markers for both legs (don't clear between calls)
-  drawBuses(m.leg1.buses || [], HEX_L1, m.leg1.path.displayRouteCode, m.leg1.path.busStopList);
-  drawBuses(m.leg2.buses || [], HEX_L2, m.leg2.path.displayRouteCode, m.leg2.path.busStopList, true);
-
   if (fitMap) {
     const bounds = L.latLngBounds([]);
     pts1.forEach(p => bounds.extend(p));
@@ -2686,265 +2515,15 @@ function _selectMultiLeg(m, fitMap, drawWalk) {
   }
 }
 
-function drawBuses(buses,hex,code,stops,noClear){
-  if(!noClear) clearBuses();
-  for(const b of buses){
-    if(!b.lat||!b.lng)continue;
-    const label=b.plateNumber||b.busLabel||'';
-    const bla=parseFloat(b.lat), blo=parseFloat(b.lng);
-    // Find current stop (by stopId) and the next stop in seq order — used for
-    // both the heading-arrow bearing and the popup's "Şu an / Sıradaki" rows.
-    const cur  = stops?.find(s => s.stopId === b.stopId) || null;
-    const next = nextStopFor(b,stops);
-    let brg=null;
-    if(next){
-      const sla=parseFloat(next.lat), slo=parseFloat(next.lng);
-      if(Math.abs(bla-sla)>1e-6 || Math.abs(blo-slo)>1e-6) brg=bearing(bla,blo,sla,slo);
-    }
-    let popup = '<b>'+esc(code||'')+'</b>';
-    if (b.busLabel) popup += ' · '+esc(b.busLabel);
-    if (b.plateNumber) popup += '<br>'+esc(b.plateNumber);
-    if (cur)  popup += '<br><span style="color:#7eb3f7">'+t('popupNow')+'</span> '+esc(cur.stopName);
-    if (next) popup += '<br><span style="color:#22c55e">'+t('popupNext')+'</span> '+esc(next.stopName);
-    busMarkers.push(L.marker([bla,blo],{icon:mkBusIcon(hex,brg,label),zIndexOffset:2000}).bindPopup(popup).addTo(window._map));
-  }
-}
-async function refreshBuses(){
-  if(!selectedMatch)return;
-  // Multi-leg trips refetch both legs and redraw in one batch.
-  if (selectedMatch.isMultiLeg) {
-    const m = selectedMatch;
-    try {
-      const [r1, r2] = await Promise.all([
-        fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(m.leg1.path.displayRouteCode)+'&direction='+m.leg1.path.direction).then(x=>x.json()).catch(()=>null),
-        fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(m.leg2.path.displayRouteCode)+'&direction='+m.leg2.path.direction).then(x=>x.json()).catch(()=>null),
-      ]);
-      const fp1 = r1?.pathList?.[0], fp2 = r2?.pathList?.[0];
-      m.leg1.buses = fp1?.busList || [];
-      m.leg2.buses = fp2?.busList || [];
-      const HEX_L1 = 'f59e0b';
-      const HEX_L2 = (m.leg2.route.routeColor || '4a7dc0').replace('#','').padStart(6,'0');
-      drawBuses(m.leg1.buses, HEX_L1, m.leg1.path.displayRouteCode, fp1?.busStopList || m.leg1.path.busStopList);
-      drawBuses(m.leg2.buses, HEX_L2, m.leg2.path.displayRouteCode, fp2?.busStopList || m.leg2.path.busStopList, true);
-      markKentkartResult(!!(fp1 || fp2));
-    } catch {
-      clearBuses();
-      markKentkartResult(false);
-    }
-    return;
-  }
-  const{path,route}=selectedMatch;
-  try{
-    const r=await fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(path.displayRouteCode)+'&direction='+path.direction);
-    const d=await r.json();const fp=d.pathList?.[0];
-    if(fp){
-      drawBuses(fp.busList||[],(route.routeColor||'4a7dc0').replace('#',''),path.displayRouteCode,fp.busStopList||path.busStopList);
-      // refresh trip detail panel if open
-      if(tripMatch&&!tripMatch.isMultiLeg&&tripMatch.path.path_code===path.path_code){
-        // skipMap=true: bus markers are already refreshed by drawBuses above;
-        // re-rendering the polyline + walking lines would trigger a fresh OSRM
-        // fetch and cause visible flicker every 15s.
-        tripMatch.buses=fp.busList||[];showTripDetail(tripMatch,false,true);
-      }
-      markKentkartResult(true);
-    } else {
-      clearBuses();
-      markKentkartResult(false);
-    }
-  }catch{
-    clearBuses();
-    markKentkartResult(false);
-  }
+// An open trip detail counts its waits down from the clock: redraw it now and
+// then (skipMap: the map itself does not change).
+function refreshTripDetail(){
+  if(tripMatch&&!(guided&&guided.active)&&document.getElementById('scr-planner')?.classList.contains('active'))showTripDetail(tripMatch,false,true);
 }
 function clearDrawn(){drawnLayers.forEach(l=>window._map.removeLayer(l));drawnLayers=[];}
-function clearBuses(){busMarkers.forEach(l=>window._map.removeLayer(l));busMarkers=[];}
 function hideNetworkStops(){ if(networkStopLayer){ networkStopLayer._active=false; networkStopLayer.remove(); } }
 function showNetworkStops(){ if(guided&&guided.active)return; if(networkStopLayer){ networkStopLayer._active=true; if(window._updateStopVis) window._updateStopVis(); } }
 
-// ── Route tracker (launched from Seferler tab) ────────────────────────────────
-let trackedPaths   = [];   // all pathCache entries for the tracked route code
-let trackedPathIdx = 0;    // which direction is selected
-let trackTimer     = null;
-let trackLastRefresh = 0;
-
-async function trackRoute(displayRouteCode) {
-  showScreen('planner');
-  // Wait for planner data (initPlanner is triggered by showScreen)
-  if (!getPathCache().length) {
-    const results = document.getElementById('results');
-    results.style.display = '';
-    document.getElementById('stopPanel').style.display = 'none';
-    results.innerHTML = '<div style="padding:16px 4px;color:#4a5568;font-size:.82rem">'+t('routeDataLoading')+'</div>';
-    const ok = await new Promise(resolve => {
-      const deadline = Date.now() + 60000;
-      const iv = setInterval(() => {
-        if (getPathCache().length) { clearInterval(iv); resolve(true); }
-        else if (Date.now() > deadline) { clearInterval(iv); resolve(false); }
-      }, 300);
-    });
-    if (!ok) {
-      document.getElementById('results').innerHTML =
-        '<div style="padding:16px 4px;color:#ef4444;font-size:.82rem">'+t('routeDataFailed')+'</div>';
-      return;
-    }
-  }
-
-  // Normalise both sides: kentkart stores '11K' while PDF uses 'Ç11K'
-  const code = schedCodeNorm(displayRouteCode);
-  trackedPaths = getPathCache().filter(pe =>
-    schedCodeNorm(pe.path.displayRouteCode)  === code ||
-    schedCodeNorm(pe.route.displayRouteCode) === code
-  );
-  if (!trackedPaths.length) {
-    document.getElementById('results').innerHTML =
-      '<div style="padding:16px 4px;color:#ef4444;font-size:.82rem">' + t('routeNotFound',{code:esc(displayRouteCode)}) + '</div>';
-    return;
-  }
-
-  trackedPathIdx = 0;
-  if (trackTimer) clearInterval(trackTimer);
-  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-  selectedMatch = null; tripMatch = null;
-
-  showTrackPanel();
-  // Enable X button so user can exit tracking mode
-  const rb = document.getElementById('btnReset');
-  rb.disabled = false; rb.style.color = '#ef4444';
-  if (window._map) window._map.invalidateSize();
-  await selectTrackPath(0);
-  trackTimer = setInterval(() => selectTrackPath(trackedPathIdx, true), 15000);
-}
-
-function showTrackPanel() {
-  const pe     = trackedPaths[0];
-  const hex    = (pe.route.routeColor || 'aaaaaa').replace('#', '').padStart(6, '0');
-  const txt    = textOnHex(hex);
-  const code   = pe.path.displayRouteCode;
-
-  const cont = document.getElementById('results');
-  cont.style.display = '';
-  document.getElementById('stopPanel').style.display = 'none';
-
-  let html = '<div style="padding:10px 2px">';
-  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
-  html += '<button class="track-back" onclick="closeTrackPanel()">← Geri</button>';
-  html += '<span class="p-route-badge" style="background:#'+hex+';color:'+txt+'">'+esc(code)+'</span>';
-  html += '<span style="font-weight:700;font-size:.88rem;flex:1">'+esc(pe.route.name||pe.path.headSign)+'</span>';
-  html += '</div>';
-
-  // Direction buttons
-  html += '<div class="track-dirs">';
-  trackedPaths.forEach((p, i) => {
-    html += '<button class="track-dir-btn'+(i===trackedPathIdx?' active':'')+'" '
-          + 'onclick="selectTrackPath('+i+')" id="tdb-'+i+'">'
-          + esc(p.path.headSign || t('dirN',{n:(i+1)}))
-          + '</button>';
-  });
-  html += '</div>';
-
-  html += '<div class="track-bus-list" id="track-bus-list"><div style="color:#4a5568;font-size:.75rem;padding:4px 0">'+t('busesLoading')+'</div></div>';
-  html += '<div class="track-refresh" id="track-refresh"></div>';
-  html += '</div>';
-  cont.innerHTML = html;
-}
-
-async function selectTrackPath(idx, refreshOnly = false) {
-  trackedPathIdx = idx;
-
-  // Update active button
-  trackedPaths.forEach((_, i) => {
-    const btn = document.getElementById('tdb-'+i);
-    if (btn) btn.classList.toggle('active', i === idx);
-  });
-
-  const pe  = trackedPaths[idx];
-  const hex = (pe.route.routeColor || '4a7dc0').replace('#', '');
-
-  if (!refreshOnly) {
-    clearDrawn(); clearBuses(); hideNetworkStops();
-    const pts = (pe.path.pointList || []).map(p => [parseFloat(p.lat), parseFloat(p.lng)]);
-    if (pts.length) {
-      const l = L.polyline(pts, { color: '#f59e0b', weight: 5, opacity: .9 }).addTo(window._map);
-      drawnLayers.push(l);
-      window._map.fitBounds(l.getBounds(), { padding: [40, 40] });
-    }
-    for (const s of (pe.path.busStopList || [])) {
-      drawnLayers.push(
-        L.marker([parseFloat(s.lat), parseFloat(s.lng)], { icon: mkStopIcon('#'+hex, 9), zIndexOffset: 200 })
-          .bindTooltip(s.stopName, { direction: 'top', offset: [0, -5] })
-          .on('click', () => openStopOnMap(s.stopId))
-          .addTo(window._map)
-      );
-    }
-  }
-
-  // Fetch fresh bus positions
-  try {
-    const r = await fetch(API+'web/pathInfo?'+QS
-      +'&displayRouteCode='+encodeURIComponent(pe.path.displayRouteCode)
-      +'&direction='+pe.path.direction);
-    const d = await r.json();
-    const fp = d.pathList?.[0];
-    if (fp) {
-      drawBuses(fp.busList || [], hex, pe.path.displayRouteCode, fp.busStopList || pe.path.busStopList);
-      renderTrackBuses(fp.busList || [], pe, hex);
-      markKentkartResult(true);
-    } else {
-      clearBuses();
-      renderTrackBuses([], pe, hex);
-      markKentkartResult(false);
-    }
-  } catch {
-    clearBuses();
-    renderTrackBuses(null, pe, hex);
-    markKentkartResult(false);
-  }
-
-  trackLastRefresh = Date.now();
-  const el = document.getElementById('track-refresh');
-  if (el) el.textContent = t('updatedJustNow');
-}
-
-function renderTrackBuses(buses, pe, hex) {
-  const list = document.getElementById('track-bus-list');
-  if (!list) return;
-  if (!buses || !buses.length) {
-    list.innerHTML = '<div style="color:#4a5568;font-size:.75rem;padding:4px 0">'+t('noActiveBuses')+'</div>';
-    return;
-  }
-  const stops = pe.path.busStopList || [];
-  const seqOf = {};
-  stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
-  const seqs    = stops.map(s => parseInt(s.seq) || 0);
-  const lastSeq = seqs.length ? Math.max(...seqs) : 0;
-
-  let html = '';
-  for (const b of buses) {
-    if (!b.lat && !b.lng) continue;
-    const seq  = seqOf[b.stopId] ?? -1;
-    const rem  = seq >= 0 ? lastSeq - seq : null;
-    const col  = rem === null ? '#f59e0b' : rem <= 3 ? '#ef4444' : rem <= 8 ? '#22c55e' : '#7eb3f7';
-    const remTxt = rem !== null ? t('stopsLeft',{n:rem}) : t('locUnknown');
-    html += '<div class="track-bus-row">'
-          + '<div class="bus-dot" style="background:#'+hex+';width:10px;height:10px;border-radius:50%;flex-shrink:0"></div>'
-          + '<div style="flex:1"><b>' + esc(b.plateNumber || b.busLabel || t('busWord')) + '</b>'
-          + '<div style="font-size:.68rem;color:#4a5568">' + esc(b.stopName || stops.find(s=>s.stopId===b.stopId)?.stopName || '') + '</div></div>'
-          + '<span style="font-size:.72rem;font-weight:700;color:'+col+'">' + remTxt + '</span>'
-          + '</div>';
-  }
-  list.innerHTML = html || '<div style="color:#4a5568;font-size:.75rem;padding:4px 0">'+t('noActiveBuses')+'</div>';
-}
-
-function closeTrackPanel() {
-  if (trackTimer) { clearInterval(trackTimer); trackTimer = null; }
-  trackedPaths = [];
-  clearDrawn(); clearBuses(); showNetworkStops();
-  document.getElementById('results').innerHTML = '';
-  setHint(t('hintClickStart'));
-}
-
-// Register service worker on page load — also listen for new SW activations
-// and surface an "Update available" pill so users can refresh on demand.
 let _pendingWorker = null;
 function applyAppUpdate() {
   if (_pendingWorker) _pendingWorker.postMessage({ type: 'SKIP_WAITING' });
@@ -2998,10 +2577,6 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   if (m.isMultiLeg) { _showMultiLegTripDetail(m); return; }
 
   const stops   = m.path.busStopList || [];
-  const seqOf   = {}, idxOf = {};
-  stops.forEach((s, i) => { seqOf[s.stopId] = parseInt(s.seq) || 0; idxOf[s.stopId] = i; });
-  const boardSeq  = seqOf[m.board.stopId]  ?? 0;
-  const alightSeq = seqOf[m.alight.stopId] ?? 0;
   const boardIdx  = stops.findIndex(s => s.stopId === m.board.stopId);
   const alightIdx = stops.findIndex(s => s.stopId === m.alight.stopId);
   const tripStops = (boardIdx >= 0 && alightIdx >= 0) ? stops.slice(boardIdx, alightIdx + 1) : [];
@@ -3009,24 +2584,6 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Time estimates
   const walkToMins   = Math.max(1, Math.round(m.walkB / SETTINGS.walkSpeedMpm));
   const walkFromMins = Math.max(1, Math.round(m.walkA / SETTINGS.walkSpeedMpm));
-  const rideMins     = (boardIdx >= 0 && alightIdx >= 0)
-    ? Math.round(_rideMins(stops, boardIdx, alightIdx))
-    : Math.round(m.sc * MINS_PER_STOP);
-
-  // Which buses are approaching the board stop (seq < boardSeq)
-  const approaching = (m.buses || [])
-    .filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= 0 && s < boardSeq; })
-    .map(b    => ({ ...b, stopsAway: boardSeq - seqOf[b.stopId], minsAway: Math.round(_rideMins(stops, idxOf[b.stopId], boardIdx)) }))
-    .sort((a, b) => a.stopsAway - b.stopsAway);
-  const atStop  = (m.buses || []).filter(b => b.stopId === m.board.stopId);
-  const onBoard = (m.buses || []).filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= boardSeq && s < alightSeq; });
-  // Only count a live bus as catchable if you can plausibly reach the stop
-  // before it arrives. The small REACH_GRACE_MIN tolerance means a bus a couple
-  // minutes "too soon" still counts; genuinely unreachable ones are dropped (we
-  // then fall back to the schedule). An at-stop bus is catchable only if you're
-  // basically already there (walk ≤ grace).
-  const reachable = approaching.filter(b => b.minsAway >= walkToMins - REACH_GRACE_MIN);
-  const atStopReachable = atStop.length && walkToMins <= REACH_GRACE_MIN;
 
   // ── Schedule lookup ──────────────────────────────────────────────────────────
   const nowMins    = _schedFrame(new Date().getHours()*60 + new Date().getMinutes() + planOffset);   // service-day frame, matches the trips' minutes
@@ -3034,14 +2591,17 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // order they pass it (a trip starting down the line counts from there).
   const trips = _tripsAt(m.path, m.board.stopId, m.alight.stopId);
 
-  // For each trip, calculate when the bus reaches the boarding stop
-  // (from GTFS offsets, flat per-stop fallback inside _travelToStopMins).
-  const travelToBoard = _travelToStopMins(boardIdx >= 0 ? stops[boardIdx] : m.board);
+  // For each trip, calculate when the bus reaches the boarding stop (recorded
+  // segment times, else GTFS offsets, else flat per stop: _travelToStopMins).
+  const travelToBoard = _travelToStopMins(boardIdx >= 0 ? stops[boardIdx] : m.board, m._boardAt ?? nowMins + walkToMins);
 
+  // The first bus you can catch: one that reaches the stop after you do, as
+  // the planner counts it. The wait runs from your arrival, not from now.
+  const atStopMins = nowMins + walkToMins;
   let nextDep = null; // { time: "HH:MM", boardMins: number, trip, tomorrow?: true }
   for (const trip of trips) {
     const boardMins = trip.mins + travelToBoard;
-    if (boardMins >= nowMins) { nextDep = { time: trip.time, boardMins, trip }; break; }
+    if (boardMins >= atStopMins) { nextDep = { time: trip.time, boardMins, trip }; break; }
   }
   // All of today's buses already departed — wrap to first bus tomorrow
   if (!nextDep && trips.length) {
@@ -3049,8 +2609,12 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     nextDep = { time: trip.time, boardMins: trip.mins + travelToBoard + 1440, trip, tomorrow: true };
   }
 
+  const rideAt   = m._boardAt ?? nextDep?.boardMins ?? nowMins + walkToMins;
+  const rideMins = (boardIdx >= 0 && alightIdx >= 0)
+    ? Math.round(_rideMins(stops, boardIdx, alightIdx, rideAt))
+    : Math.round(m.sc * MINS_PER_STOP);
+
   // ── Wait time ────────────────────────────────────────────────────────────────
-  // Live data is only relevant when planning for now; skip it when planOffset > 0
   // Arrive-by trips already picked their bus backward from the deadline — show
   // its concrete leave/board/arrive clocks instead of a (meaningless) wait.
   // Keyed on the match itself (_leaveAt only exists on arrive-planned trips),
@@ -3066,23 +2630,14 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     const caught = trips.find(trip => Math.abs(trip.mins + travelToBoard - m._boardAt) < 1e-6);
     waitLabel  = t('waitDepart', { time: caught ? caught.time : _fmtSched(m._boardAt - travelToBoard) });
     waitDetail = t('leaveAtArriveAt', { leave: _fmtSched(m._leaveAt), arrive: _fmtSched(m._arriveAt) });
-  } else if (!planOffset && atStopReachable) {
-    waitMins   = 0;
-    waitLabel  = t('waitBusArrived');
-    waitDetail = atStop[0].plateNumber || '';
-  } else if (!planOffset && reachable.length) {
-    waitMins   = reachable[0].minsAway;
-    waitLabel  = t('waitLive');
-    waitDetail = t('busAwayDetail',{plate:(reachable[0].plateNumber || t('activeShort')),n:reachable[0].stopsAway});
   } else if (nextDep) {
-    waitMins   = Math.max(0, Math.round(nextDep.boardMins - nowMins));
+    waitMins   = Math.max(0, Math.round(nextDep.boardMins - atStopMins));
     waitLabel  = nextDep.tomorrow ? t('waitDepartTomorrow',{time:nextDep.time}) : t('waitDepart',{time:nextDep.time});
     const arrClock = _fmtSched(nextDep.boardMins);
     waitDetail = nextDep.tomorrow ? t('arrivesAtTomorrow',{time:arrClock}) : t('arrivesAt',{time:arrClock});
   } else {
     waitMins   = 999;
     waitLabel  = t('schedUnknown');
-    waitDetail = t('noLive');
   }
   // Last-bus notice: when the caught departure is the day's final one. In
   // arrive-by mode the planner already knows (its bus ≠ the next one from now).
@@ -3100,9 +2655,6 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
   // Badge
   const hex = (m.route.routeColor || 'aaaaaa').replace('#','').padStart(6,'0');
   const txt = textOnHex(hex);
-
-  // Build set of stopIds that have a live bus (for timeline markers)
-  const busAtStop = new Set((m.buses || []).map(b => b.stopId));
 
   // ── Render ────────────────────────────────────────────────────────────────
   let html = '';
@@ -3134,7 +2686,7 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         + '</div>';
 
   // Wait
-  const waitCol = atStop.length ? '#3b82f6' : approaching.length ? '#22c55e' : '#f59e0b';
+  const waitCol = '#f59e0b';
   html += '<div class="journey-step">'
         +   '<span class="journey-icon">⏱</span>'
         +   '<span class="journey-time" style="color:'+waitCol+'">'+(waitMins === 0 ? t('nowWord') : '~'+waitMins+' '+t('min'))+'</span>'
@@ -3168,30 +2720,6 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
         + '</div>';
   html += '</div>';
 
-  // ── Incoming buses ───────────────────────────────────────────────────────
-  // Only shown when there's real-time data (a bus at the stop or approaching).
-  // With no live buses this used to just echo the next scheduled time, which the
-  // "Programlı Seferler" section below already shows better — so we hide it.
-  if (atStopReachable || approaching.length) {
-    html += '<div class="trip-section">';
-    html += '<div class="trip-section-title">'+t('incomingBuses')+'</div>';
-    if (atStopReachable) {
-      html += '<div class="live-row"><div class="bus-dot dot-blue" style="width:10px;height:10px"></div>'
-            + '<div style="flex:1"><b>'+esc(atStop[0].plateNumber||t('activeShort'))+'</b></div>'
-            + '<span class="live-eta" style="color:#3b82f6">'+t('busArrivedExcl')+'</span></div>';
-    }
-    if (approaching.length) {
-      approaching.forEach(b => {
-        const dot = b.stopsAway <= 2 ? 'dot-blue' : b.stopsAway <= 5 ? 'dot-green' : 'dot-yellow';
-        const col = b.stopsAway <= 2 ? '#3b82f6' : b.stopsAway <= 5 ? '#22c55e' : '#f59e0b';
-        html += '<div class="live-row"><div class="bus-dot '+dot+'" style="width:10px;height:10px"></div>'
-              + '<div style="flex:1"><b>'+esc(b.plateNumber||t('activeShort'))+'</b><div style="font-size:.68rem;color:#4a5568">'+t('stopsAwayText',{n:b.stopsAway})+'</div></div>'
-              + '<span class="live-eta" style="color:'+col+'">~'+b.minsAway+' '+t('min')+'</span></div>';
-      });
-    }
-    html += '</div>';
-  }
-
   // ── Scheduled times ──────────────────────────────────────────────────────
   if (nextTimes.length) {
     html += '<div class="trip-section">';
@@ -3199,20 +2727,6 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     html += '<div class="dep-chips">';
     nextTimes.forEach((tm, i) => { html += '<span class="dep-chip'+(i===0?' next':'')+'">'+tm+'</span>'; });
     html += '</div></div>';
-  }
-
-  // ── Buses riding the route (between board and alight) ────────────────────
-  if (onBoard.length) {
-    html += '<div class="trip-section">';
-    html += '<div class="trip-section-title">'+t('activeOnRoute')+'</div>';
-    onBoard.forEach(b => {
-      const rem = alightSeq - (seqOf[b.stopId] ?? alightSeq);
-      html += '<div class="live-row"><div class="bus-dot dot-orange" style="width:10px;height:10px"></div>'
-            + '<div style="flex:1"><b>'+esc(b.plateNumber||t('activeShort'))+'</b>'
-            + '<div style="font-size:.68rem;color:#4a5568">'+t('stopsLeft',{n:rem})+'</div></div>'
-            + '<span class="live-eta" style="color:#ef4444">~'+Math.round(rem*MINS_PER_STOP)+' '+t('min')+'</span></div>';
-    });
-    html += '</div>';
   }
 
   // ── Stop timeline ────────────────────────────────────────────────────────────
@@ -3223,15 +2737,13 @@ function showTripDetail(m, fitMap = true, skipMap = false) {
     tripStops.forEach(s => {
       const isBoard  = s.stopId === m.board.stopId;
       const isAlight = s.stopId === m.alight.stopId;
-      const hasBus   = busAtStop.has(s.stopId);
-      const dotCls   = isBoard ? 'board' : isAlight ? 'alight' : hasBus ? 'bus' : '';
+      const dotCls   = isBoard ? 'board' : isAlight ? 'alight' : '';
       html += '<div class="tl-item">'
             +   '<div class="tl-dot '+dotCls+'"></div>'
             +   '<span class="tl-name">'+esc(s.stopName)+'</span>'
             +   '<span class="tl-id">#'+s.stopId+'</span>';
       if (isBoard)  html += ' <span class="tl-badge board">'+t('tlBoard')+'</span>';
       if (isAlight) html += ' <span class="tl-badge alight">'+t('tlAlight')+'</span>';
-      if (hasBus && !isBoard && !isAlight) html += ' <span class="tl-badge bus">🚌</span>';
       html += '</div>';
     });
     html += '</div></div>';
@@ -3379,12 +2891,12 @@ function startGuidedTrip(m) {
   m = m || tripMatch;
   if (!m || !originClick || !destClick || !window._map) return;
   if (!canStartGuidedTrip(m)) { setHint(t('startTripPlanAhead'), true); return; }
-  guided = { active: true, m, steps: buildGuidedSteps(m, { lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }, { walkSpeedMpm: SETTINGS.walkSpeedMpm }), idx: 0, group: L.layerGroup().addTo(window._map), timer: null, wakeLock: null, userPanned: false, fetching: false };
+  guided = { active: true, m, steps: buildGuidedSteps(m, { lat: originClick.lat, lng: originClick.lng }, { lat: destClick.lat, lng: destClick.lng }, { walkSpeedMpm: SETTINGS.walkSpeedMpm }), idx: 0, group: L.layerGroup().addTo(window._map), timer: null, wakeLock: null, userPanned: false };
 
   // CLEAN SLATE: wipe the planner overview (full route line + every walk) so the
   // map shows ONLY base tiles + the live dot + our group. Bump the planner's gen
   // so any in-flight overview walk fetch aborts instead of re-adding a line, and
-  // stop the bus-refresh timer. From here, guided draws only the current segment.
+  // stop the trip-detail refresh timer. From here, guided draws only the current segment.
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
   _msReset();
   guidedWipeMap();
@@ -3419,7 +2931,7 @@ function endGuidedTrip(returnToDetail = true) {
     // Exit to the trip LIST with a CLEAN map. Do NOT auto-redraw the full trip
     // overview — for a transfer it draws both entire bus lines + three walks,
     // which looked like a mess on End. The user can re-tap a card to see it.
-    clearDrawn(); clearBuses(); hideNetworkStops();
+    clearDrawn(); hideNetworkStops();
     tripMatch = null; selectedMatch = null;
     if (typeof renderPlannerResults === 'function' && currentMatches && currentMatches.length) {
       renderPlannerResults(currentMatches);
@@ -3467,35 +2979,12 @@ function onGuidedPosition(lat, lng) {
   else if (guided._armed) { guidedAdvance(); return; }
   guidedRenderBanner();   // refresh live ETA as they move
 }
-async function guidedTick() {
-  if (!guided.active || guided.fetching) return;
-  const step = guided.steps[guided.idx];
-  if (step.type === 'ARRIVED') return;
-  if (step.type !== 'WAIT' && step.type !== 'RIDE') { guidedRenderBanner(); return; }  // walk/transfer: refresh ETA only
-  guided.fetching = true;
-  try {
-    const buses = await _fetchLiveBuses(step.path.displayRouteCode, step.path.direction);
-    if (!guided.active || step !== guided.steps[guided.idx]) return;
-    if (buses && buses.length) {
-      step.buses = buses;
-      guidedDrawBuses(step);   // refresh live buses on the current segment
-      if (step.type === 'WAIT' && buses.some(b => b.stopId === step.boardId) && !step._alerted) { step._alerted = true; guidedAlert(); }
-    }
-    guidedRenderBanner();
-    if (lastUserPos) onGuidedPosition(lastUserPos.lat, lastUserPos.lng);
-  } catch {} finally { guided.fetching = false; }
+// Every 15s: refresh the banner's countdown and ETA, which run on the clock.
+function guidedTick() {
+  if (!guided.active) return;
+  if (guided.steps[guided.idx].type !== 'ARRIVED') guidedRenderBanner();
 }
 
-// ── Draw ONLY the current segment into guided.group ──
-function guidedDrawBuses(step) {
-  if (!guided.group) return;
-  guided.group.eachLayer(l => { if (l.options && l.options._gbus) guided.group.removeLayer(l); });
-  const hex = (step.route && step.route.routeColor || 'f59e0b').replace('#', '').padStart(6, '0');
-  for (const b of (step.buses || [])) {
-    if (!b.lat || !b.lng) continue;
-    guided.group.addLayer(L.marker([parseFloat(b.lat), parseFloat(b.lng)], { icon: mkBusIcon(hex, null, b.plateNumber || b.busLabel || ''), zIndexOffset: 2000, _gbus: true }));
-  }
-}
 // Strip the map down to base tiles + live dot + our (empty) group. Bumps the
 // planner's draw-gen so any in-flight overview walk fetch aborts. Run at start
 // AND before every step, because the planner overview keeps creeping back onto
@@ -3516,7 +3005,7 @@ function guidedWipeMap() {
   // longer on the map, and the card stays open offering to route to it. Every
   // future map-clearing path gets this for free instead of having to remember.
   closeSearchPlace();
-  drawnLayers.length = 0; busMarkers.length = 0; hideNetworkStops();
+  drawnLayers.length = 0; hideNetworkStops();
 }
 function drawGuidedStep(step) {
   if (!guided.group) return;
@@ -3554,7 +3043,6 @@ function drawGuidedStep(step) {
   } else if (step.type === 'WAIT') {
     const p = C(step.boardStop);
     add(L.marker(p, { icon: mkStopIcon('#2563eb', 15) }).bindTooltip('🚏 ' + esc(step.boardStop.stopName), { permanent: true, direction: 'top', offset: [0, -10] }));
-    guidedDrawBuses(step);
     fit([p]);
   } else if (step.type === 'RIDE') {
     const slice = routeSliceCoords(step.path.pointList || [], step.boardStop, step.alightStop);
@@ -3572,7 +3060,6 @@ function drawGuidedStep(step) {
     }
     add(L.marker(bp, { icon: mkStopIcon('#2563eb', 13) }).bindTooltip('🚌 ' + esc(step.boardStop.stopName), { direction: 'top' }));
     add(L.marker(ap, { icon: mkStopIcon('#16a34a', 15) }).bindTooltip('🏁 ' + esc(step.alightStop.stopName), { permanent: true, direction: 'top', offset: [0, -10] }));
-    guidedDrawBuses(step);
     fit(slice.length ? slice : [bp, ap]);
   } else if (step.type === 'ARRIVED') {
     if (destClick) { add(L.marker([destClick.lat, destClick.lng], { icon: mkPinIcon('#16a34a') })); window._map.setView([destClick.lat, destClick.lng], 16); }
@@ -3600,15 +3087,16 @@ function _gSchedTimes(step) {
 function _gSchedWait(step, fromMin) {
   const trips = _gSchedTimes(step);
   if (!trips.length) return { mins: 20, time: null };
-  const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop);
+  const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop, fromMin);
   for (const trip of trips) { const bm = trip.mins + travel; if (bm >= fromMin) return { mins: bm - fromMin, time: trip.time }; }
   return { mins: trips[0].mins + travel + 1440 - fromMin, time: trips[0].time };
 }
 // Adaptive pace: observed minutes-per-stop (EWMA) plus any "overage" if we've
 // been stuck on the current stop longer than expected (bus late / slow leg).
-// Tracking is per-step (reset in guidedEnterStep); curIdx is a route index.
-function _gPace(curIdx) {
-  const base = MINS_PER_STOP, now = Date.now();
+// Seeded with the leg's expected pace. Tracking is per-step (reset in
+// guidedEnterStep); curIdx is a route index.
+function _gPace(curIdx, base = MINS_PER_STOP) {
+  const now = Date.now();
   let tr = guided._track;
   if (!tr) { tr = guided._track = { idx: curIdx, t: now, perStop: base }; }
   if (curIdx > tr.idx) {
@@ -3630,28 +3118,9 @@ function _gRideIdx(step) {
   }
   return { bi, ai, cur };
 }
-// Minutes until the bus you can catch reaches the board stop — live if a bus is
-// approaching (so a late bus pushes it out), else from the schedule.
-function _gWaitMins(step, fromMin) {
-  const buses = step.buses || [];
-  const seqOf = {}; step.stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
-  const boardSeq = seqOf[step.boardId] ?? 0;
-  const boardIdx = step.stops.findIndex(s => s.stopId === step.boardId);
-  if (buses.some(b => b.stopId === step.boardId)) return { mins: 0, live: true };
-  const appr = buses
-    .map(b => ({ idx: step.stops.findIndex(s => s.stopId === b.stopId), seq: seqOf[b.stopId] ?? -1 }))
-    .filter(x => x.idx >= 0 && x.seq >= 0 && x.seq < boardSeq)
-    .sort((a, b) => b.seq - a.seq);   // nearest (highest seq below board) first
-  if (appr.length && boardIdx >= 0) {
-    const pace = _gPace(appr[0].idx);
-    return { mins: (boardIdx - appr[0].idx) * pace.perStop + pace.overage, live: true };
-  }
-  const sd = _gSchedWait(step, fromMin);
-  return { mins: Math.max(0, sd.mins), live: false, time: sd.time };
-}
 // Total remaining minutes to the destination from the CURRENT step onward.
-// Current step uses live buses / GPS pace (grows when the bus is late or a leg
-// drags); downstream steps use stored estimates. Recomputed every render/tick.
+// The current ride uses GPS pace (grows when a leg drags); waits come from the
+// schedule; downstream steps use stored estimates. Recomputed every render/tick.
 function guidedETA() {
   if (!guided.active) return null;
   const nowMin = _schedNow();   // service-day frame; arrival clock below folds back via %1440
@@ -3662,9 +3131,12 @@ function guidedETA() {
       if (cur && lastUserPos && s.to) total += haversine(lastUserPos.lat, lastUserPos.lng, s.to.lat, s.to.lng) / SETTINGS.walkSpeedMpm;
       else total += s.walkMins || 0;
     } else if (s.type === 'WAIT') {
-      total += cur ? _gWaitMins(s, nowMin + total).mins : _gSchedWait(s, nowMin + total).mins;
+      total += Math.max(0, _gSchedWait(s, nowMin + total).mins);
     } else if (s.type === 'RIDE') {
-      if (cur) { const r = _gRideIdx(s), pace = _gPace(r.cur); total += Math.max(0, r.ai - r.cur) * pace.perStop + pace.overage; }
+      if (cur) {
+        const r = _gRideIdx(s), pace = _gPace(r.cur, (s.rideMins || 0) / Math.max(1, r.ai - r.bi) || MINS_PER_STOP);
+        total += Math.max(0, r.ai - r.cur) * pace.perStop + pace.overage;
+      }
       else total += s.rideMins || 0;
     }
   }
@@ -3678,7 +3150,7 @@ function guidedEtaHtml() {
   if (e.mins <= 1) return '<div class="g-eta due"><span class="lbl">' + t('navEtaTitle') + '</span><span class="val">' + t('navEtaNow') + '</span></div>';
   return '<div class="g-eta"><span class="lbl">' + t('navEtaTitle') + '</span><span class="val">' + t('navEtaArrive', { time: e.time, mins: e.mins }) + '</span></div>';
 }
-// WAIT detail: scheduled departures + buses approaching the board stop.
+// WAIT detail: the scheduled departures.
 function guidedWaitDetail(step) {
   let html = '';
   const chips = _nextTimes(_gSchedTimes(step).map(trip => trip.time), 6);   // soonest 6 departures, wrap-aware
@@ -3687,44 +3159,21 @@ function guidedWaitDetail(step) {
     chips.forEach((tm, i) => { html += '<span class="dep-chip' + (i === 0 ? ' next' : '') + '">' + tm + '</span>'; });
     html += '</div></div>';
   }
-  const buses = step.buses || [];
-  const seqOf = {}; step.stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
-  const boardSeq = seqOf[step.boardId] ?? 0;
-  const boardIdx = step.stops.findIndex(s => s.stopId === step.boardId);
-  const appr = buses
-    .map(b => ({ b, idx: step.stops.findIndex(s => s.stopId === b.stopId), seq: seqOf[b.stopId] ?? -1 }))
-    .filter(x => x.idx >= 0 && x.seq >= 0 && x.seq <= boardSeq)
-    .sort((a, b) => b.seq - a.seq);
-  if (appr.length) {
-    html += '<div class="trip-section"><div class="trip-section-title">' + t('activeOnRoute') + '</div>';
-    appr.forEach(({ b, idx, seq }) => {
-      const away = Math.max(0, boardIdx - idx);
-      const pace = _gPace(idx);
-      const eta = seq === boardSeq ? 0 : Math.round(away * pace.perStop + pace.overage);
-      html += '<div class="live-row"><div class="bus-dot dot-orange" style="width:10px;height:10px"></div>'
-        + '<div style="flex:1"><b>' + esc(b.plateNumber || b.busLabel || t('activeShort')) + '</b>'
-        + '<div style="font-size:.68rem;color:#4a5568">' + (away ? t('stopsLeft', { n: away }) : t('busArrivedExcl')) + '</div></div>'
-        + '<span class="live-eta" style="color:#ef4444">' + (eta ? '~' + eta + ' ' + t('min') : t('nowWord')) + '</span></div>';
-    });
-    html += '</div>';
-  }
   return html;
 }
 // RIDE detail: the board→alight stop list, current stop highlighted.
 function guidedRideDetail(step) {
   const { bi, ai, cur } = _gRideIdx(step);
   if (bi < 0 || ai <= bi) return '';
-  const busAt = new Set((step.buses || []).map(b => b.stopId));
   let html = '<div class="trip-section"><div class="trip-section-title">' + t('routeStops') + '</div><div class="tl"><div class="tl-line"></div>';
   for (let i = bi; i <= ai; i++) {
     const s = step.stops[i];
-    const isBoard = i === bi, isAlight = i === ai, hasBus = busAt.has(s.stopId), isCur = i === cur;
-    const dotCls = isBoard ? 'board' : isAlight ? 'alight' : isCur ? 'cur' : hasBus ? 'bus' : '';
+    const isBoard = i === bi, isAlight = i === ai, isCur = i === cur;
+    const dotCls = isBoard ? 'board' : isAlight ? 'alight' : isCur ? 'cur' : '';
     html += '<div class="tl-item' + (isCur ? ' cur' : '') + '"><div class="tl-dot ' + dotCls + '"></div>'
       + '<span class="tl-name">' + esc(s.stopName) + '</span><span class="tl-id">#' + s.stopId + '</span>';
     if (isBoard) html += ' <span class="tl-badge board">' + t('tlBoard') + '</span>';
     if (isAlight) html += ' <span class="tl-badge alight">' + t('tlAlight') + '</span>';
-    if (hasBus && !isBoard && !isAlight) html += ' <span class="tl-badge bus">🚌</span>';
     html += '</div>';
   }
   return html + '</div></div>';
@@ -3732,15 +3181,8 @@ function guidedRideDetail(step) {
 
 // ── Banner ──
 function guidedWaitText(step) {
-  const buses = step.buses || [];
-  const seqOf = {}; step.stops.forEach(s => seqOf[s.stopId] = parseInt(s.seq) || 0);
-  const boardSeq = seqOf[step.boardId] ?? 0;
-  if (buses.some(b => b.stopId === step.boardId)) return t('navBusHere');
-  const approaching = buses.filter(b => { const s = seqOf[b.stopId] ?? -1; return s >= 0 && s < boardSeq; })
-    .map(b => boardSeq - seqOf[b.stopId]).sort((a, b) => a - b);
-  if (approaching.length) return t('navBusApproaching', { n: approaching[0] });
   const now = _schedNow();   // service-day frame, matches the trips' minutes
-  const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop);
+  const travel = _travelToStopMins(step.stops.find(s => s.stopId === step.boardId) || step.boardStop, now);
   for (const trip of _gSchedTimes(step)) {
     const bm = trip.mins + travel;
     if (bm >= now) return t('navNextDep', { time: trip.time, mins: Math.max(0, Math.round(bm - now)) });
@@ -3892,34 +3334,22 @@ function viewStopInDuraklar(stopId){
   pushRecentStop(stopId);
   showScreen('stops');
 }
-async function fetchStopBuses(stopId){
+// Nearby stop card: each route direction's next scheduled bus here, soonest first.
+function fetchStopBuses(stopId){
   const entries=stopToRoutes.get(stopId)||[];const seen=new Set();
-  const toFetch=entries.filter(e=>{const k=e.routeCode+':'+e.direction;if(seen.has(k))return false;seen.add(k);return true;});
-  const responses=await Promise.all(toFetch.map(e=>fetch(API+'web/pathInfo?'+QS+'&displayRouteCode='+encodeURIComponent(e.routeCode)+'&direction='+e.direction).then(r=>r.json()).catch(()=>null)));
-  const rows=[];
-  for(let i=0;i<toFetch.length;i++){
-    const e=toFetch[i],fp=responses[i]?.pathList?.[0];
-    const seqOf={};for(const s of(fp?.busStopList||[]))seqOf[s.stopId]=parseInt(s.seq)||0;
-    const tSeq=seqOf[stopId]??e.seq,busList=fp?.busList||[];
-    const approaching=busList.filter(b=>(seqOf[b.stopId]??-1)>=0&&seqOf[b.stopId]<tSeq).map(b=>({...b,stopsAway:tSeq-seqOf[b.stopId]})).sort((a,b)=>a.stopsAway-b.stopsAway);
-    const atStop=busList.filter(b=>b.stopId===stopId);
-    rows.push({entry:e,approaching,atStop});
-  }
-  rows.sort((a,b)=>{const ap=a.atStop.length?0:a.approaching.length?a.approaching[0].stopsAway:999;const bp=b.atStop.length?0:b.approaching.length?b.approaching[0].stopsAway:999;return ap-bp;});
+  const rows=entries.filter(e=>{const k=e.routeCode+':'+e.direction;if(seen.has(k))return false;seen.add(k);return true;})
+    .map(e=>({entry:e,next:nextBusAtStop(e.routeCode,e.direction,stopId)}))
+    .sort((a,b)=>(a.next?a.next.mins:99999)-(b.next?b.next.mins:99999));
   renderStopBuses(stopId,rows);
 }
 function renderStopBuses(stopId,rows){
   const body=document.querySelector('#sb-'+stopId+' .ns-buses');if(!body)return;
   if(!rows.length){body.innerHTML='<div class="no-bus">'+t('noLinesFound')+'</div>';return;}
-  body.innerHTML=rows.map(({entry:e,approaching,atStop})=>{
+  body.innerHTML=rows.map(({entry:e,next})=>{
     const hex=e.routeColor.replace('#','').padStart(6,'0');
     const badge='<span class="bus-badge" style="background:#'+hex+';color:'+textOnHex(hex)+'">'+e.routeCode+'</span>';
-    let dot,away;
-    if(atStop.length){dot='dot-blue';away=t('atStopShort');}
-    else if(approaching.length){const n=approaching[0].stopsAway;dot=n<=2?'dot-blue':n<=5?'dot-green':n<=10?'dot-yellow':'dot-orange';away=t('stopsLeft',{n});}
-    else{dot='dot-grey';const nx=getNextDeparture(e.routeCode);away=nx===undefined?t('noActiveBus'):nx===null?t('noRunsToday'):t('nextShort',{time:nx});}
-    const plate=atStop[0]?.plateNumber||approaching[0]?.plateNumber||'';
-    return '<div class="bus-row">'+badge+'<div class="bus-info"><div>'+esc(e.headSign)+'</div><div class="bus-dir">'+plate+'</div></div><div class="bus-dot '+dot+'"></div><span class="bus-away">'+away+'</span></div>';
+    const n=next?.mins,dot=n==null?'dot-grey':n<=5?'dot-blue':n<=15?'dot-green':n<=30?'dot-yellow':'dot-orange';
+    return '<div class="bus-row">'+badge+'<div class="bus-info"><div>'+esc(e.headSign)+'</div></div><div class="bus-dot '+dot+'"></div><span class="bus-away">'+nextBusText(next)+'</span></div>';
   }).join('');
 }
 
@@ -4325,7 +3755,7 @@ function onMapSearchInput() {
     // A dead geocoder is only worth reporting when it left us with nothing —
     // with local hits on screen, a banner would just be noise.
     const note = (saved.length + stops.length + places.length) ? null
-      : failed ? (document.body.classList.contains('is-offline') ? t('msOffline') : t('msFailed'))
+      : failed ? (navigator.onLine === false ? t('msOffline') : t('msFailed'))
       : t('msNoResult');
     _msRender({ saved, stops, places, note });
   }, MS_DEBOUNCE_MS);
@@ -4480,12 +3910,12 @@ document.addEventListener('click', e => {
 // which also forbids passing a bare identifier as a handler argument.
 Object.assign(window, {
 applyAppUpdate, applyCustomTime, clearBookmarksData, clearRecentsData, closeStopDetail,
-  closeTrackPanel, closeTripDetail, copyLiveStop, deleteBookmark, dismissOnboarding, downloadOfflineMap,
-  endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail, openStopLive,
+  closeTripDetail, deleteBookmark, dismissOnboarding, downloadOfflineMap,
+  endGuidedTrip, guidedAdvance, guidedBack, guidedRecenter, openCustomTime, openStopDetail,
   removeRecentDest, renderStopsList, requestNearbyOnce, resetOnboarding, resetPlanner,
-  resetWalkRadius, resetWalkSpeed, saveLocationBookmark, selectTrackPath, setLang, setMode, setPlanMode, setPlanOffset,
+  resetWalkRadius, resetWalkSpeed, saveLocationBookmark, setLang, setMode, setPlanMode, setPlanOffset,
   setTheme, shareStop, shareTrip, showScreen, showStopOnPlanner, startGuidedTrip, swapOD,
-  toggleBmDropdown, toggleFavStop, togglePanelExpand, togglePlanTime, trackRoute, useBookmark, useGPS,
+  toggleBmDropdown, toggleFavStop, togglePanelExpand, togglePlanTime, useBookmark, useGPS,
   useRecentDest, useStopAs, viewStopInDuraklar,
   // map place search
   clearMapSearch, closeSearchPlace, onMapSearchFocus, onMapSearchInput, onMapSearchKey,

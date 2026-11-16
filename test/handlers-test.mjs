@@ -71,7 +71,7 @@ const generatedSrc = hasUi ? uiSrc : inlineScript;
 function handlersIn(src, region) {
   const out = [];
   // Generated attributes can begin a fresh JS string chunk, for example
-  // `+ 'onclick="selectTrackPath(...)"'`, so the character before `on*` is
+  // `+ 'onclick="toggleFavStop(...)"'`, so the character before `on*` is
   // not always whitespace. Include string delimiters to keep those handlers
   // inside the global-bridge contract too.
   for (const m of src.matchAll(/(?:\s|['"`])on([a-z]+)=\\?"([^"]*)"/g)) {
@@ -137,7 +137,7 @@ console.log(`\n── inline handler contract (${mode}) ──\n`);
 
 ck('found the app script block', hasInlineApp || hasUi);
 ck('found inline handlers', handlers.length > 20, `${handlers.length} found`);
-ck('found generated tracker direction handler', handlers.some(h => h.body.includes('selectTrackPath(')));
+ck('found a handler that starts a fresh string chunk', handlers.some(h => h.body.startsWith('toggleFavStop(')));
 
 const missing = [];
 for (const h of handlers) {

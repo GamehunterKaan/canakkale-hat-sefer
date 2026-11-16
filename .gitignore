@@ -5,6 +5,4 @@ scripts/node_modules/
 # Only the eyeball dump planner-test writes for manual inspection stays out.
 test/results.txt
 /tmp/schedule-parser/
-/tmp/bus-eta/
-/backend/data/
 __pycache__/

@@ -155,5 +155,5 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // kentkart live data, everything else → passthrough (no cache)
+  // Everything else (geocoder, walking routes) → passthrough (no cache)
 });
